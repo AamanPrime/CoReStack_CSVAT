@@ -1,0 +1,71 @@
+# CoRE Stack Village Analytics Tool (CSVAT)
+# Docker Compose for full-stack deployment
+
+services:
+  # PostgreSQL + PostGIS
+  db:
+    image: postgis/postgis:15-3.3
+    container_name: csvat_db
+    environment:
+      POSTGRES_DB: csvat_db
+      POSTGRES_USER: csvat
+      POSTGRES_PASSWORD: csvat_pass
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U csvat -d csvat_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis (message broker for Celery)
+  redis:
+    image: redis:7-alpine
+    container_name: csvat_redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # FastAPI Backend
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: csvat_api
+    ports:
+      - "8000:8000"
+    env_file:
+      - ./backend/.env
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+
+  # Celery Worker
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: csvat_worker
+    command: celery -A app.tasks.celery_app worker --loglevel=info
+    env_file:
+      - ./backend/.env
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+
+volumes:
+  pgdata:

@@ -1,0 +1,15 @@
+The CoRE Stack provides a suite of RESTful APIs that allow developers and researchers to access pre-computed geospatial and socio-ecological data. Detailed documentation for these endpoints is available at `api-doc.core-stack.org`.
+
+**Authentication**
+Access to the APIs requires an API key, which must be passed in the request header as `X-API-KEY`. Users can register and generate their keys through the CoRE Stack admin dashboard at `dashboard.core-stack.org`.
+
+**Key API Endpoints**
+
+*   **`get_active_locations`**: Data is currently generated on-demand and is not available for all of India. This API returns a list of active locations (state, district, and block/tehsil) where CoRE Stack data has already been populated and is ready for querying.
+*   **`get_admin_details`**: Accepts a specific latitude and longitude and returns the corresponding administrative details, including the state, district, and block.
+*   **`get_mws_id_by_lat_long`**: Takes a latitude and longitude and resolves it to a unique Micro-watershed ID (MWS UID) along with its administrative details. Because all CoRE Stack data is indexed to the micro-watershed level, this is a crucial step for localized queries.
+*   **`get_tehsil_data`**: Requires a state, district, and tehsil as input and returns comprehensive data for all micro-watersheds intersecting that tehsil. The response includes variables like cropping intensity, drought frequency, aquifer status, and tree cover changes.
+*   **`get_mws_data`**: Accepts an MWS UID (along with state, district, and tehsil) and returns detailed time-series data for that specific micro-watershed. This includes hydrological variables like runoff and precipitation, as well as agricultural data.
+*   **`get_generated_layers_url`**: Takes a state, district, and tehsil and returns direct GeoServer download URLs for raw raster and vector layers (such as LULC, drainage, and hydrological datasets) as GeoJSONs or GeoTIFFs.
+*   **MWS Report & KYL Indicator APIs**: These endpoints return specialized indicators (e.g., terrain clusters, average precipitation, MGNREGA assets) tailored for generating "Know Your Landscape" (KYL) reports for civil society organizations and planners.
+*   **Water Body APIs**: These endpoints list all water bodies within a tehsil and provide detailed profiles for each unique water body. Returned statistics include seasonal water availability (Kharif, Rabi, Zaid), catchment area, stream order, and the cropping intensity within the water body's "zone of influence".
