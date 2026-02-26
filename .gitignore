@@ -24,6 +24,8 @@ env/
 *.db
 *.sqlite3
 
+agents-484921-b8b8f1e954fc.json
+
 # Testing
 .pytest_cache/
 .coverage
