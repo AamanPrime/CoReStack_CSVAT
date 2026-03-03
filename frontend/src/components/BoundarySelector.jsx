@@ -11,7 +11,7 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { MapView, usePlacesAutocomplete, computeAreaHectares } from './GoogleMapsIntegration';
 
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000';
+const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8006';
 
 export default function BoundarySelector({ onBoundarySelect }) {
   const [searchQuery, setSearchQuery] = useState('');
