@@ -15,6 +15,48 @@ let pyodideLoading = false;
 let pyodideLoadPromise = null;
 
 /**
+ * Recursively convert Pyodide proxy objects (Map, PyProxy) to plain JS.
+ * Pyodide's toJs() returns Map objects for Python dicts — React can't use those.
+ */
+function deepConvert(obj) {
+  if (obj === null || obj === undefined) return obj;
+
+  // Handle Pyodide proxy objects that haven't been converted yet
+  if (typeof obj === 'object' && typeof obj.toJs === 'function') {
+    try {
+      obj = obj.toJs({ dict_converter: Object.fromEntries });
+    } catch {
+      return obj;
+    }
+  }
+
+  // Convert Map → plain object
+  if (obj instanceof Map) {
+    const plain = {};
+    for (const [key, value] of obj.entries()) {
+      plain[key] = deepConvert(value);
+    }
+    return plain;
+  }
+
+  // Convert Array items recursively
+  if (Array.isArray(obj)) {
+    return obj.map(item => deepConvert(item));
+  }
+
+  // Convert plain object values recursively
+  if (typeof obj === 'object' && obj.constructor === Object) {
+    const plain = {};
+    for (const [key, value] of Object.entries(obj)) {
+      plain[key] = deepConvert(value);
+    }
+    return plain;
+  }
+
+  return obj;
+}
+
+/**
  * Load Pyodide + numpy. Caches the instance for subsequent calls.
  */
 export async function loadPyodide(onProgress) {
@@ -69,7 +111,7 @@ export async function runCroppingAnalysis(geeData, villageName, years, onProgres
 analyze_cropping_intensity(gee_lulc_data, village_name, analysis_years)
   `);
 
-  return result.toJs({ dict_converter: Object.fromEntries });
+  return deepConvert(result);
 }
 
 /**
@@ -87,7 +129,7 @@ export async function runWaterAnalysis(geeData, villageName, years, onProgress) 
 analyze_surface_water(gee_water_data, village_name, analysis_years)
   `);
 
-  return result.toJs({ dict_converter: Object.fromEntries });
+  return deepConvert(result);
 }
 
 /**
@@ -105,7 +147,7 @@ export async function runVegetationAnalysis(geeData, villageName, years, onProgr
 analyze_vegetation_change(gee_ndvi_data, village_name, analysis_years)
   `);
 
-  return result.toJs({ dict_converter: Object.fromEntries });
+  return deepConvert(result);
 }
 
 // ─── Python Analytics Code (runs in Pyodide) ───

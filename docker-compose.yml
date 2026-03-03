@@ -11,7 +11,7 @@ services:
       POSTGRES_USER: csvat
       POSTGRES_PASSWORD: csvat_pass
     ports:
-      - "5432:5432"
+      - "5435:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -39,7 +39,7 @@ services:
       dockerfile: Dockerfile
     container_name: csvat_api
     ports:
-      - "8000:8000"
+      - "8006:8000"
     env_file:
       - ./backend/.env
     depends_on:

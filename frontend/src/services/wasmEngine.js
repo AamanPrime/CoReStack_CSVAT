@@ -19,7 +19,7 @@ import {
 } from './pyodideEngine';
 
 // Backend API base URL
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000';
+const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8006';
 
 // ─── GEE Data Fetching (via Backend Proxy) ───
 
@@ -214,11 +214,21 @@ export async function runAnalyticsPipeline(boundaryInfo, selectedLayers, selecte
   try {
     onProgress?.('Fetching satellite data from Google Earth Engine…');
     geeData = await fetchAllGEEData(geojson, sortedYears);
-    useRealData = true;
-    onProgress?.('GEE data received. Loading Pyodide (Python WASM)…');
+
+    // GEE /all returns 200 even when datasets fail (lulc/water/ndvi = null).
+    // Only treat as real data if at least one dataset is non-null.
+    const hasAnyData = geeData && (geeData.lulc || geeData.water || geeData.ndvi);
+    if (hasAnyData) {
+      useRealData = true;
+      onProgress?.('GEE data received. Loading Pyodide (Python WASM)…');
+    } else {
+      console.warn('GEE returned no usable data, falling back to JS mock');
+      onProgress?.('GEE returned no data — using client-side analytics…');
+      useRealData = false;
+    }
   } catch (err) {
     console.warn('GEE proxy unavailable, falling back to JS mock:', err.message);
-    onProgress?.('GEE unavailable — using fallback analytics…');
+    onProgress?.('GEE unavailable — using client-side analytics…');
     useRealData = false;
   }
 
@@ -247,8 +257,9 @@ export async function runAnalyticsPipeline(boundaryInfo, selectedLayers, selecte
     }
   }
 
-  // Fallback to JS mock if Pyodide fails
+  // Fallback: use JS seeded-random analytics when no real data available
   if (!useRealData) {
+    onProgress?.('Running client-side analytics…');
     if (selectedLayers.includes('cropping_intensity')) {
       results.cropping_intensity = computeCroppingIntensityFallback(villageName, sortedYears);
     }
@@ -258,7 +269,7 @@ export async function runAnalyticsPipeline(boundaryInfo, selectedLayers, selecte
     if (selectedLayers.includes('vegetation')) {
       results.vegetation = computeVegetationChangeFallback(villageName, sortedYears);
     }
-    results.data_source = 'Mock (JS fallback)';
+    results.data_source = 'Client-Side Analytics (JS)';
   }
 
   return results;
