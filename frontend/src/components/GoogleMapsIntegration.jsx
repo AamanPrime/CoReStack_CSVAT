@@ -7,9 +7,9 @@
  *   3. Places Autocomplete hook (live village search)
  *   4. Geometry helpers (place → bounding box for GEE)
  */
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from "react";
 
-const MAPS_KEY = import.meta.env.VITE_GOOGLE_MAPS_KEY || '';
+const MAPS_KEY = import.meta.env.VITE_GOOGLE_MAPS_KEY || "";
 
 // ─── Script Loader ───
 
@@ -28,7 +28,7 @@ function loadGoogleMaps() {
     }
 
     // Use the new Google Maps JavaScript API loading
-    const script = document.createElement('script');
+    const script = document.createElement("script");
     script.src = `https://maps.googleapis.com/maps/api/js?key=${MAPS_KEY}&libraries=places&v=weekly`;
     script.async = true;
     script.defer = true;
@@ -36,7 +36,7 @@ function loadGoogleMaps() {
       mapsLoaded = true;
       resolve();
     };
-    script.onerror = () => reject(new Error('Failed to load Google Maps'));
+    script.onerror = () => reject(new Error("Failed to load Google Maps"));
     document.head.appendChild(script);
   });
 
@@ -45,7 +45,13 @@ function loadGoogleMaps() {
 
 // ─── MapView Component ───
 
-export function MapView({ geojson, center, zoom = 13, height = '350px', onMapClick }) {
+export function MapView({
+  geojson,
+  center,
+  zoom = 13,
+  height = "350px",
+  onMapClick,
+}) {
   const mapRef = useRef(null);
   const mapInstance = useRef(null);
   const polygonRef = useRef(null);
@@ -63,60 +69,83 @@ export function MapView({ geojson, center, zoom = 13, height = '350px', onMapCli
       mapInstance.current = new window.google.maps.Map(mapRef.current, {
         center: defaultCenter,
         zoom: center ? zoom : 5,
-        mapTypeId: 'hybrid', // Satellite + labels
+        mapTypeId: "hybrid", // Satellite + labels
         mapTypeControl: true,
         mapTypeControlOptions: {
           style: window.google.maps.MapTypeControlStyle.HORIZONTAL_BAR,
-          mapTypeIds: ['roadmap', 'satellite', 'hybrid', 'terrain'],
+          mapTypeIds: ["roadmap", "satellite", "hybrid", "terrain"],
         },
         streetViewControl: false,
         fullscreenControl: true,
         zoomControl: true,
         styles: [
-          { featureType: 'all', elementType: 'labels.text.fill', stylers: [{ color: '#ffffff' }] },
-          { featureType: 'all', elementType: 'labels.text.stroke', stylers: [{ color: '#000000' }, { weight: 2 }] },
+          {
+            featureType: "all",
+            elementType: "labels.text.fill",
+            stylers: [{ color: "#ffffff" }],
+          },
+          {
+            featureType: "all",
+            elementType: "labels.text.stroke",
+            stylers: [{ color: "#000000" }, { weight: 2 }],
+          },
         ],
       });
 
       // Click handler for placing markers
       if (onMapClick) {
-        mapInstance.current.addListener('click', (e) => {
+        mapInstance.current.addListener("click", (e) => {
           const latLng = { lat: e.latLng.lat(), lng: e.latLng.lng() };
           onMapClick(latLng);
         });
       }
     });
 
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // Draw polygon when geojson changes
   useEffect(() => {
     if (!mapInstance.current || !window.google?.maps) return;
 
-    // Clear previous polygon
+    // Clear previous polygon(s)
     if (polygonRef.current) {
-      polygonRef.current.setMap(null);
+      if (Array.isArray(polygonRef.current)) {
+        polygonRef.current.forEach((p) => p.setMap(null));
+      } else {
+        polygonRef.current.setMap(null);
+      }
       polygonRef.current = null;
     }
 
     if (!geojson?.coordinates?.[0]) return;
 
-    const coords = geojson.coordinates[0].map(([lng, lat]) => ({ lat, lng }));
+    // Collect all outer rings: MultiPolygon has multiple polygons, Polygon has one
+    const rings =
+      geojson.type === "MultiPolygon"
+        ? geojson.coordinates.map((poly) => poly[0]) // outer ring of each polygon
+        : [geojson.coordinates[0]]; // single outer ring
 
-    polygonRef.current = new window.google.maps.Polygon({
-      paths: coords,
-      strokeColor: '#22c55e',
-      strokeOpacity: 0.9,
-      strokeWeight: 3,
-      fillColor: '#22c55e',
-      fillOpacity: 0.15,
-      map: mapInstance.current,
+    const bounds = new window.google.maps.LatLngBounds();
+    const polygons = rings.map((ring) => {
+      const coords = ring.map(([lng, lat]) => ({ lat, lng }));
+      coords.forEach((c) => bounds.extend(c));
+      return new window.google.maps.Polygon({
+        paths: coords,
+        strokeColor: "#22c55e",
+        strokeOpacity: 0.9,
+        strokeWeight: 3,
+        fillColor: "#22c55e",
+        fillOpacity: 0.15,
+        map: mapInstance.current,
+      });
     });
 
-    // Fit bounds to polygon
-    const bounds = new window.google.maps.LatLngBounds();
-    coords.forEach(c => bounds.extend(c));
+    polygonRef.current = polygons;
+
+    // Fit bounds to all polygons
     mapInstance.current.fitBounds(bounds, 60);
   }, [geojson]);
 
@@ -136,9 +165,9 @@ export function MapView({ geojson, center, zoom = 13, height = '350px', onMapCli
         icon: {
           path: window.google.maps.SymbolPath.CIRCLE,
           scale: 8,
-          fillColor: '#22c55e',
+          fillColor: "#22c55e",
           fillOpacity: 1,
-          strokeColor: '#ffffff',
+          strokeColor: "#ffffff",
           strokeWeight: 2,
         },
       });
@@ -149,11 +178,11 @@ export function MapView({ geojson, center, zoom = 13, height = '350px', onMapCli
     <div
       ref={mapRef}
       style={{
-        width: '100%',
+        width: "100%",
         height,
-        borderRadius: '12px',
-        border: '1px solid rgba(148,163,184,0.2)',
-        overflow: 'hidden',
+        borderRadius: "12px",
+        border: "1px solid rgba(148,163,184,0.2)",
+        overflow: "hidden",
       }}
     />
   );
@@ -171,9 +200,11 @@ export function usePlacesAutocomplete() {
   useEffect(() => {
     loadGoogleMaps().then(() => {
       if (window.google?.maps?.places) {
-        serviceRef.current = new window.google.maps.places.AutocompleteService();
+        serviceRef.current =
+          new window.google.maps.places.AutocompleteService();
         geocoderRef.current = new window.google.maps.Geocoder();
-        sessionTokenRef.current = new window.google.maps.places.AutocompleteSessionToken();
+        sessionTokenRef.current =
+          new window.google.maps.places.AutocompleteSessionToken();
       }
     });
   }, []);
@@ -189,23 +220,28 @@ export function usePlacesAutocomplete() {
     serviceRef.current.getPlacePredictions(
       {
         input: query,
-        componentRestrictions: { country: 'in' }, // India only
-        types: ['locality', 'sublocality', 'administrative_area_level_3'], // Villages/towns
+        componentRestrictions: { country: "in" }, // India only
+        types: ["locality", "sublocality", "administrative_area_level_3"], // Villages/towns
         sessionToken: sessionTokenRef.current,
       },
       (results, status) => {
         setIsLoading(false);
-        if (status === window.google.maps.places.PlacesServiceStatus.OK && results) {
-          setPredictions(results.map(r => ({
-            place_id: r.place_id,
-            description: r.description,
-            main_text: r.structured_formatting?.main_text || r.description,
-            secondary_text: r.structured_formatting?.secondary_text || '',
-          })));
+        if (
+          status === window.google.maps.places.PlacesServiceStatus.OK &&
+          results
+        ) {
+          setPredictions(
+            results.map((r) => ({
+              place_id: r.place_id,
+              description: r.description,
+              main_text: r.structured_formatting?.main_text || r.description,
+              secondary_text: r.structured_formatting?.secondary_text || "",
+            })),
+          );
         } else {
           setPredictions([]);
         }
-      }
+      },
     );
   }, []);
 
@@ -214,7 +250,7 @@ export function usePlacesAutocomplete() {
 
     return new Promise((resolve) => {
       geocoderRef.current.geocode({ placeId }, (results, status) => {
-        if (status === 'OK' && results?.[0]) {
+        if (status === "OK" && results?.[0]) {
           const result = results[0];
           const loc = result.geometry.location;
           const viewport = result.geometry.viewport;
@@ -222,7 +258,7 @@ export function usePlacesAutocomplete() {
           // Extract address components
           const components = result.address_components || [];
           const getComponent = (type) =>
-            components.find(c => c.types.includes(type))?.long_name || '';
+            components.find((c) => c.types.includes(type))?.long_name || "";
 
           const lat = loc.lat();
           const lng = loc.lng();
@@ -233,38 +269,48 @@ export function usePlacesAutocomplete() {
             const ne = viewport.getNorthEast();
             const sw = viewport.getSouthWest();
             geojson = {
-              type: 'Polygon',
-              coordinates: [[
-                [sw.lng(), sw.lat()],
-                [ne.lng(), sw.lat()],
-                [ne.lng(), ne.lat()],
-                [sw.lng(), ne.lat()],
-                [sw.lng(), sw.lat()],
-              ]]
+              type: "Polygon",
+              coordinates: [
+                [
+                  [sw.lng(), sw.lat()],
+                  [ne.lng(), sw.lat()],
+                  [ne.lng(), ne.lat()],
+                  [sw.lng(), ne.lat()],
+                  [sw.lng(), sw.lat()],
+                ],
+              ],
             };
           } else {
             // Default ~5km bounding box
             const d = 0.025;
             geojson = {
-              type: 'Polygon',
-              coordinates: [[
-                [lng - d, lat - d],
-                [lng + d, lat - d],
-                [lng + d, lat + d],
-                [lng - d, lat + d],
-                [lng - d, lat - d],
-              ]]
+              type: "Polygon",
+              coordinates: [
+                [
+                  [lng - d, lat - d],
+                  [lng + d, lat - d],
+                  [lng + d, lat + d],
+                  [lng - d, lat + d],
+                  [lng - d, lat - d],
+                ],
+              ],
             };
           }
 
           // Reset session token after place selection
-          sessionTokenRef.current = new window.google.maps.places.AutocompleteSessionToken();
+          sessionTokenRef.current =
+            new window.google.maps.places.AutocompleteSessionToken();
 
           resolve({
-            name: getComponent('locality') || getComponent('sublocality') || result.formatted_address.split(',')[0],
-            state: getComponent('administrative_area_level_1'),
-            district: getComponent('administrative_area_level_2'),
-            tehsil: getComponent('administrative_area_level_3') || getComponent('sublocality_level_1'),
+            name:
+              getComponent("locality") ||
+              getComponent("sublocality") ||
+              result.formatted_address.split(",")[0],
+            state: getComponent("administrative_area_level_1"),
+            district: getComponent("administrative_area_level_2"),
+            tehsil:
+              getComponent("administrative_area_level_3") ||
+              getComponent("sublocality_level_1"),
             lat,
             lng,
             geojson,
@@ -286,13 +332,18 @@ export function usePlacesAutocomplete() {
 
 export function computeAreaHectares(geojson) {
   if (!geojson?.coordinates?.[0]) return 0;
-  const coords = geojson.coordinates[0];
-  const lats = coords.map(c => c[1]);
-  const lons = coords.map(c => c[0]);
+  // For MultiPolygon, coordinates[0][0] is the outer ring of the first polygon
+  const coords =
+    geojson.type === "MultiPolygon"
+      ? geojson.coordinates[0][0]
+      : geojson.coordinates[0];
+  if (!coords || !Array.isArray(coords[0])) return 0;
+  const lats = coords.map((c) => c[1]);
+  const lons = coords.map((c) => c[0]);
   const dLat = Math.max(...lats) - Math.min(...lats);
   const dLon = Math.max(...lons) - Math.min(...lons);
   const kmLat = dLat * 111;
   const avgLat = (Math.min(...lats) + Math.max(...lats)) / 2;
-  const kmLon = dLon * 111 * Math.cos(avgLat * Math.PI / 180);
+  const kmLon = dLon * 111 * Math.cos((avgLat * Math.PI) / 180);
   return Math.round(kmLat * kmLon * 100);
 }

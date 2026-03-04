@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     REDIS_URL: str = "redis://localhost:6379/0"
 
     # CoRE Stack
-    CORESTACK_API_BASE_URL: str = "https://api.core-stack.org"
+    CORESTACK_API_BASE_URL: str = "https://api-doc.core-stack.org/api/v1"
     CORESTACK_API_KEY: str = ""
 
     # JWT

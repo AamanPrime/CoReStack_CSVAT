@@ -78,4 +78,52 @@ export function pollJob(jobId, onUpdate, intervalMs = 2000) {
   return () => clearInterval(timer);
 }
 
+// ─── CoRE Stack Proxy ───
+export async function getActiveLocations() {
+  const { data } = await api.get('/corestack/locations');
+  return data;
+}
+
+export async function getVillageGeometries(state, district, tehsil) {
+  const { data } = await api.get('/corestack/village-geometries', {
+    params: { state, district, tehsil },
+  });
+  return data;
+}
+
+export async function getMWSGeometries(state, district, tehsil) {
+  const { data } = await api.get('/corestack/mws-geometries', {
+    params: { state, district, tehsil },
+  });
+  return data;
+}
+
+export async function getWaterbodies(state, district, tehsil) {
+  const { data } = await api.get('/corestack/waterbodies', {
+    params: { state, district, tehsil },
+  });
+  return data;
+}
+
+export async function getWaterbodyDetail(state, district, tehsil, uid) {
+  const { data } = await api.get('/corestack/waterbody', {
+    params: { state, district, tehsil, uid },
+  });
+  return data;
+}
+
+export async function getMWSReport(state, district, tehsil, mwsId) {
+  const { data } = await api.get('/corestack/mws-report', {
+    params: { state, district, tehsil, mws_id: mwsId },
+  });
+  return data;
+}
+
+export async function getAdminDetails(latitude, longitude) {
+  const { data } = await api.get('/corestack/admin-details', {
+    params: { latitude, longitude },
+  });
+  return data;
+}
+
 export default api;

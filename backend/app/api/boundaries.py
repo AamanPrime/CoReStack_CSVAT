@@ -90,7 +90,7 @@ async def validate_boundary(request: BoundaryValidateRequest):
     """
     try:
         resolved = boundary_service.resolve_boundary(geojson=request.geojson)
-        is_valid = boundary_service.validate_tehsil_intersection(
+        is_valid = await boundary_service.validate_tehsil_intersection(
             resolved["state"], resolved["district"], resolved["tehsil"]
         )
         if not is_valid:

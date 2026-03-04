@@ -28,6 +28,13 @@ AVAILABLE_LAYERS = [
         available_years=[2017, 2018, 2019, 2020, 2021, 2022, 2023],
         unit="hectares",
     ),
+    LayerInfo(
+        id="waterbodies",
+        name="Waterbodies",
+        description="Waterbody data including seasonal coverage, area trends, and zone of influence analytics.",
+        available_years=[2017, 2018, 2019, 2020, 2021, 2022, 2023],
+        unit="hectares",
+    ),
 ]
 
 

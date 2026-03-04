@@ -8,6 +8,7 @@ const AVAILABLE_LAYERS = [
   { id: 'cropping_intensity', name: 'Cropping Intensity', icon: '🌱', color: 'var(--accent-green)' },
   { id: 'surface_water', name: 'Surface Water', icon: '💧', color: 'var(--accent-blue)' },
   { id: 'vegetation', name: 'Vegetation & Degradation', icon: '🌳', color: 'var(--accent-teal)' },
+  { id: 'waterbodies', name: 'Waterbodies', icon: '🏞️', color: '#6366f1' },
 ];
 
 const YEAR_OPTIONS = [2017, 2018, 2019, 2020, 2021, 2022, 2023];

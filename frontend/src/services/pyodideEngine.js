@@ -18,6 +18,8 @@ let pyodideLoadPromise = null;
  * Recursively convert Pyodide proxy objects (Map, PyProxy) to plain JS.
  * Pyodide's toJs() returns Map objects for Python dicts — React can't use those.
  */
+export function deepConvertPyodide(obj) { return deepConvert(obj); }
+
 function deepConvert(obj) {
   if (obj === null || obj === undefined) return obj;
 
