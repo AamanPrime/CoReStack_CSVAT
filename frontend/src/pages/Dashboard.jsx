@@ -1,13 +1,22 @@
 /**
- * CSVAT — Dashboard Page (WASM-First).
- * All analytics run client-side via wasmEngine. Backend is data proxy only.
+ * CSVAT — Dashboard Page (MWS-First with GEE Fallback).
+ *
+ * Flow:
+ * 1. User clicks "Run Analytics"
+ * 2. Frontend tries CoRE Stack MWS intersection
+ * 3. If unavailable → prompt "Use GEE?" confirmation modal
+ * 4. If user confirms → run GEE + Pyodide WASM pipeline
  */
-import React, { useState, useRef } from 'react';
+import React, { useState } from 'react';
 import BoundarySelector from '../components/BoundarySelector';
 import LayerSelector from '../components/LayerSelector';
 import ReportViewer from '../components/ReportViewer';
 import ExportManager from '../components/ExportManager';
-import { runAnalyticsPipeline } from '../services/wasmEngine';
+import {
+  runAnalyticsPipeline,
+  runGEEFallbackPipeline,
+  MWSUnavailableError,
+} from '../services/wasmEngine';
 
 export default function Dashboard() {
   const [boundary, setBoundary] = useState(null);
@@ -18,11 +27,17 @@ export default function Dashboard() {
   const [error, setError] = useState(null);
   const [progress, setProgress] = useState('');
 
+  // GEE confirmation state
+  const [showGEEPrompt, setShowGEEPrompt] = useState(false);
+  const [geePromptMessage, setGeePromptMessage] = useState('');
+  const [pendingBoundary, setPendingBoundary] = useState(null);
+
   const handleSubmit = async () => {
     if (!boundary) return;
     setIsRunning(true);
     setError(null);
     setResults(null);
+    setShowGEEPrompt(false);
 
     try {
       setProgress('Starting analytics pipeline…');
@@ -31,18 +46,54 @@ export default function Dashboard() {
         boundary,
         selectedLayers,
         selectedYears,
-        (msg) => setProgress(msg), // Progress callback
+        (msg) => setProgress(msg),
       );
 
       setProgress('Rendering report…');
       await delay(200);
-
       setResults(result);
     } catch (err) {
-      setError(err.message || 'Analytics pipeline failed.');
+      if (err instanceof MWSUnavailableError) {
+        // Show the confirmation prompt instead of an error
+        setGeePromptMessage(err.message);
+        setPendingBoundary(err.boundary);
+        setShowGEEPrompt(true);
+      } else {
+        setError(err.message || 'Analytics pipeline failed.');
+      }
     }
     setIsRunning(false);
     setProgress('');
+  };
+
+  const handleGEEConfirm = async () => {
+    setShowGEEPrompt(false);
+    setIsRunning(true);
+    setError(null);
+
+    try {
+      setProgress('User confirmed — starting GEE pipeline…');
+
+      const result = await runGEEFallbackPipeline(
+        pendingBoundary,
+        selectedLayers,
+        selectedYears,
+        (msg) => setProgress(msg),
+      );
+
+      setProgress('Rendering report…');
+      await delay(200);
+      setResults(result);
+    } catch (err) {
+      setError(err.message || 'GEE pipeline failed.');
+    }
+    setIsRunning(false);
+    setProgress('');
+  };
+
+  const handleGEEDecline = () => {
+    setShowGEEPrompt(false);
+    setPendingBoundary(null);
   };
 
   const handleReset = () => {
@@ -50,6 +101,8 @@ export default function Dashboard() {
     setResults(null);
     setError(null);
     setProgress('');
+    setShowGEEPrompt(false);
+    setPendingBoundary(null);
   };
 
   return (
@@ -59,7 +112,7 @@ export default function Dashboard() {
         <h2>Village-Level Socio‑Ecological Analytics</h2>
         <p>
           Select a village boundary, choose your analytics layers, and generate comprehensive
-          insights — computed entirely in your browser via WASM.
+          insights — powered by CoRE Stack MWS data.
         </p>
         <div style={{
           marginTop: '0.75rem', fontSize: '0.8rem',
@@ -70,7 +123,7 @@ export default function Dashboard() {
             width: 8, height: 8, borderRadius: '50%',
             backgroundColor: 'var(--accent-teal)', display: 'inline-block',
           }}></span>
-          Client-Side Execution Mode (WASM)
+          CoRE Stack MWS Primary | GEE Fallback Available
         </div>
       </div>
 
@@ -103,7 +156,7 @@ export default function Dashboard() {
                       Processing…
                     </>
                   ) : (
-                    '🚀 Run Analytics (Client-Side)'
+                    '🚀 Run Analytics'
                   )}
                 </button>
               </div>
@@ -120,7 +173,105 @@ export default function Dashboard() {
           <div style={{
             fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem',
           }}>
-            Fetching real satellite data from GEE — computed in-browser via Pyodide WASM
+            Processing analytics — please wait
+          </div>
+        </div>
+      )}
+
+      {/* GEE Confirmation Modal */}
+      {showGEEPrompt && (
+        <div className="gee-prompt-overlay" style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.6)', backdropFilter: 'blur(8px)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          zIndex: 1000, animation: 'fadeIn 0.3s ease',
+        }}>
+          <div style={{
+            background: 'linear-gradient(135deg, #1e293b, #0f172a)',
+            borderRadius: '20px', padding: '2rem 2.5rem',
+            maxWidth: '520px', width: '90%',
+            border: '1px solid rgba(245, 158, 11, 0.3)',
+            boxShadow: '0 25px 60px rgba(0, 0, 0, 0.5)',
+          }}>
+            {/* Warning Icon */}
+            <div style={{ textAlign: 'center', marginBottom: '1.25rem' }}>
+              <div style={{
+                width: 56, height: 56, borderRadius: '50%',
+                background: 'rgba(245, 158, 11, 0.15)',
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: '1.8rem',
+              }}>
+                ⚠️
+              </div>
+            </div>
+
+            <h3 style={{
+              textAlign: 'center', fontSize: '1.2rem', fontWeight: 600,
+              color: '#f59e0b', marginBottom: '0.75rem',
+            }}>
+              Village Not Available on CoRE Stack
+            </h3>
+
+            <p style={{
+              color: '#94a3b8', textAlign: 'center', lineHeight: 1.6,
+              fontSize: '0.9rem', marginBottom: '1.25rem',
+            }}>
+              {geePromptMessage}
+            </p>
+
+            {/* Resolution comparison */}
+            <div style={{
+              display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem',
+              marginBottom: '1.5rem',
+            }}>
+              <div style={{
+                background: 'rgba(34, 197, 94, 0.1)', borderRadius: '12px',
+                padding: '0.75rem', textAlign: 'center',
+                border: '1px solid rgba(34, 197, 94, 0.2)',
+              }}>
+                <div style={{ fontSize: '0.7rem', color: '#94a3b8', textTransform: 'uppercase' }}>
+                  CoRE Stack
+                </div>
+                <div style={{ fontSize: '1.1rem', fontWeight: 700, color: '#22c55e' }}>10m</div>
+                <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Not Available</div>
+              </div>
+              <div style={{
+                background: 'rgba(59, 130, 246, 0.1)', borderRadius: '12px',
+                padding: '0.75rem', textAlign: 'center',
+                border: '1px solid rgba(59, 130, 246, 0.2)',
+              }}>
+                <div style={{ fontSize: '0.7rem', color: '#94a3b8', textTransform: 'uppercase' }}>
+                  Google Earth Engine
+                </div>
+                <div style={{ fontSize: '1.1rem', fontWeight: 700, color: '#3b82f6' }}>500m</div>
+                <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Available</div>
+              </div>
+            </div>
+
+            {/* Buttons */}
+            <div style={{
+              display: 'flex', gap: '0.75rem', justifyContent: 'center',
+            }}>
+              <button
+                className="btn btn-secondary"
+                onClick={handleGEEDecline}
+                style={{ flex: 1, padding: '0.7rem' }}
+                id="gee-decline-btn"
+              >
+                Cancel
+              </button>
+              <button
+                className="btn btn-primary"
+                onClick={handleGEEConfirm}
+                style={{
+                  flex: 1, padding: '0.7rem',
+                  background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
+                }}
+                id="gee-confirm-btn"
+              >
+                🌐 Use GEE
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -143,8 +294,29 @@ export default function Dashboard() {
       {results && (
         <>
           <div className="section-divider">
-            <span>Analytics Results — {results.data_source || 'Computed Client-Side'}</span>
+            <span>Analytics Results — {results.data_source || 'Computed'}</span>
           </div>
+
+          {/* Data Warning Banner (shown for GEE fallback) */}
+          {results.data_warning && (
+            <div style={{
+              background: 'rgba(245, 158, 11, 0.1)',
+              border: '1px solid rgba(245, 158, 11, 0.3)',
+              borderRadius: '12px', padding: '1rem 1.25rem',
+              marginBottom: '1.5rem',
+              display: 'flex', alignItems: 'flex-start', gap: '0.75rem',
+            }}>
+              <span style={{ fontSize: '1.2rem', flexShrink: 0 }}>⚠️</span>
+              <div>
+                <div style={{ fontWeight: 600, color: '#f59e0b', marginBottom: '0.25rem' }}>
+                  Lower Resolution Data
+                </div>
+                <div style={{ color: '#94a3b8', fontSize: '0.85rem', lineHeight: 1.5 }}>
+                  {results.data_warning}
+                </div>
+              </div>
+            </div>
+          )}
 
           <ReportViewer results={results} />
           <ExportManager results={results} />
