@@ -5,15 +5,13 @@ and computes area in hectares per season.
 """
 
 import numpy as np
-from typing import Optional
-import random
 
 
 def compute_surface_water(
     village_name: str,
     boundary_geojson: dict,
     years: list[int],
-    raster_data: Optional[dict] = None,
+    raster_data: dict,
 ) -> dict:
     """Compute seasonal surface water availability over years.
 
@@ -21,14 +19,18 @@ def compute_surface_water(
         village_name: Name of the village.
         boundary_geojson: GeoJSON polygon.
         years: List of years.
-        raster_data: Optional pre-fetched water raster arrays keyed by year.
+        raster_data: Pre-fetched water raster arrays keyed by year.
 
     Returns:
         Dict with perennial, seasonal_monsoon, seasonal_winter areas per year.
+
+    Raises:
+        ValueError: If no raster data is provided.
     """
-    if raster_data:
-        return _compute_from_rasters(village_name, boundary_geojson, years, raster_data)
-    return _generate_mock_data(village_name, years)
+    if not raster_data:
+        raise ValueError("No raster data provided for surface water analysis.")
+
+    return _compute_from_rasters(village_name, boundary_geojson, years, raster_data)
 
 
 def _compute_from_rasters(
@@ -68,26 +70,19 @@ def _compute_from_rasters(
     return {"village_name": village_name, "data": results}
 
 
-def _generate_mock_data(village_name: str, years: list[int]) -> dict:
-    """Generate realistic mock surface water data."""
-    random.seed((hash(village_name) + 42) % 2**32)
+def compute_from_mws_data(
+    village_name: str,
+    mws_aggregated: list[dict],
+    years: list[int],
+) -> dict:
+    """Format MWS-aggregated surface water data into result schema.
 
-    base_perennial = random.uniform(5, 30)
-    base_monsoon = random.uniform(15, 80)
-    base_winter = random.uniform(3, 25)
+    Args:
+        village_name: Name of the village.
+        mws_aggregated: Output of MWSIntersectionService.aggregate_surface_water().
+        years: List of years requested.
 
-    results = []
-    for i, year in enumerate(sorted(years)):
-        # Slight declining trend for perennial, variable for seasonal
-        trend = i * 0.02
-        results.append({
-            "year": year,
-            "perennial_ha": round(max(base_perennial * (1 - trend + random.uniform(-0.1, 0.1)), 0), 2),
-            "seasonal_monsoon_ha": round(max(base_monsoon * (1 + random.uniform(-0.15, 0.15)), 0), 2),
-            "seasonal_winter_ha": round(max(base_winter * (1 + random.uniform(-0.2, 0.2)), 0), 2),
-            "total_water_ha": 0,  # calculated below
-        })
-        r = results[-1]
-        r["total_water_ha"] = round(r["perennial_ha"] + r["seasonal_monsoon_ha"] + r["seasonal_winter_ha"], 2)
-
-    return {"village_name": village_name, "data": results}
+    Returns:
+        Dict matching SurfaceWaterResult schema.
+    """
+    return {"village_name": village_name, "data": mws_aggregated}

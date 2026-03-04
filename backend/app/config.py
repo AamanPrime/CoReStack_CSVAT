@@ -37,6 +37,9 @@ class Settings(BaseSettings):
     GEE_SERVICE_ACCOUNT: str = ""
     GEE_KEY_FILE: str = ""
 
+    # GeoServer (for MWS geometry downloads)
+    GEOSERVER_BASE_URL: str = ""
+
     class Config:
         env_file = str(ENV_FILE)
         env_file_encoding = "utf-8"

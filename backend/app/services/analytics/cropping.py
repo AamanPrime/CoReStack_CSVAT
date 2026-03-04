@@ -5,33 +5,32 @@ and computes area in hectares within a village boundary.
 """
 
 import numpy as np
-from typing import Optional
-import random
 
 
 def compute_cropping_intensity(
     village_name: str,
     boundary_geojson: dict,
     years: list[int],
-    raster_data: Optional[dict] = None,
+    raster_data: dict,
 ) -> dict:
-    """Compute cropping intensity over years.
-
-    If raster_data is None, generates realistic mock data for demonstration.
+    """Compute cropping intensity over years from raster data.
 
     Args:
         village_name: Name of the village.
         boundary_geojson: GeoJSON polygon of the village.
         years: List of years to compute.
-        raster_data: Optional pre-fetched raster arrays keyed by year.
+        raster_data: Pre-fetched raster arrays keyed by year.
 
     Returns:
         Dict with timeseries data per year: {single, double, triple}_crop_ha.
-    """
-    if raster_data:
-        return _compute_from_rasters(village_name, boundary_geojson, years, raster_data)
 
-    return _generate_mock_data(village_name, years)
+    Raises:
+        ValueError: If no raster data is provided.
+    """
+    if not raster_data:
+        raise ValueError("No raster data provided for cropping intensity analysis.")
+
+    return _compute_from_rasters(village_name, boundary_geojson, years, raster_data)
 
 
 def _compute_from_rasters(
@@ -74,31 +73,19 @@ def _compute_from_rasters(
     return {"village_name": village_name, "data": results}
 
 
-def _generate_mock_data(village_name: str, years: list[int]) -> dict:
-    """Generate realistic mock cropping intensity data."""
-    random.seed(hash(village_name) % 2**32)
-    base_single = random.uniform(200, 600)
-    base_double = random.uniform(50, 200)
-    base_triple = random.uniform(10, 80)
+def compute_from_mws_data(
+    village_name: str,
+    mws_aggregated: list[dict],
+    years: list[int],
+) -> dict:
+    """Format MWS-aggregated cropping intensity data into result schema.
 
-    results = []
-    for i, year in enumerate(sorted(years)):
-        # Add realistic trends: single decreasing, double/triple increasing
-        trend = i * 0.03
-        noise_s = random.uniform(-0.05, 0.05)
-        noise_d = random.uniform(-0.05, 0.05)
-        noise_t = random.uniform(-0.05, 0.05)
+    Args:
+        village_name: Name of the village.
+        mws_aggregated: Output of MWSIntersectionService.aggregate_cropping_intensity().
+        years: List of years requested.
 
-        single = round(base_single * (1 - trend + noise_s), 2)
-        double = round(base_double * (1 + trend * 1.5 + noise_d), 2)
-        triple = round(base_triple * (1 + trend * 2 + noise_t), 2)
-
-        results.append({
-            "year": year,
-            "single_crop_ha": max(single, 0),
-            "double_crop_ha": max(double, 0),
-            "triple_crop_ha": max(triple, 0),
-            "total_cropped_ha": round(max(single, 0) + max(double, 0) + max(triple, 0), 2),
-        })
-
-    return {"village_name": village_name, "data": results}
+    Returns:
+        Dict matching CroppingIntensityResult schema.
+    """
+    return {"village_name": village_name, "data": mws_aggregated}

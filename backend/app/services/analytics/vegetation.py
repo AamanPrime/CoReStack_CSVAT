@@ -5,15 +5,13 @@ tree cover loss/gain and degraded land estimation.
 """
 
 import numpy as np
-from typing import Optional
-import random
 
 
 def compute_vegetation_change(
     village_name: str,
     boundary_geojson: dict,
     years: list[int],
-    raster_data: Optional[dict] = None,
+    raster_data: dict,
 ) -> dict:
     """Compute vegetation change and degradation trends.
 
@@ -21,14 +19,18 @@ def compute_vegetation_change(
         village_name: Name of the village.
         boundary_geojson: GeoJSON polygon.
         years: List of years.
-        raster_data: Optional pre-fetched vegetation rasters keyed by year.
+        raster_data: Pre-fetched vegetation rasters keyed by year.
 
     Returns:
         Dict with tree cover change, degradation estimates.
+
+    Raises:
+        ValueError: If no raster data is provided.
     """
-    if raster_data:
-        return _compute_from_rasters(village_name, boundary_geojson, years, raster_data)
-    return _generate_mock_data(village_name, years)
+    if not raster_data:
+        raise ValueError("No raster data provided for vegetation analysis.")
+
+    return _compute_from_rasters(village_name, boundary_geojson, years, raster_data)
 
 
 def _compute_from_rasters(
@@ -77,35 +79,21 @@ def _compute_from_rasters(
     }
 
 
-def _generate_mock_data(village_name: str, years: list[int]) -> dict:
-    """Generate realistic mock vegetation data."""
-    random.seed((hash(village_name) + 99) % 2**32)
-    sorted_years = sorted(years)
+def compute_from_mws_data(
+    village_name: str,
+    mws_aggregated: dict,
+    years: list[int],
+) -> dict:
+    """Format MWS-aggregated vegetation data into result schema.
 
-    base_tree_cover = random.uniform(80, 300)
-    yearly_data = []
+    Args:
+        village_name: Name of the village.
+        mws_aggregated: Output of MWSIntersectionService.aggregate_vegetation().
+        years: List of years requested.
 
-    for i, year in enumerate(sorted_years):
-        # General declining trend with noise
-        decline = i * random.uniform(1.5, 4.0)
-        noise = random.uniform(-5, 5)
-        tree_ha = round(max(base_tree_cover - decline + noise, 10), 2)
-        yearly_data.append({"year": year, "tree_cover_ha": tree_ha})
-
-    start_ha = yearly_data[0]["tree_cover_ha"]
-    end_ha = yearly_data[-1]["tree_cover_ha"]
-    loss = round(max(start_ha - end_ha, 0), 2)
-    gain = round(max(end_ha - start_ha, 0), 2)
-
-    return {
-        "village_name": village_name,
-        "start_year": sorted_years[0],
-        "end_year": sorted_years[-1],
-        "tree_cover_start_ha": start_ha,
-        "tree_cover_end_ha": end_ha,
-        "tree_cover_loss_ha": loss,
-        "tree_cover_gain_ha": gain,
-        "net_change_ha": round(end_ha - start_ha, 2),
-        "degraded_land_ha": round(loss * 0.6, 2),
-        "yearly_data": yearly_data,
-    }
+    Returns:
+        Dict matching VegetationChangeResult schema.
+    """
+    result = dict(mws_aggregated)
+    result["village_name"] = village_name
+    return result

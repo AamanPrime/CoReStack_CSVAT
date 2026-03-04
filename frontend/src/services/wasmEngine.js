@@ -7,8 +7,6 @@
  *   2. Raw satellite data fetched from backend GEE proxy
  *   3. Computation in-browser via Pyodide (Python WASM + numpy)
  *   4. Render results directly in React
- *
- * Fallback: If GEE proxy is unavailable, uses JS-based mock data.
  */
 
 import {
@@ -69,119 +67,20 @@ export async function resolveBoundary(boundaryInfo) {
     };
   }
 
-  // For admin-selected boundaries, resolve polygon from backend or mock
-  const MOCK_POLYGONS = {
-    'vg-raj-01': { coords: [[73.65,24.55],[73.70,24.55],[73.70,24.60],[73.65,24.60],[73.65,24.55]] },
-    'vg-raj-02': { coords: [[73.80,24.70],[73.88,24.70],[73.88,24.78],[73.80,24.78],[73.80,24.70]] },
-    'vg-mp-01':  { coords: [[77.70,22.73],[77.78,22.73],[77.78,22.78],[77.70,22.78],[77.70,22.73]] },
-    'vg-mh-01':  { coords: [[74.40,17.95],[74.48,17.95],[74.48,18.02],[74.40,18.02],[74.40,17.95]] },
-    'vg-ka-01':  { coords: [[78.10,13.10],[78.18,13.10],[78.18,13.17],[78.10,13.17],[78.10,13.10]] },
-    'vg-tn-01':  { coords: [[78.08,9.88],[78.15,9.88],[78.15,9.95],[78.08,9.95],[78.08,9.88]] },
-    'vg-gj-01':  { coords: [[69.62,23.23],[69.70,23.23],[69.70,23.30],[69.62,23.30],[69.62,23.23]] },
-    'vg-ap-01':  { coords: [[77.55,14.65],[77.63,14.65],[77.63,14.72],[77.55,14.72],[77.55,14.65]] },
-    'vg-raj-03': { coords: [[73.55,25.05],[73.62,25.05],[73.62,25.12],[73.55,25.12],[73.55,25.05]] },
-    'vg-raj-04': { coords: [[73.05,25.10],[73.12,25.10],[73.12,25.17],[73.05,25.17],[73.05,25.10]] },
-    'vg-mh-02':  { coords: [[76.48,19.95],[76.55,19.95],[76.55,20.02],[76.48,20.02],[76.48,19.95]] },
-    'vg-ker-01': { coords: [[76.68,8.88],[76.75,8.88],[76.75,8.95],[76.68,8.95],[76.68,8.88]] },
-    'vg-tel-01': { coords: [[79.90,18.20],[79.97,18.20],[79.97,18.27],[79.90,18.27],[79.90,18.20]] },
-    'vg-uk-01':  { coords: [[79.45,30.72],[79.52,30.72],[79.52,30.79],[79.45,30.79],[79.45,30.72]] },
-    'vg-wb-01':  { coords: [[87.30,23.07],[87.37,23.07],[87.37,23.14],[87.30,23.14],[87.30,23.07]] },
-  };
-
-  const poly = MOCK_POLYGONS[boundaryInfo.boundary_id];
-  return {
-    name: boundaryInfo.village_name,
-    state: boundaryInfo.state,
-    district: boundaryInfo.district,
-    tehsil: boundaryInfo.tehsil,
-    geojson: poly ? { type: 'Polygon', coordinates: [poly.coords] } : null,
-    area_hectares: poly ? computePolyArea(poly.coords) : 0,
-  };
-}
-
-function computePolyArea(coords) {
-  const lats = coords.map(c => c[1]);
-  const lons = coords.map(c => c[0]);
-  const dLat = Math.max(...lats) - Math.min(...lats);
-  const dLon = Math.max(...lons) - Math.min(...lons);
-  const kmLat = dLat * 111;
-  const kmLon = dLon * 111 * Math.cos((Math.min(...lats) + Math.max(...lats)) / 2 * Math.PI / 180);
-  return Math.round(kmLat * kmLon * 100);
-}
-
-// ─── JS Fallback Analytics (seeded random, used when GEE unavailable) ───
-
-function seededRandom(seed) {
-  let s = seed;
-  return () => {
-    s = (s * 1103515245 + 12345) & 0x7fffffff;
-    return s / 0x7fffffff;
-  };
-}
-
-function hashString(str) {
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    hash = ((hash << 5) - hash + str.charCodeAt(i)) | 0;
+  // For admin-selected boundaries, fetch boundary from backend API
+  const resp = await fetch(`${API_BASE}/api/v1/boundaries/village/${boundaryInfo.boundary_id}`);
+  if (!resp.ok) {
+    throw new Error(`Could not resolve boundary for ${boundaryInfo.boundary_id}. Upload a GeoJSON file instead.`);
   }
-  return Math.abs(hash);
-}
 
-function computeCroppingIntensityFallback(villageName, years) {
-  const rng = seededRandom(hashString(villageName));
-  const baseSingle = 200 + rng() * 400;
-  const baseDouble = 50 + rng() * 150;
-  const baseTriple = 10 + rng() * 70;
-
-  const data = years.map((year, i) => {
-    const trend = i * 0.03;
-    const single = Math.max(+(baseSingle * (1 - trend + (rng() - 0.5) * 0.1)).toFixed(2), 0);
-    const double = Math.max(+(baseDouble * (1 + trend * 1.5 + (rng() - 0.5) * 0.1)).toFixed(2), 0);
-    const triple = Math.max(+(baseTriple * (1 + trend * 2 + (rng() - 0.5) * 0.1)).toFixed(2), 0);
-    return { year, single_crop_ha: single, double_crop_ha: double, triple_crop_ha: triple,
-      total_cropped_ha: +(single + double + triple).toFixed(2) };
-  });
-  return { village_name: villageName, data };
-}
-
-function computeSurfaceWaterFallback(villageName, years) {
-  const rng = seededRandom(hashString(villageName) + 42);
-  const basePerennial = 5 + rng() * 25;
-  const baseMonsoon = 15 + rng() * 65;
-  const baseWinter = 3 + rng() * 22;
-
-  const data = years.map((year, i) => {
-    const trend = i * 0.02;
-    const perennial = Math.max(+(basePerennial * (1 - trend + (rng() - 0.5) * 0.2)).toFixed(2), 0);
-    const monsoon = Math.max(+(baseMonsoon * (1 + (rng() - 0.5) * 0.3)).toFixed(2), 0);
-    const winter = Math.max(+(baseWinter * (1 + (rng() - 0.5) * 0.4)).toFixed(2), 0);
-    return { year, perennial_ha: perennial, seasonal_monsoon_ha: monsoon,
-      seasonal_winter_ha: winter, total_water_ha: +(perennial + monsoon + winter).toFixed(2) };
-  });
-  return { village_name: villageName, data };
-}
-
-function computeVegetationChangeFallback(villageName, years) {
-  const rng = seededRandom(hashString(villageName) + 99);
-  const baseTreeCover = 80 + rng() * 220;
-
-  const yearly_data = years.map((year, i) => {
-    const decline = i * (1.5 + rng() * 2.5);
-    const noise = (rng() - 0.5) * 10;
-    return { year, tree_cover_ha: Math.max(+(baseTreeCover - decline + noise).toFixed(2), 10) };
-  });
-
-  const startHa = yearly_data[0].tree_cover_ha;
-  const endHa = yearly_data[yearly_data.length - 1].tree_cover_ha;
-  const loss = Math.max(+(startHa - endHa).toFixed(2), 0);
-  const gain = Math.max(+(endHa - startHa).toFixed(2), 0);
-
+  const data = await resp.json();
   return {
-    village_name: villageName, start_year: years[0], end_year: years[years.length - 1],
-    tree_cover_start_ha: startHa, tree_cover_end_ha: endHa,
-    tree_cover_loss_ha: loss, tree_cover_gain_ha: gain,
-    net_change_ha: +(endHa - startHa).toFixed(2),
-    degraded_land_ha: +(loss * 0.6).toFixed(2), yearly_data,
+    name: data.name || boundaryInfo.village_name,
+    state: data.state || boundaryInfo.state,
+    district: data.district || boundaryInfo.district,
+    tehsil: data.tehsil || boundaryInfo.tehsil,
+    geojson: data.geojson || null,
+    area_hectares: data.area_hectares || 0,
   };
 }
 
@@ -207,71 +106,35 @@ export async function runAnalyticsPipeline(boundaryInfo, selectedLayers, selecte
     tehsil: boundary.tehsil,
   };
 
-  // Step 2: Try fetching real data from GEE proxy + Pyodide compute
-  let useRealData = false;
-  let geeData = null;
+  // Step 2: Fetch real data from GEE proxy + Pyodide compute
+  onProgress?.('Fetching satellite data from Google Earth Engine…');
+  const geeData = await fetchAllGEEData(geojson, sortedYears);
 
-  try {
-    onProgress?.('Fetching satellite data from Google Earth Engine…');
-    geeData = await fetchAllGEEData(geojson, sortedYears);
-
-    // GEE /all returns 200 even when datasets fail (lulc/water/ndvi = null).
-    // Only treat as real data if at least one dataset is non-null.
-    const hasAnyData = geeData && (geeData.lulc || geeData.water || geeData.ndvi);
-    if (hasAnyData) {
-      useRealData = true;
-      onProgress?.('GEE data received. Loading Pyodide (Python WASM)…');
-    } else {
-      console.warn('GEE returned no usable data, falling back to JS mock');
-      onProgress?.('GEE returned no data — using client-side analytics…');
-      useRealData = false;
-    }
-  } catch (err) {
-    console.warn('GEE proxy unavailable, falling back to JS mock:', err.message);
-    onProgress?.('GEE unavailable — using client-side analytics…');
-    useRealData = false;
+  const hasAnyData = geeData && (geeData.lulc || geeData.water || geeData.ndvi);
+  if (!hasAnyData) {
+    throw new Error('GEE returned no usable data. Please check your boundary and try again.');
   }
 
-  // Step 3: Run analytics (Pyodide for real data, JS for fallback)
-  if (useRealData && geeData) {
-    try {
-      if (selectedLayers.includes('cropping_intensity') && geeData.lulc) {
-        results.cropping_intensity = await runCroppingAnalysis(
-          geeData.lulc, villageName, sortedYears, onProgress
-        );
-      }
-      if (selectedLayers.includes('surface_water') && geeData.water) {
-        results.surface_water = await runWaterAnalysis(
-          geeData.water, villageName, sortedYears, onProgress
-        );
-      }
-      if (selectedLayers.includes('vegetation') && geeData.ndvi) {
-        results.vegetation = await runVegetationAnalysis(
-          geeData.ndvi, villageName, sortedYears, onProgress
-        );
-      }
-      results.data_source = 'GEE + Pyodide WASM';
-    } catch (pyErr) {
-      console.warn('Pyodide compute failed, falling back to JS:', pyErr.message);
-      useRealData = false;
-    }
+  onProgress?.('GEE data received. Loading Pyodide (Python WASM)…');
+
+  // Step 3: Run analytics via Pyodide
+  if (selectedLayers.includes('cropping_intensity') && geeData.lulc) {
+    results.cropping_intensity = await runCroppingAnalysis(
+      geeData.lulc, villageName, sortedYears, onProgress
+    );
+  }
+  if (selectedLayers.includes('surface_water') && geeData.water) {
+    results.surface_water = await runWaterAnalysis(
+      geeData.water, villageName, sortedYears, onProgress
+    );
+  }
+  if (selectedLayers.includes('vegetation') && geeData.ndvi) {
+    results.vegetation = await runVegetationAnalysis(
+      geeData.ndvi, villageName, sortedYears, onProgress
+    );
   }
 
-  // Fallback: use JS seeded-random analytics when no real data available
-  if (!useRealData) {
-    onProgress?.('Running client-side analytics…');
-    if (selectedLayers.includes('cropping_intensity')) {
-      results.cropping_intensity = computeCroppingIntensityFallback(villageName, sortedYears);
-    }
-    if (selectedLayers.includes('surface_water')) {
-      results.surface_water = computeSurfaceWaterFallback(villageName, sortedYears);
-    }
-    if (selectedLayers.includes('vegetation')) {
-      results.vegetation = computeVegetationChangeFallback(villageName, sortedYears);
-    }
-    results.data_source = 'Client-Side Analytics (JS)';
-  }
-
+  results.data_source = 'GEE + Pyodide WASM';
   return results;
 }
 
@@ -325,7 +188,7 @@ export function generateHTMLReport(results) {
   const sw = results.surface_water;
   const vg = results.vegetation;
   const now = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
-  const source = results.data_source || 'Client-Side WASM';
+  const source = results.data_source || 'GEE + Pyodide WASM';
 
   return `<!DOCTYPE html>
 <html lang="en">
