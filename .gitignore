@@ -34,3 +34,5 @@ Thumbs.db
 frontend/public/test_boundary.geojson
 extract_pdf_text.py
 srs_content.txt
+
+agents-484921-b8b8f1e954fc.json
