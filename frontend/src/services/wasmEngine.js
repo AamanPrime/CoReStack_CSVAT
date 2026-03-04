@@ -341,7 +341,7 @@ def aggregate_vegetation(intersections, deforest_records, afforest_records, year
         'tree_cover_loss_ha': round(loss, 2),
         'tree_cover_gain_ha': round(gain, 2),
         'net_change_ha': round(gain - loss, 2),
-        'degraded_land_ha': round(loss, 2),
+        'degraded_land_ha': round((forest_to_barren or 0) + (forest_to_scrub or 0), 2),
         'transitions': [
             {'from': 'Forest', 'to': 'Forest', 'area_ha': round(forest_stable or 0, 2)},
             {'from': 'Forest', 'to': 'Barren', 'area_ha': round(forest_to_barren or 0, 2)},
@@ -573,6 +573,7 @@ export async function runAnalyticsPipeline(boundaryInfo, selectedLayers, selecte
       const results = mwsResponse.data;
       results.data_source = results.data_source || 'CoRE Stack MWS (10m resolution)';
       results.mws_count = mwsResponse.mws_count;
+      results.area_hectares = boundary.area_hectares || 0;
 
       // Log discovered keys for debugging zero-output issues
       if (results.discovered_keys) {
@@ -645,6 +646,7 @@ export async function runGEEFallbackPipeline(boundary, selectedLayers, selectedY
   }
 
   results.data_source = 'GEE + Pyodide WASM (500m resolution)';
+  results.area_hectares = boundary.area_hectares || 0;
   results.data_warning =
     'This area is not yet available on CoRE Stack. ' +
     'Results are computed from lower-resolution satellite data (MODIS 500m).';
