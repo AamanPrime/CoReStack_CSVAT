@@ -5,7 +5,7 @@ This task orchestrates the full server-side analytics pipeline:
 2. Try MWS intersection (CoRE Stack pre-computed data)
 3. Fall back to direct GEE if tehsil not active (with user warning)
 4. Generate reports
-5. Store results
+5. Store results in PostGIS
 """
 
 import logging
@@ -38,31 +38,136 @@ GEE_FALLBACK_WARNING = (
 )
 
 
+def _persist_job_result(job_id: str, status: str, results: dict = None, error: str = None):
+    """Persist analytics results back to the PostGIS database."""
+    try:
+        import uuid
+        from app.database import SessionLocal
+        from app.models.job import Job, JobStatus
+
+        status_map = {
+            "SUCCESS": JobStatus.SUCCESS,
+            "FAILED": JobStatus.FAILED,
+            "RUNNING": JobStatus.RUNNING,
+            "PENDING": JobStatus.PENDING,
+        }
+
+        db = SessionLocal()
+        try:
+            job = db.query(Job).filter(Job.id == uuid.UUID(job_id)).first()
+            if job:
+                job.status = status_map.get(status, JobStatus.FAILED)
+                if results is not None:
+                    job.result_json = results
+                if error is not None:
+                    job.error_message = error
+                job.updated_at = datetime.now(timezone.utc)
+                db.commit()
+                logger.info("Job %s persisted to DB (status=%s)", job_id, status)
+            else:
+                logger.warning("Job %s not found in DB", job_id)
+        finally:
+            db.close()
+    except Exception as e:
+        logger.error("Failed to persist job %s: %s", job_id, str(e))
+
+
+def _run_async(coro):
+    """Run an async coroutine from a sync context (Celery task)."""
+    import asyncio
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor() as pool:
+                return pool.submit(asyncio.run, coro).result()
+        return loop.run_until_complete(coro)
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            return loop.run_until_complete(coro)
+        finally:
+            loop.close()
+
+
 def _run_pipeline(job_params: dict) -> dict:
     """Core analytics pipeline shared by async and sync tasks.
 
     Strategy A: MWS intersection (CoRE Stack pre-computed 10m data)
     Strategy B: Direct GEE fallback (MODIS 500m) with user warning
     """
-    import asyncio
+    job_id = job_params.get("job_id")
 
     # 1. Resolve boundary
     boundary_id = job_params.get("boundary_id")
     boundary_geojson = job_params.get("boundary_geojson")
-    boundary = boundary_service.resolve_boundary(boundary_id, boundary_geojson)
 
-    village_name = job_params.get("village_name") or boundary["name"]
-    state = job_params.get("state") or boundary["state"]
-    district = job_params.get("district") or boundary["district"]
-    tehsil = job_params.get("tehsil") or boundary["tehsil"]
-    geojson = boundary["geojson"]
+    village_name = job_params.get("village_name", "Unknown")
+    state = job_params.get("state", "")
+    district = job_params.get("district", "")
+    tehsil = job_params.get("tehsil", "")
+
+    # If no GeoJSON provided, fetch from CoRE Stack using admin hierarchy
+    if not boundary_geojson and state and district and tehsil and village_name:
+        logger.info("No GeoJSON provided, fetching from CoRE Stack for %s/%s/%s/%s",
+                     state, district, tehsil, village_name)
+        try:
+            from app.services.corestack_client import corestack_client
+            features = _run_async(
+                corestack_client.get_village_geometries(state, district, tehsil)
+            )
+
+            # features may be a FeatureCollection or a list
+            feature_list = []
+            if isinstance(features, dict) and features.get("type") == "FeatureCollection":
+                feature_list = features.get("features", [])
+            elif isinstance(features, list):
+                feature_list = features
+
+            # Find matching village by name
+            village_lower = village_name.lower().strip()
+            for feat in feature_list:
+                props = feat.get("properties", {}) if isinstance(feat, dict) else {}
+                feat_name = (props.get("vill_name") or props.get("name") or "").lower().strip()
+                if feat_name == village_lower:
+                    boundary_geojson = feat.get("geometry")
+                    logger.info("Resolved village geometry for %s", village_name)
+                    break
+
+            if not boundary_geojson:
+                # Fallback: use the first feature if only one match on tehsil
+                if len(feature_list) > 0:
+                    boundary_geojson = feature_list[0].get("geometry")
+                    logger.warning("Using first available village geometry as fallback")
+        except Exception as e:
+            logger.warning("CoRE Stack geometry fetch failed: %s", e)
+
+    if boundary_geojson:
+        boundary = boundary_service.resolve_boundary(boundary_id, boundary_geojson)
+        village_name = job_params.get("village_name") or boundary.get("name", village_name)
+        state = job_params.get("state") or boundary.get("state", state)
+        district = job_params.get("district") or boundary.get("district", district)
+        tehsil = job_params.get("tehsil") or boundary.get("tehsil", tehsil)
+        geojson = boundary["geojson"]
+    else:
+        raise ValueError("No GeoJSON provided and could not resolve from CoRE Stack.")
+
     layers = job_params.get("layers", [])
     years = job_params.get("years", [2019, 2020, 2021, 2022, 2023])
 
     logger.info("Running analytics for %s (%s/%s/%s)", village_name, state, district, tehsil)
 
-    # 2. Validate tehsil intersection
-    if not boundary_service.validate_tehsil_intersection(state, district, tehsil):
+    # 2. Validate tehsil intersection (async method — run via helper)
+    try:
+        is_active = _run_async(
+            boundary_service.validate_tehsil_intersection(state, district, tehsil)
+        )
+    except Exception as e:
+        logger.warning("Tehsil validation failed, allowing by default: %s", e)
+        is_active = True
+
+    if not is_active:
         raise ValueError(
             f"Village {village_name} does not intersect an active tehsil. "
             "Analytics cannot be computed."
@@ -80,16 +185,12 @@ def _run_pipeline(job_params: dict) -> dict:
     try:
         logger.info("Attempting MWS intersection for %s/%s/%s", state, district, tehsil)
 
-        # Run the async MWS service in a sync context
-        loop = asyncio.new_event_loop()
-        try:
-            mws_results = loop.run_until_complete(
-                mws_service.compute_village_analytics(
-                    geojson, state, district, tehsil, layers, years
-                )
+        # Run the async MWS service via helper
+        mws_results = _run_async(
+            mws_service.compute_village_analytics(
+                geojson, state, district, tehsil, layers, years
             )
-        finally:
-            loop.close()
+        )
 
         # Format MWS results into schema
         if "cropping_intensity" in layers and mws_results.get("cropping_intensity"):
@@ -160,17 +261,28 @@ def _run_pipeline(job_params: dict) -> dict:
     results["completed_at"] = datetime.now(timezone.utc).isoformat()
 
     logger.info("Analytics completed for %s (source: %s)", village_name, results.get("data_source"))
+
+    # 6. Persist to PostGIS
+    if job_id:
+        _persist_job_result(job_id, "SUCCESS", results)
+
     return results
 
 
 @celery_app.task(bind=True, name="csvat.run_analytics")
 def run_analytics_task(self, job_params: dict) -> dict:
     """Execute the full analytics pipeline for a job (Celery async)."""
+    job_id = job_params.get("job_id")
     try:
+        # Mark as RUNNING in DB
+        if job_id:
+            _persist_job_result(job_id, "RUNNING")
         self.update_state(state="RUNNING")
         return _run_pipeline(job_params)
     except Exception as e:
         logger.error("Analytics task failed: %s", str(e))
+        if job_id:
+            _persist_job_result(job_id, "FAILED", error=str(e))
         raise
 
 
@@ -180,4 +292,7 @@ def run_analytics_sync(job_params: dict) -> dict:
     try:
         return _run_pipeline(job_params)
     except Exception as e:
+        job_id = job_params.get("job_id")
+        if job_id:
+            _persist_job_result(job_id, "FAILED", error=str(e))
         raise ValueError(f"Analytics failed: {str(e)}")

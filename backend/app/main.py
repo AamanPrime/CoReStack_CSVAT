@@ -3,12 +3,29 @@
 CoRE Stack Village Analytics Tool — Backend Server.
 """
 
+import logging
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.api import auth, boundaries, layers, jobs, gee, analytics, corestack
 from app.config import get_settings
 
+logger = logging.getLogger(__name__)
 settings = get_settings()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Create database tables on startup."""
+    try:
+        from app.database import engine, Base
+        from app.models import Job, CachedBoundary  # noqa: F401 — register models
+        Base.metadata.create_all(bind=engine)
+        logger.info("Database tables created/verified.")
+    except Exception as e:
+        logger.warning("DB table creation skipped (DB may not be available): %s", e)
+    yield
+
 
 app = FastAPI(
     title="CSVAT — CoRE Stack Village Analytics Tool",
@@ -19,6 +36,7 @@ app = FastAPI(
     version="1.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
+    lifespan=lifespan,
 )
 
 # CORS — allow React frontend
