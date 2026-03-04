@@ -1,0 +1,54 @@
+.stat-icon-wrapper {
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-sm);
+    margin-bottom: 12px;
+    font-size: 1.1rem;
+}
+
+.stat-icon-green {
+    background: var(--accent-green-dim);
+}
+
+.stat-icon-blue {
+    background: var(--accent-blue-dim);
+}
+
+.stat-icon-amber {
+    background: var(--accent-amber-dim);
+}
+
+.stat-icon-red {
+    background: var(--accent-red-dim);
+}
+
+.stat-value-green {
+    background: linear-gradient(135deg, #10b981, #34d399);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.stat-value-blue {
+    background: linear-gradient(135deg, #3b82f6, #60a5fa);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.stat-value-amber {
+    background: linear-gradient(135deg, #f59e0b, #fbbf24);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.stat-value-red {
+    background: linear-gradient(135deg, #ef4444, #f87171);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}

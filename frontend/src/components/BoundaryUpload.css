@@ -1,0 +1,104 @@
+.boundary-upload {
+    background: var(--bg-card);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-lg);
+    padding: 24px;
+    margin-bottom: 24px;
+}
+
+.drop-zone {
+    border: 2px dashed rgba(255, 255, 255, 0.1);
+    border-radius: var(--radius-md);
+    padding: 32px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    background: var(--bg-glass);
+}
+
+.drop-zone:hover,
+.drop-zone-active {
+    border-color: var(--accent-green);
+    background: var(--accent-green-dim);
+}
+
+.drop-icon {
+    font-size: 2rem;
+    margin-bottom: 12px;
+}
+
+.drop-text {
+    color: var(--text-primary);
+    font-weight: 500;
+    margin-bottom: 4px;
+}
+
+.drop-hint {
+    color: var(--text-dim);
+    font-size: 0.8rem;
+}
+
+.upload-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 16px;
+    border-radius: var(--radius-sm);
+    margin-top: 12px;
+    font-size: 0.85rem;
+}
+
+.upload-status-loading {
+    background: var(--accent-blue-dim);
+    color: var(--accent-blue);
+}
+
+.upload-status-success {
+    background: var(--accent-green-dim);
+    color: var(--accent-green);
+}
+
+.upload-status-error {
+    background: var(--accent-red-dim);
+    color: var(--accent-red);
+}
+
+.spinner-small {
+    width: 16px;
+    height: 16px;
+    border: 2px solid rgba(255, 255, 255, 0.1);
+    border-top-color: var(--accent-blue);
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+}
+
+.sample-data-notice {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    margin-top: 16px;
+    padding: 12px 16px;
+    background: rgba(245, 158, 11, 0.08);
+    border: 1px solid rgba(245, 158, 11, 0.15);
+    border-radius: var(--radius-sm);
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    line-height: 1.5;
+}
+
+.notice-icon {
+    flex-shrink: 0;
+}
+
+.tiff-badge {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 10px;
+    padding: 8px 12px;
+    background: rgba(139, 92, 246, 0.08);
+    border: 1px solid rgba(139, 92, 246, 0.15);
+    border-radius: var(--radius-sm);
+    font-size: 0.75rem;
+    color: var(--text-dim);
+}
