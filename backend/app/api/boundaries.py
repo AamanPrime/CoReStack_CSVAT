@@ -1,10 +1,11 @@
 """CSVAT — Boundaries API router."""
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Depends
 from app.schemas import BoundarySearchResponse, BoundarySearchResult, BoundaryValidateRequest, BoundaryValidateResponse
 from app.services.corestack_client import corestack_client
 from app.services.boundary_service import boundary_service
 from app.services.village_search import search_villages, get_village_boundary
+from app.utils.auth_middleware import verify_token
 
 router = APIRouter(prefix="/api/v1/boundaries", tags=["Boundaries"])
 
@@ -43,7 +44,10 @@ async def get_village(village_id: str):
 
 
 @router.get("/search", response_model=BoundarySearchResponse)
-async def search_boundaries(q: str = Query(..., min_length=2, description="Search query")):
+async def search_boundaries(
+    q: str = Query(..., min_length=2, description="Search query"),
+    _auth: dict = Depends(verify_token),
+):
     """Search for administrative boundaries by name.
 
     Searches villages, tehsils, and districts matching the query string.
@@ -82,7 +86,10 @@ async def search_boundaries(q: str = Query(..., min_length=2, description="Searc
 
 
 @router.post("/validate", response_model=BoundaryValidateResponse)
-async def validate_boundary(request: BoundaryValidateRequest):
+async def validate_boundary(
+    request: BoundaryValidateRequest,
+    _auth: dict = Depends(verify_token),
+):
     """Validate a GeoJSON boundary polygon.
 
     Checks that the uploaded polygon is valid and intersects at least one active tehsil.

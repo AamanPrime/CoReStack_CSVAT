@@ -9,20 +9,35 @@ Modes:
 """
 
 import uuid
+import json
 import logging
 from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import HTMLResponse, PlainTextResponse, StreamingResponse
+from pydantic import BaseModel, Field
+from typing import Optional
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.job import Job, JobStatus, ExecutionMode
+from app.utils.auth_middleware import verify_token
 from app.schemas import JobCreate, JobResponse
 from app.services.report_service import report_service
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/jobs", tags=["Jobs"])
+
+# Define new Pydantic models based on the instruction's usage
+class JobSubmitRequest(JobCreate):
+    """Schema for submitting a new job."""
+    pass
+
+class ClientResultsRequest(BaseModel):
+    """Schema for client-side results."""
+    results: dict = Field(..., description="The analytics results from the client-side WASM execution.")
+    layers: Optional[list[str]] = Field(None, description="List of layers requested for the job.")
+    years: Optional[list[int]] = Field(None, description="List of years requested for the job.")
 
 
 # ─── Helper: ORM → Pydantic ────────────────────────────────────────
@@ -47,8 +62,8 @@ def _job_to_response(job: Job) -> JobResponse:
 
 
 # ─── POST /api/v1/jobs ─────────────────────────────────────────────
-@router.post("", response_model=JobResponse)
-async def create_job(request: JobCreate, db: Session = Depends(get_db)):
+@router.post("", status_code=201, response_model=JobResponse)
+async def create_job(request: JobSubmitRequest, _auth: dict = Depends(verify_token), db: Session = Depends(get_db)):
     """Submit a new analytics job.
 
     - mode=SERVER → dispatches to Celery worker, returns PENDING immediately.
@@ -126,46 +141,30 @@ async def create_job(request: JobCreate, db: Session = Depends(get_db)):
     return _job_to_response(job)
 
 
-# ─── POST /api/v1/jobs/save ────────────────────────────────────────
-@router.post("/save", response_model=JobResponse)
-async def save_client_results(request: dict, db: Session = Depends(get_db)):
+# ─── POST /api/v1/jobs/{job_id}/client-results ─────────────────────
+@router.post("/{job_id}/client-results", response_model=JobResponse)
+async def save_client_results(job_id: str, request: ClientResultsRequest, _auth: dict = Depends(verify_token), db: Session = Depends(get_db)):
     """Save client-side (WASM) analytics results to the database.
 
     Called after client finishes WASM computation.
     """
-    job_id_str = request.get("job_id")
-    results = request.get("results", {})
+    try:
+        job_uuid = uuid.UUID(job_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid job ID format")
 
-    if job_id_str:
-        # Update existing job
-        job = db.query(Job).filter(Job.id == uuid.UUID(job_id_str)).first()
-        if not job:
-            raise HTTPException(status_code=404, detail="Job not found")
-        job.result_json = results
-        job.status = JobStatus.SUCCESS
-        job.updated_at = datetime.now(timezone.utc)
-    else:
-        # Create new job from client results
-        job = Job(
-            id=uuid.uuid4(),
-            village_name=results.get("village_name", "Unknown"),
-            state=results.get("state", ""),
-            district=results.get("district", ""),
-            tehsil=results.get("tehsil", ""),
-            layers=request.get("layers", []),
-            years=request.get("years", []),
-            mode=ExecutionMode.CLIENT,
-            status=JobStatus.SUCCESS,
-            result_json=results,
-            created_at=datetime.now(timezone.utc),
-            updated_at=datetime.now(timezone.utc),
-        )
-        db.add(job)
+    job = db.query(Job).filter(Job.id == job_uuid).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    job.result_json = request.results
+    job.status = JobStatus.SUCCESS
+    job.updated_at = datetime.now(timezone.utc)
 
     # Generate server-side reports for client results too
     try:
-        html_report = report_service.generate_html_report(results)
-        csv_data = report_service.generate_csv(results)
+        html_report = report_service.generate_html_report(request.results)
+        csv_data = report_service.generate_csv(request.results)
         if job.result_json is None:
             job.result_json = {}
         job.result_json["html_report"] = html_report
@@ -180,7 +179,7 @@ async def save_client_results(request: dict, db: Session = Depends(get_db)):
 
 # ─── GET /api/v1/jobs/{job_id} ─────────────────────────────────────
 @router.get("/{job_id}", response_model=JobResponse)
-async def get_job(job_id: str, db: Session = Depends(get_db)):
+async def get_job(job_id: str, _auth: dict = Depends(verify_token), db: Session = Depends(get_db)):
     """Get status and results of a job.
 
     Maps to polling connector for async job monitoring.
@@ -199,7 +198,7 @@ async def get_job(job_id: str, db: Session = Depends(get_db)):
 
 # ─── GET /api/v1/jobs/{job_id}/assets/{asset_type} ─────────────────
 @router.get("/{job_id}/assets/{asset_type}")
-async def get_job_asset(job_id: str, asset_type: str, db: Session = Depends(get_db)):
+async def get_job_asset(job_id: str, asset_type: str, _auth: dict = Depends(verify_token), db: Session = Depends(get_db)):
     """Download a job asset (HTML report, CSV, or PDF).
 
     Asset types: html, csv, pdf.
