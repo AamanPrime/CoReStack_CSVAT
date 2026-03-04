@@ -460,7 +460,7 @@ class MWSIntersectionService:
                     f"cropping_intensity_unit_less_{fy}", "weighted_average",
                 )
                 crop_results.append({
-                    "year": year,
+                    "year": fy,
                     "single_crop_ha": single or 0.0,
                     "double_crop_ha": double or 0.0,
                     "triple_crop_ha": triple or 0.0,
@@ -494,10 +494,10 @@ class MWSIntersectionService:
                     f"total_area_in_ha_{fy}", "weighted_sum",
                 )
                 water_results.append({
-                    "year": year,
-                    "perennial_ha": zaid or 0.0,
-                    "seasonal_monsoon_ha": kharif or 0.0,
-                    "seasonal_winter_ha": rabi or 0.0,
+                    "year": fy,
+                    "kharif_ha": kharif or 0.0,
+                    "rabi_ha": rabi or 0.0,
+                    "zaid_ha": zaid or 0.0,
                     "total_water_ha": total or round(
                         (kharif or 0) + (rabi or 0) + (zaid or 0), 4
                     ),
@@ -565,6 +565,45 @@ class MWSIntersectionService:
             results["waterbodies"] = await self.aggregate_waterbodies(
                 state, district, tehsil,
             )
+
+        # 6. Terrain composition
+        terrain_by_uid = _build_uid_lookup("terrain")
+        if terrain_by_uid:
+            logger.info("Terrain: %d MWS records found", len(terrain_by_uid))
+            terrain_types = ["hill_slope", "plain", "ridge", "slopy", "valley"]
+            terrain_result = {}
+            for t in terrain_types:
+                val = self.aggregate_mws_metric(
+                    intersections, terrain_by_uid,
+                    f"{t}_area_in_ha", "weighted_sum",
+                )
+                terrain_result[t] = round(val or 0, 2)
+            terrain_result["total_area_ha"] = round(sum(terrain_result.values()), 2)
+            results["terrain"] = terrain_result
+
+        # 7. Cropping intensity change transitions
+        crop_change_by_uid = _build_uid_lookup("change_detection_cropintensity")
+        if crop_change_by_uid:
+            logger.info("Crop intensity change: %d MWS records found", len(crop_change_by_uid))
+            transition_keys = [
+                ("total_change_cropintensity_area_in_ha", "Total Change CropIntensity"),
+                ("single_to_double_area_in_ha", "Single To Double"),
+                ("double_to_double_area_in_ha", "Double To Double"),
+                ("single_to_single_area_in_ha", "Single To Single"),
+                ("double_to_triple_area_in_ha", "Double To Triple"),
+                ("single_to_triple_area_in_ha", "Single To Triple"),
+                ("double_to_single_area_in_ha", "Double To Single"),
+                ("triple_to_double_area_in_ha", "Triple To Double"),
+                ("triple_to_triple_area_in_ha", "Triple To Triple"),
+                ("triple_to_single_area_in_ha", "Triple To Single"),
+            ]
+            transitions = []
+            for key, label in transition_keys:
+                val = self.aggregate_mws_metric(
+                    intersections, crop_change_by_uid, key, "weighted_sum",
+                )
+                transitions.append({"label": label, "area_ha": round(val or 0, 2)})
+            results["crop_intensity_change"] = transitions
 
         results["mws_count"] = len(intersections)
         results["data_source"] = "corestack_mws"

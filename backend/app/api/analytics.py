@@ -5,13 +5,15 @@ The frontend calls this first; if unavailable, prompts the user before GEE fallb
 """
 
 import logging
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 from typing import Optional
 from app.services.mws_intersection_service import mws_service
 from app.services.analytics.cropping import compute_from_mws_data as cropping_from_mws
 from app.services.analytics.water import compute_from_mws_data as water_from_mws
 from app.services.analytics.vegetation import compute_from_mws_data as vegetation_from_mws
+from app.services.boundary_service import boundary_service
+from app.utils.auth_middleware import verify_token
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +37,7 @@ class MWSAnalyticsRequest(BaseModel):
 
 
 class MWSAnalyticsResponse(BaseModel):
-    status: str  # "success" | "mws_unavailable"
+    status: str  # "success" | "mws_unavailable" | "tehsil_not_active"
     message: str = ""
     data: Optional[dict] = None
     data_source: Optional[str] = None
@@ -45,7 +47,10 @@ class MWSAnalyticsResponse(BaseModel):
 # ─── Endpoint ───
 
 @router.post("/mws", response_model=MWSAnalyticsResponse)
-async def run_mws_analytics(request: MWSAnalyticsRequest):
+async def run_mws_analytics(
+    request: MWSAnalyticsRequest,
+    _auth: dict = Depends(verify_token),
+):
     """Try MWS intersection analytics for a village.
 
     Returns status="success" with data if available,
@@ -60,6 +65,26 @@ async def run_mws_analytics(request: MWSAnalyticsRequest):
             "MWS analytics requested for %s (%s/%s/%s)",
             request.village_name, request.state, request.district, request.tehsil,
         )
+
+        # ─── FR-BA-03: Validate tehsil is active before running analytics ───
+        if request.state and request.district and request.tehsil:
+            is_active = await boundary_service.validate_tehsil_intersection(
+                request.state, request.district, request.tehsil,
+            )
+            if not is_active:
+                logger.info(
+                    "Tehsil %s/%s/%s is not active on CoRE Stack",
+                    request.state, request.district, request.tehsil,
+                )
+                return MWSAnalyticsResponse(
+                    status="tehsil_not_active",
+                    message=(
+                        f"Tehsil '{request.tehsil}' in {request.district}, {request.state} "
+                        "is not currently active on CoRE Stack. "
+                        "Would you like to use Google Earth Engine instead? "
+                        "(Lower resolution — MODIS 500m vs CoRE Stack 10m)"
+                    ),
+                )
 
         # Run the MWS intersection pipeline
         mws_results = await mws_service.compute_village_analytics(
@@ -123,3 +148,4 @@ async def run_mws_analytics(request: MWSAnalyticsRequest):
                 "Would you like to use Google Earth Engine instead?"
             ),
         )
+

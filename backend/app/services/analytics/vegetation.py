@@ -74,7 +74,7 @@ def _compute_from_rasters(
         "tree_cover_loss_ha": round(max(start_ha - end_ha, 0), 2),
         "tree_cover_gain_ha": round(max(end_ha - start_ha, 0), 2),
         "net_change_ha": round(end_ha - start_ha, 2),
-        "degraded_land_ha": round(max(start_ha - end_ha, 0) * 0.6, 2),  # estimate
+        "degraded_land_ha": round(max(start_ha - end_ha, 0) * 0.85, 2),  # heuristic: ~85% goes non-productive
         "yearly_data": yearly,
     }
 

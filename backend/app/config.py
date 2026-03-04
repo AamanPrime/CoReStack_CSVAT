@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     JWT_SECRET_KEY: str = "change-me-to-a-random-secret"
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRY_MINUTES: int = 60
+    REQUIRE_AUTH: bool = False  # Set True in production to enforce JWT on protected routes
 
     # GEE REST API
     GEE_API_KEY: str = ""
