@@ -5,7 +5,7 @@ CoRE Stack Village Analytics Tool — Backend Server.
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api import auth, boundaries, layers, jobs, gee
+from app.api import auth, boundaries, layers, jobs, gee, analytics
 from app.config import get_settings
 
 settings = get_settings()
@@ -41,6 +41,7 @@ app.include_router(boundaries.router)
 app.include_router(layers.router)
 app.include_router(jobs.router)
 app.include_router(gee.router)
+app.include_router(analytics.router)
 
 
 @app.get("/", tags=["Health"])

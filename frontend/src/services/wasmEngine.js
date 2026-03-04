@@ -9,15 +9,45 @@
  *   4. Render results directly in React
  */
 
-import {
-  loadPyodide,
-  runCroppingAnalysis,
-  runWaterAnalysis,
-  runVegetationAnalysis,
-} from './pyodideEngine';
+// Note: pyodideEngine is dynamically imported in runGEEFallbackPipeline()
+// to avoid loading Pyodide until the user confirms GEE fallback.
 
 // Backend API base URL
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8006';
+
+// ─── Custom Error for MWS Unavailable ───
+
+export class MWSUnavailableError extends Error {
+  constructor(message, boundary) {
+    super(message);
+    this.name = 'MWSUnavailableError';
+    this.boundary = boundary;
+  }
+}
+
+// ─── MWS Analytics (via Backend) ───
+
+async function tryMWSAnalytics(boundary, selectedLayers, selectedYears) {
+  const resp = await fetch(`${API_BASE}/api/v1/analytics/mws`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      boundary_geojson: boundary.geojson,
+      state: boundary.state || '',
+      district: boundary.district || '',
+      tehsil: boundary.tehsil || '',
+      village_name: boundary.name || 'Unknown',
+      layers: selectedLayers,
+      years: selectedYears,
+    }),
+  });
+
+  if (!resp.ok) {
+    throw new Error(`Backend error: ${resp.status}`);
+  }
+
+  return resp.json();
+}
 
 // ─── GEE Data Fetching (via Backend Proxy) ───
 
@@ -84,7 +114,7 @@ export async function resolveBoundary(boundaryInfo) {
   };
 }
 
-// ─── Full Analytics Pipeline (WASM-First with GEE) ───
+// ─── Full Analytics Pipeline (MWS-First) ───
 
 export async function runAnalyticsPipeline(boundaryInfo, selectedLayers, selectedYears, onProgress) {
   // Step 1: Resolve boundary
@@ -95,8 +125,45 @@ export async function runAnalyticsPipeline(boundaryInfo, selectedLayers, selecte
     throw new Error('Could not resolve village boundary. Please upload a GeoJSON file.');
   }
 
-  const villageName = boundary.name;
   const geojson = boundary.geojson || boundaryInfo.boundary_geojson;
+  boundary.geojson = geojson;
+  const sortedYears = [...selectedYears].sort((a, b) => a - b);
+
+  // Step 2: Try MWS intersection (CoRE Stack 10m data)
+  onProgress?.('Checking CoRE Stack data availability…');
+  try {
+    const mwsResponse = await tryMWSAnalytics(boundary, selectedLayers, sortedYears);
+
+    if (mwsResponse.status === 'success' && mwsResponse.data) {
+      onProgress?.('CoRE Stack data found! Processing results…');
+      const results = mwsResponse.data;
+      results.data_source = 'CoRE Stack MWS (10m resolution)';
+      results.mws_count = mwsResponse.mws_count;
+      return results;
+    }
+
+    // MWS not available — throw special error so Dashboard can prompt user
+    throw new MWSUnavailableError(
+      mwsResponse.message || 'Village not available on CoRE Stack.',
+      boundary,
+    );
+  } catch (err) {
+    if (err instanceof MWSUnavailableError) {
+      throw err; // Re-throw so Dashboard catches it
+    }
+    // Network/server error trying MWS — also prompt for GEE
+    throw new MWSUnavailableError(
+      `CoRE Stack unavailable: ${err.message}. Would you like to use GEE instead?`,
+      boundary,
+    );
+  }
+}
+
+// ─── GEE Fallback Pipeline (called after user confirms) ───
+
+export async function runGEEFallbackPipeline(boundary, selectedLayers, selectedYears, onProgress) {
+  const geojson = boundary.geojson;
+  const villageName = boundary.name || 'Unknown';
   const sortedYears = [...selectedYears].sort((a, b) => a - b);
 
   const results = {
@@ -106,7 +173,7 @@ export async function runAnalyticsPipeline(boundaryInfo, selectedLayers, selecte
     tehsil: boundary.tehsil,
   };
 
-  // Step 2: Fetch real data from GEE proxy + Pyodide compute
+  // Fetch real data from GEE proxy + Pyodide compute
   onProgress?.('Fetching satellite data from Google Earth Engine…');
   const geeData = await fetchAllGEEData(geojson, sortedYears);
 
@@ -117,7 +184,10 @@ export async function runAnalyticsPipeline(boundaryInfo, selectedLayers, selecte
 
   onProgress?.('GEE data received. Loading Pyodide (Python WASM)…');
 
-  // Step 3: Run analytics via Pyodide
+  // Run analytics via Pyodide
+  const { runCroppingAnalysis, runWaterAnalysis, runVegetationAnalysis } =
+    await import('./pyodideEngine');
+
   if (selectedLayers.includes('cropping_intensity') && geeData.lulc) {
     results.cropping_intensity = await runCroppingAnalysis(
       geeData.lulc, villageName, sortedYears, onProgress
@@ -134,7 +204,10 @@ export async function runAnalyticsPipeline(boundaryInfo, selectedLayers, selecte
     );
   }
 
-  results.data_source = 'GEE + Pyodide WASM';
+  results.data_source = 'GEE + Pyodide WASM (500m resolution)';
+  results.data_warning =
+    'This area is not yet available on CoRE Stack. ' +
+    'Results are computed from lower-resolution satellite data (MODIS 500m).';
   return results;
 }
 
