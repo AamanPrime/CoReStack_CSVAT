@@ -11,7 +11,13 @@ const AVAILABLE_LAYERS = [
   { id: 'waterbodies', name: 'Waterbodies', icon: '🏞️', color: '#6366f1' },
 ];
 
-const YEAR_OPTIONS = [2017, 2018, 2019, 2020, 2021, 2022, 2023];
+// Calendar years — fiscal year label is derived as (year-1)-(year)
+const YEAR_OPTIONS = [2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025];
+
+/** Format calendar year 2018 as fiscal year label "2017-18" */
+function fiscalLabel(year) {
+  return `${year - 1}-${String(year).slice(-2)}`;
+}
 
 export default function LayerSelector({ selectedLayers, onLayersChange, selectedYears, onYearsChange }) {
   const toggleLayer = (layerId) => {
@@ -55,9 +61,9 @@ export default function LayerSelector({ selectedLayers, onLayersChange, selected
         ))}
       </div>
 
-      {/* Year selection */}
+      {/* Year selection — shows fiscal year labels */}
       <label style={{ fontSize: '0.85rem', fontWeight: 500, color: 'var(--text-secondary)', marginBottom: '0.5rem', display: 'block' }}>
-        Select Years
+        Select Fiscal Years
       </label>
       <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
         {YEAR_OPTIONS.map(year => (
@@ -67,7 +73,7 @@ export default function LayerSelector({ selectedLayers, onLayersChange, selected
             onClick={() => toggleYear(year)}
             id={`year-toggle-${year}`}
           >
-            {year}
+            {fiscalLabel(year)}
           </button>
         ))}
       </div>

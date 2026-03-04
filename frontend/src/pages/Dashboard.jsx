@@ -28,7 +28,7 @@ import { createJob, pollJob } from '../services/api';
 export default function Dashboard() {
   const [boundary, setBoundary] = useState(null);
   const [selectedLayers, setSelectedLayers] = useState(['cropping_intensity', 'surface_water', 'vegetation']);
-  const [selectedYears, setSelectedYears] = useState([2019, 2020, 2021, 2022, 2023]);
+  const [selectedYears, setSelectedYears] = useState([2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025]);
   const [executionMode, setExecutionMode] = useState('WASM'); // 'WASM' | 'SERVER'
   const [results, setResults] = useState(null);
   const [isRunning, setIsRunning] = useState(false);
