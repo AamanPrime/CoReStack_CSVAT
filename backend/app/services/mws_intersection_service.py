@@ -351,6 +351,17 @@ class MWSIntersectionService:
     ) -> dict:
         """Full pipeline: fetch MWS data → intersect → aggregate → return village results.
 
+        CoRE Stack tehsil-data response structure:
+        {
+          "data": {
+            "croppingIntensity_annual": [{uid, area_in_ha, single_cropped_area_in_ha_2017-2018, ...}],
+            "surfaceWaterBodies_annual": [{uid, total_area_in_ha_2017-2018, ...}],
+            "change_detection_deforestation": [{uid, ...}],
+            ...
+          },
+          "status": "ok"
+        }
+
         Raises:
             ValueError: If tehsil is not active or no MWS data available.
         """
@@ -375,7 +386,7 @@ class MWSIntersectionService:
             except Exception as e:
                 logger.warning("Admin details resolution failed: %s", e)
 
-        # 1. Fetch MWS geometries from CoRE Stack API (returns list of Feature dicts)
+        # 1. Fetch MWS geometries from CoRE Stack API
         logger.info("Fetching MWS geometries for %s/%s/%s", state, district, tehsil)
         mws_features = await corestack_client.get_mws_features_for_tehsil(
             state, district, tehsil
@@ -398,41 +409,158 @@ class MWSIntersectionService:
             len(intersections),
         )
 
-        # 3. Fetch MWS-level analytics data
-        tehsil_data = await corestack_client.get_mws_data_for_tehsil(
-            state, district, tehsil
-        )
+        # 3. Fetch raw tehsil data (layer-keyed dict)
+        raw_tehsil = await corestack_client.get_tehsil_data(state, district, tehsil)
 
-        # Build lookup: MWS UID → properties dict
-        mws_data_by_uid = {}
-        for mws_record in tehsil_data:
-            uid = str(
-                mws_record.get("uid")
-                or mws_record.get("mws_uid")
-                or mws_record.get("UID", "")
-            )
-            if uid:
-                mws_data_by_uid[uid] = mws_record
+        # The API returns {"data": {layer_key: [mws_records]}, "status": "ok"}
+        layer_data = raw_tehsil
+        if isinstance(raw_tehsil, dict):
+            layer_data = raw_tehsil.get("data", raw_tehsil)
+
+        # Helper: build UID→record lookup from a layer's MWS list
+        def _build_uid_lookup(layer_key: str) -> dict:
+            records = layer_data.get(layer_key, []) if isinstance(layer_data, dict) else []
+            if not isinstance(records, list):
+                return {}
+            lookup = {}
+            for rec in records:
+                if isinstance(rec, dict):
+                    uid = str(rec.get("uid") or rec.get("mws_uid") or rec.get("UID", ""))
+                    if uid:
+                        lookup[uid] = rec
+            return lookup
+
+        # Convert calendar years to fiscal year strings: 2019 → "2018-2019"
+        def _fiscal(year: int) -> str:
+            return f"{year - 1}-{year}"
 
         # 4. Aggregate to village level
         results = {}
 
         if "cropping_intensity" in layers:
-            results["cropping_intensity"] = self.aggregate_cropping_intensity(
-                intersections, mws_data_by_uid, years,
-            )
+            crop_by_uid = _build_uid_lookup("croppingIntensity_annual")
+            logger.info("Cropping intensity: %d MWS records found", len(crop_by_uid))
+            crop_results = []
+            for year in sorted(years):
+                fy = _fiscal(year)
+                single = self.aggregate_mws_metric(
+                    intersections, crop_by_uid,
+                    f"single_cropped_area_in_ha_{fy}", "weighted_sum",
+                )
+                double = self.aggregate_mws_metric(
+                    intersections, crop_by_uid,
+                    f"doubly_cropped_area_in_ha_{fy}", "weighted_sum",
+                )
+                triple = self.aggregate_mws_metric(
+                    intersections, crop_by_uid,
+                    f"triply_cropped_area_in_ha_{fy}", "weighted_sum",
+                )
+                intensity = self.aggregate_mws_metric(
+                    intersections, crop_by_uid,
+                    f"cropping_intensity_unit_less_{fy}", "weighted_average",
+                )
+                crop_results.append({
+                    "year": year,
+                    "single_crop_ha": single or 0.0,
+                    "double_crop_ha": double or 0.0,
+                    "triple_crop_ha": triple or 0.0,
+                    "total_cropped_ha": round(
+                        (single or 0) + (double or 0) + (triple or 0), 4
+                    ),
+                    "cropping_intensity": intensity,
+                })
+            results["cropping_intensity"] = crop_results
 
         if "surface_water" in layers:
-            results["surface_water"] = self.aggregate_surface_water(
-                intersections, mws_data_by_uid, years,
-            )
+            water_by_uid = _build_uid_lookup("surfaceWaterBodies_annual")
+            logger.info("Surface water: %d MWS records found", len(water_by_uid))
+            water_results = []
+            for year in sorted(years):
+                fy = _fiscal(year)
+                kharif = self.aggregate_mws_metric(
+                    intersections, water_by_uid,
+                    f"kharif_area_in_ha_{fy}", "weighted_sum",
+                )
+                rabi = self.aggregate_mws_metric(
+                    intersections, water_by_uid,
+                    f"rabi_area_in_ha_{fy}", "weighted_sum",
+                )
+                zaid = self.aggregate_mws_metric(
+                    intersections, water_by_uid,
+                    f"zaid_area_in_ha_{fy}", "weighted_sum",
+                )
+                total = self.aggregate_mws_metric(
+                    intersections, water_by_uid,
+                    f"total_area_in_ha_{fy}", "weighted_sum",
+                )
+                water_results.append({
+                    "year": year,
+                    "perennial_ha": zaid or 0.0,
+                    "seasonal_monsoon_ha": kharif or 0.0,
+                    "seasonal_winter_ha": rabi or 0.0,
+                    "total_water_ha": total or round(
+                        (kharif or 0) + (rabi or 0) + (zaid or 0), 4
+                    ),
+                })
+            results["surface_water"] = water_results
 
         if "vegetation" in layers:
-            results["vegetation"] = self.aggregate_vegetation(
-                intersections, mws_data_by_uid, years,
+            deforest_by_uid = _build_uid_lookup("change_detection_deforestation")
+            logger.info("Vegetation/deforestation: %d MWS records found", len(deforest_by_uid))
+
+            forest_to_barren = self.aggregate_mws_metric(
+                intersections, deforest_by_uid,
+                "forest_to_barren_area_in_ha", "weighted_sum",
+            )
+            forest_to_built = self.aggregate_mws_metric(
+                intersections, deforest_by_uid,
+                "forest_to_built_up_area_in_ha", "weighted_sum",
+            )
+            forest_to_farm = self.aggregate_mws_metric(
+                intersections, deforest_by_uid,
+                "forest_to_farm_area_in_ha", "weighted_sum",
+            )
+            forest_to_scrub = self.aggregate_mws_metric(
+                intersections, deforest_by_uid,
+                "forest_to_scrub_land_area_in_ha", "weighted_sum",
+            )
+            forest_to_forest = self.aggregate_mws_metric(
+                intersections, deforest_by_uid,
+                "forest_to_forest_area_in_ha", "weighted_sum",
+            )
+            total_deforestation = self.aggregate_mws_metric(
+                intersections, deforest_by_uid,
+                "total_deforestation_area_in_ha", "weighted_sum",
             )
 
-        # 5. Waterbodies (fetched separately, not MWS-intersected)
+            # Also try afforestation data
+            afforest_by_uid = _build_uid_lookup("change_detection_afforestation")
+            total_afforestation = self.aggregate_mws_metric(
+                intersections, afforest_by_uid,
+                "total_afforestation_area_in_ha", "weighted_sum",
+            )
+
+            loss = total_deforestation or 0.0
+            gain = total_afforestation or 0.0
+
+            results["vegetation"] = {
+                "start_year": min(years) if years else 0,
+                "end_year": max(years) if years else 0,
+                "tree_cover_loss_ha": round(loss, 2),
+                "tree_cover_gain_ha": round(gain, 2),
+                "net_change_ha": round(gain - loss, 2),
+                "degraded_land_ha": round(loss, 2),
+                "transitions": [
+                    {"from": "Forest", "to": "Barren", "area_ha": round(forest_to_barren or 0, 2)},
+                    {"from": "Forest", "to": "Built Up", "area_ha": round(forest_to_built or 0, 2)},
+                    {"from": "Forest", "to": "Farm", "area_ha": round(forest_to_farm or 0, 2)},
+                    {"from": "Forest", "to": "Scrub Land", "area_ha": round(forest_to_scrub or 0, 2)},
+                    {"from": "Forest", "to": "Forest", "area_ha": round(forest_to_forest or 0, 2)},
+                ],
+                "yearly_data": [],
+            }
+
+        # 5. Waterbodies (fetched separately)
         if "waterbodies" in layers:
             results["waterbodies"] = await self.aggregate_waterbodies(
                 state, district, tehsil,

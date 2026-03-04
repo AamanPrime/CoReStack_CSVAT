@@ -338,36 +338,61 @@ class ReportService:
     def generate_html_report(self, results: dict) -> str:
         """Generate a full interactive HTML report from analytics result bundle."""
 
+        # Helper: data can be {data: [...]}, a plain list, or a dict
+        def _ensure_list(val):
+            if val is None:
+                return None
+            if isinstance(val, dict):
+                return val.get("data") if val.get("data") else None
+            if isinstance(val, list):
+                return val
+            return None
+
+        ci_list = _ensure_list(results.get("cropping_intensity"))
+        sw_list = _ensure_list(results.get("surface_water"))
+        veg = results.get("vegetation")
+        if isinstance(veg, list):
+            veg = None  # vegetation should be a dict, not a list
+
         context = {
             "village_name": results.get("village_name", "Unknown Village"),
             "state": results.get("state", "—"),
             "district": results.get("district", "—"),
             "tehsil": results.get("tehsil", "—"),
             "generated_at": datetime.utcnow().strftime("%B %d, %Y at %H:%M UTC"),
-            "cropping_intensity": results.get("cropping_intensity"),
-            "surface_water": results.get("surface_water"),
-            "vegetation": results.get("vegetation"),
+            # Wrap lists back into {data: [...]} for template compatibility
+            "cropping_intensity": {"data": ci_list} if ci_list else None,
+            "surface_water": {"data": sw_list} if sw_list else None,
+            "vegetation": veg if isinstance(veg, dict) else None,
+            # Default chart data to prevent tojson Undefined errors
+            "cropping_years": [],
+            "cropping_single": [],
+            "cropping_double": [],
+            "cropping_triple": [],
+            "water_years": [],
+            "water_perennial": [],
+            "water_monsoon": [],
+            "water_winter": [],
+            "veg_years": [],
+            "veg_cover": [],
         }
 
         # Prepare chart data
-        ci = results.get("cropping_intensity")
-        if ci and ci.get("data"):
-            context["cropping_years"] = [d["year"] for d in ci["data"]]
-            context["cropping_single"] = [d["single_crop_ha"] for d in ci["data"]]
-            context["cropping_double"] = [d["double_crop_ha"] for d in ci["data"]]
-            context["cropping_triple"] = [d["triple_crop_ha"] for d in ci["data"]]
+        if ci_list:
+            context["cropping_years"] = [d.get("year", "") for d in ci_list]
+            context["cropping_single"] = [d.get("single_crop_ha", 0) for d in ci_list]
+            context["cropping_double"] = [d.get("double_crop_ha", 0) for d in ci_list]
+            context["cropping_triple"] = [d.get("triple_crop_ha", 0) for d in ci_list]
 
-        sw = results.get("surface_water")
-        if sw and sw.get("data"):
-            context["water_years"] = [d["year"] for d in sw["data"]]
-            context["water_perennial"] = [d["perennial_ha"] for d in sw["data"]]
-            context["water_monsoon"] = [d["seasonal_monsoon_ha"] for d in sw["data"]]
-            context["water_winter"] = [d["seasonal_winter_ha"] for d in sw["data"]]
+        if sw_list:
+            context["water_years"] = [d.get("year", "") for d in sw_list]
+            context["water_perennial"] = [d.get("perennial_ha", 0) for d in sw_list]
+            context["water_monsoon"] = [d.get("seasonal_monsoon_ha", 0) for d in sw_list]
+            context["water_winter"] = [d.get("seasonal_winter_ha", 0) for d in sw_list]
 
-        vg = results.get("vegetation")
-        if vg and vg.get("yearly_data"):
-            context["veg_years"] = [d["year"] for d in vg["yearly_data"]]
-            context["veg_cover"] = [d["tree_cover_ha"] for d in vg["yearly_data"]]
+        if veg and isinstance(veg, dict) and veg.get("yearly_data"):
+            context["veg_years"] = [d.get("year", "") for d in veg["yearly_data"]]
+            context["veg_cover"] = [d.get("tree_cover_ha", 0) for d in veg["yearly_data"]]
 
         return self.template.render(**context)
 
@@ -376,37 +401,46 @@ class ReportService:
         output = io.StringIO()
         writer = csv.writer(output)
 
+        def _ensure_list(val):
+            if val is None:
+                return None
+            if isinstance(val, dict):
+                return val.get("data") if val.get("data") else None
+            if isinstance(val, list):
+                return val
+            return None
+
         # Cropping intensity
-        ci = results.get("cropping_intensity")
-        if ci and ci.get("data"):
+        ci_list = _ensure_list(results.get("cropping_intensity"))
+        if ci_list:
             writer.writerow(["=== Cropping Intensity ==="])
             writer.writerow(["Year", "Single Crop (ha)", "Double Crop (ha)",
                            "Triple Crop (ha)", "Total (ha)"])
-            for row in ci["data"]:
-                writer.writerow([row["year"], row["single_crop_ha"],
-                               row["double_crop_ha"], row["triple_crop_ha"],
-                               row["total_cropped_ha"]])
+            for row in ci_list:
+                writer.writerow([row.get("year", ""), row.get("single_crop_ha", 0),
+                               row.get("double_crop_ha", 0), row.get("triple_crop_ha", 0),
+                               row.get("total_cropped_ha", 0)])
             writer.writerow([])
 
         # Surface water
-        sw = results.get("surface_water")
-        if sw and sw.get("data"):
+        sw_list = _ensure_list(results.get("surface_water"))
+        if sw_list:
             writer.writerow(["=== Surface Water ==="])
             writer.writerow(["Year", "Perennial (ha)", "Monsoon (ha)",
                            "Winter (ha)", "Total (ha)"])
-            for row in sw["data"]:
-                writer.writerow([row["year"], row["perennial_ha"],
-                               row["seasonal_monsoon_ha"], row["seasonal_winter_ha"],
-                               row["total_water_ha"]])
+            for row in sw_list:
+                writer.writerow([row.get("year", ""), row.get("perennial_ha", 0),
+                               row.get("seasonal_monsoon_ha", 0), row.get("seasonal_winter_ha", 0),
+                               row.get("total_water_ha", 0)])
             writer.writerow([])
 
         # Vegetation
         vg = results.get("vegetation")
-        if vg and vg.get("yearly_data"):
+        if isinstance(vg, dict) and vg.get("yearly_data"):
             writer.writerow(["=== Vegetation ==="])
             writer.writerow(["Year", "Tree Cover (ha)"])
             for row in vg["yearly_data"]:
-                writer.writerow([row["year"], row["tree_cover_ha"]])
+                writer.writerow([row.get("year", ""), row.get("tree_cover_ha", 0)])
             writer.writerow([])
             writer.writerow(["Net Change (ha)", vg.get("net_change_ha", 0)])
             writer.writerow(["Degraded Land (ha)", vg.get("degraded_land_ha", 0)])

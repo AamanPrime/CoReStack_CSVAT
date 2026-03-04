@@ -1,13 +1,19 @@
 /**
- * CSVAT — Dashboard Page (MWS-First with GEE Fallback).
+ * CSVAT — Dashboard Page.
  *
- * Flow:
- * 1. User clicks "Run Analytics"
- * 2. Frontend tries CoRE Stack MWS intersection
- * 3. If unavailable → prompt "Use GEE?" confirmation modal
- * 4. If user confirms → run GEE + Pyodide WASM pipeline
+ * Dual Execution Mode (per SRS / ADD):
+ * - WASM (default / primary): Client-side analytics via wasmEngine → Pyodide
+ * - SERVER (optional): Backend Celery workers via Jobs API → polling
+ *
+ * Flow (both modes):
+ * 1. User selects boundary + layers + years
+ * 2. User chooses execution mode (WASM is default)
+ * 3. User clicks "Run Analytics"
+ *    - WASM: runs MWS-first pipeline in browser, GEE fallback if needed
+ *    - SERVER: creates job via REST API, polls until complete
+ * 4. Results displayed in ReportViewer + ExportManager
  */
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import BoundarySelector from '../components/BoundarySelector';
 import LayerSelector from '../components/LayerSelector';
 import ReportViewer from '../components/ReportViewer';
@@ -17,53 +23,127 @@ import {
   runGEEFallbackPipeline,
   MWSUnavailableError,
 } from '../services/wasmEngine';
+import { createJob, pollJob } from '../services/api';
 
 export default function Dashboard() {
   const [boundary, setBoundary] = useState(null);
   const [selectedLayers, setSelectedLayers] = useState(['cropping_intensity', 'surface_water', 'vegetation']);
   const [selectedYears, setSelectedYears] = useState([2019, 2020, 2021, 2022, 2023]);
+  const [executionMode, setExecutionMode] = useState('WASM'); // 'WASM' | 'SERVER'
   const [results, setResults] = useState(null);
   const [isRunning, setIsRunning] = useState(false);
   const [error, setError] = useState(null);
   const [progress, setProgress] = useState('');
 
-  // GEE confirmation state
+  // GEE confirmation state (WASM mode only)
   const [showGEEPrompt, setShowGEEPrompt] = useState(false);
   const [geePromptMessage, setGeePromptMessage] = useState('');
   const [pendingBoundary, setPendingBoundary] = useState(null);
 
-  const handleSubmit = async () => {
-    if (!boundary) return;
+  // Server-side polling cleanup ref
+  const stopPollingRef = useRef(null);
+
+  // ─── WASM Mode Submit ───
+  const handleWASMSubmit = async () => {
     setIsRunning(true);
     setError(null);
     setResults(null);
     setShowGEEPrompt(false);
 
     try {
-      setProgress('Starting analytics pipeline…');
-
+      setProgress('Starting client-side analytics pipeline…');
       const result = await runAnalyticsPipeline(
-        boundary,
-        selectedLayers,
-        selectedYears,
+        boundary, selectedLayers, selectedYears,
         (msg) => setProgress(msg),
       );
-
       setProgress('Rendering report…');
       await delay(200);
       setResults(result);
     } catch (err) {
       if (err instanceof MWSUnavailableError) {
-        // Show the confirmation prompt instead of an error
         setGeePromptMessage(err.message);
         setPendingBoundary(err.boundary);
         setShowGEEPrompt(true);
       } else {
-        setError(err.message || 'Analytics pipeline failed.');
+        setError(err.message || 'Client-side analytics pipeline failed.');
       }
     }
     setIsRunning(false);
     setProgress('');
+  };
+
+  // ─── SERVER Mode Submit ───
+  const handleServerSubmit = async () => {
+    setIsRunning(true);
+    setError(null);
+    setResults(null);
+
+    try {
+      setProgress('Submitting job to server…');
+
+      const jobData = {
+        boundary_id: boundary.boundary_id || null,
+        boundary_geojson: boundary.geojson || boundary.boundary_geojson || null,
+        village_name: boundary.village_name || boundary.name || 'Unknown',
+        state: boundary.state || '',
+        district: boundary.district || '',
+        tehsil: boundary.tehsil || '',
+        layers: selectedLayers,
+        years: selectedYears,
+        mode: 'SERVER',
+      };
+
+      const job = await createJob(jobData);
+
+      if (job.status === 'SUCCESS') {
+        // Completed synchronously (sync fallback)
+        setResults(job.result_json);
+        setIsRunning(false);
+        setProgress('');
+        return;
+      }
+
+      if (job.status === 'FAILED') {
+        setError(job.error_message || 'Server-side analytics failed.');
+        setIsRunning(false);
+        setProgress('');
+        return;
+      }
+
+      // Job is PENDING → start polling
+      setProgress('Job queued — waiting for server to process…');
+
+      const stopPolling = pollJob(job.id, (updatedJob) => {
+        if (updatedJob.status === 'RUNNING') {
+          setProgress('Server is processing analytics…');
+        } else if (updatedJob.status === 'SUCCESS') {
+          setResults(updatedJob.result_json);
+          setIsRunning(false);
+          setProgress('');
+        } else if (updatedJob.status === 'FAILED') {
+          setError(updatedJob.error_message || 'Server analytics failed.');
+          setIsRunning(false);
+          setProgress('');
+        }
+      }, 2000);
+
+      stopPollingRef.current = stopPolling;
+
+    } catch (err) {
+      setError(err.message || 'Failed to submit server-side job.');
+      setIsRunning(false);
+      setProgress('');
+    }
+  };
+
+  // ─── Main Submit Handler ───
+  const handleSubmit = () => {
+    if (!boundary) return;
+    if (executionMode === 'SERVER') {
+      handleServerSubmit();
+    } else {
+      handleWASMSubmit();
+    }
   };
 
   const handleGEEConfirm = async () => {
@@ -73,14 +153,10 @@ export default function Dashboard() {
 
     try {
       setProgress('User confirmed — starting GEE pipeline…');
-
       const result = await runGEEFallbackPipeline(
-        pendingBoundary,
-        selectedLayers,
-        selectedYears,
+        pendingBoundary, selectedLayers, selectedYears,
         (msg) => setProgress(msg),
       );
-
       setProgress('Rendering report…');
       await delay(200);
       setResults(result);
@@ -97,6 +173,10 @@ export default function Dashboard() {
   };
 
   const handleReset = () => {
+    if (stopPollingRef.current) {
+      stopPollingRef.current();
+      stopPollingRef.current = null;
+    }
     setBoundary(null);
     setResults(null);
     setError(null);
@@ -121,18 +201,21 @@ export default function Dashboard() {
         }}>
           <span style={{
             width: 8, height: 8, borderRadius: '50%',
-            backgroundColor: 'var(--accent-teal)', display: 'inline-block',
+            backgroundColor: executionMode === 'WASM' ? 'var(--accent-teal)' : 'var(--accent-purple)',
+            display: 'inline-block',
           }}></span>
-          CoRE Stack MWS Primary | GEE Fallback Available
+          {executionMode === 'WASM'
+            ? 'Client-Side WASM (Primary) | GEE Fallback Available'
+            : 'Server-Side Processing | Celery Workers'}
         </div>
       </div>
 
-      {/* Step 1: Boundary Selection */}
+      {/* Step 1: Boundary + Mode Selection */}
       {!results && (
         <>
           <BoundarySelector onBoundarySelect={setBoundary} />
 
-          {/* Step 2: Layer & Year Config */}
+          {/* Step 2: Layer & Year Config + Mode Toggle */}
           {boundary && (
             <div style={{ marginTop: '1.5rem' }}>
               <LayerSelector
@@ -141,6 +224,68 @@ export default function Dashboard() {
                 selectedYears={selectedYears}
                 onYearsChange={setSelectedYears}
               />
+
+              {/* ─── Execution Mode Toggle ─── */}
+              <div className="glass-card" style={{
+                marginTop: '1rem', padding: '1rem 1.5rem',
+                borderRadius: '14px',
+              }}>
+                <div style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  flexWrap: 'wrap', gap: '0.75rem',
+                }}>
+                  <div>
+                    <div style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                      Execution Mode
+                    </div>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.15rem' }}>
+                      {executionMode === 'WASM'
+                        ? 'Analytics run in your browser via WebAssembly — no server load'
+                        : 'Analytics dispatched to backend Celery workers — higher precision'}
+                    </div>
+                  </div>
+
+                  <div style={{
+                    display: 'flex', borderRadius: '10px', overflow: 'hidden',
+                    border: '1px solid var(--border)',
+                  }}>
+                    <button
+                      type="button"
+                      onClick={() => setExecutionMode('WASM')}
+                      id="mode-wasm-btn"
+                      style={{
+                        padding: '0.5rem 1rem',
+                        fontSize: '0.8rem', fontWeight: 500,
+                        border: 'none', cursor: 'pointer',
+                        background: executionMode === 'WASM'
+                          ? 'linear-gradient(135deg, var(--accent-green), var(--accent-teal))'
+                          : 'transparent',
+                        color: executionMode === 'WASM' ? '#fff' : 'var(--text-secondary)',
+                        transition: 'all 0.2s ease',
+                      }}
+                    >
+                      ⚡ Client (WASM)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setExecutionMode('SERVER')}
+                      id="mode-server-btn"
+                      style={{
+                        padding: '0.5rem 1rem',
+                        fontSize: '0.8rem', fontWeight: 500,
+                        border: 'none', cursor: 'pointer',
+                        background: executionMode === 'SERVER'
+                          ? 'linear-gradient(135deg, var(--accent-purple), #7c3aed)'
+                          : 'transparent',
+                        color: executionMode === 'SERVER' ? '#fff' : 'var(--text-secondary)',
+                        transition: 'all 0.2s ease',
+                      }}
+                    >
+                      🖥️ Server
+                    </button>
+                  </div>
+                </div>
+              </div>
 
               {/* Submit */}
               <div style={{ textAlign: 'center', marginTop: '1.5rem' }}>
@@ -156,7 +301,7 @@ export default function Dashboard() {
                       Processing…
                     </>
                   ) : (
-                    '🚀 Run Analytics'
+                    executionMode === 'WASM' ? '⚡ Run Analytics (WASM)' : '🖥️ Run Analytics (Server)'
                   )}
                 </button>
               </div>
@@ -173,12 +318,14 @@ export default function Dashboard() {
           <div style={{
             fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem',
           }}>
-            Processing analytics — please wait
+            {executionMode === 'WASM'
+              ? 'Running analytics in your browser — please wait'
+              : 'Server is processing — polling for results'}
           </div>
         </div>
       )}
 
-      {/* GEE Confirmation Modal */}
+      {/* GEE Confirmation Modal (WASM mode only) */}
       {showGEEPrompt && (
         <div className="gee-prompt-overlay" style={{
           position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
@@ -294,7 +441,9 @@ export default function Dashboard() {
       {results && (
         <>
           <div className="section-divider">
-            <span>Analytics Results — {results.data_source || 'Computed'}</span>
+            <span>Analytics Results — {results.data_source || 'Computed'}
+              {executionMode === 'SERVER' && ' (Server Mode)'}
+            </span>
           </div>
 
           {/* Data Warning Banner (shown for GEE fallback) */}
