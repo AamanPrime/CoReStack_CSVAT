@@ -51,11 +51,14 @@ export function MapView({
   zoom = 13,
   height = "350px",
   onMapClick,
+  layerUrls = [],
 }) {
   const mapRef = useRef(null);
   const mapInstance = useRef(null);
   const polygonRef = useRef(null);
   const markerRef = useRef(null);
+  const overlaysRef = useRef({});
+  const [visibleLayers, setVisibleLayers] = useState({});
 
   // Initialize map
   useEffect(() => {
@@ -174,17 +177,134 @@ export function MapView({
     }
   }, [center, zoom]);
 
+  // ─── Layer Overlay Management ───
+  const toggleLayer = useCallback((layerName) => {
+    setVisibleLayers((prev) => {
+      const next = { ...prev, [layerName]: !prev[layerName] };
+
+      if (!mapInstance.current || !window.google?.maps) return next;
+
+      if (next[layerName]) {
+        // Add overlay
+        const layer = layerUrls.find((l) => l.name === layerName);
+        if (layer?.url) {
+          const overlay = new window.google.maps.ImageMapType({
+            getTileUrl: (coord, zoom) => {
+              const tileSize = 256;
+              const proj = mapInstance.current.getProjection();
+              const numTiles = 1 << zoom;
+              const worldCoord = proj.fromPointToLatLng(
+                new window.google.maps.Point(
+                  (coord.x * tileSize) / numTiles,
+                  (coord.y * tileSize) / numTiles
+                )
+              );
+              // Build WMS request
+              const sw = proj.fromPointToLatLng(
+                new window.google.maps.Point(
+                  (coord.x * tileSize) / numTiles,
+                  ((coord.y + 1) * tileSize) / numTiles
+                )
+              );
+              const ne = proj.fromPointToLatLng(
+                new window.google.maps.Point(
+                  ((coord.x + 1) * tileSize) / numTiles,
+                  (coord.y * tileSize) / numTiles
+                )
+              );
+              const bbox = `${sw.lng()},${sw.lat()},${ne.lng()},${ne.lat()}`;
+              return `${layer.url}&BBOX=${bbox}&WIDTH=${tileSize}&HEIGHT=${tileSize}`;
+            },
+            tileSize: new window.google.maps.Size(256, 256),
+            opacity: 0.6,
+            name: layerName,
+          });
+          mapInstance.current.overlayMapTypes.push(overlay);
+          overlaysRef.current[layerName] = overlay;
+        }
+      } else {
+        // Remove overlay
+        const overlayTypes = mapInstance.current.overlayMapTypes;
+        for (let i = overlayTypes.getLength() - 1; i >= 0; i--) {
+          const ov = overlayTypes.getAt(i);
+          if (ov && ov.name === layerName) {
+            overlayTypes.removeAt(i);
+            break;
+          }
+        }
+        delete overlaysRef.current[layerName];
+      }
+
+      return next;
+    });
+  }, [layerUrls]);
+
   return (
-    <div
-      ref={mapRef}
-      style={{
-        width: "100%",
-        height,
-        borderRadius: "12px",
-        border: "1px solid rgba(148,163,184,0.2)",
-        overflow: "hidden",
-      }}
-    />
+    <div style={{ position: "relative" }}>
+      <div
+        ref={mapRef}
+        style={{
+          width: "100%",
+          height,
+          borderRadius: "12px",
+          border: "1px solid rgba(148,163,184,0.2)",
+          overflow: "hidden",
+        }}
+      />
+      {/* ─── Layer Toggle Panel ─── */}
+      {layerUrls.length > 0 && (
+        <div
+          style={{
+            position: "absolute",
+            top: "10px",
+            right: "10px",
+            background: "rgba(15, 23, 42, 0.9)",
+            backdropFilter: "blur(12px)",
+            borderRadius: "10px",
+            padding: "0.6rem 0.8rem",
+            border: "1px solid rgba(148,163,184,0.2)",
+            zIndex: 10,
+            minWidth: "160px",
+          }}
+        >
+          <div
+            style={{
+              fontSize: "0.7rem",
+              fontWeight: 700,
+              color: "#94a3b8",
+              textTransform: "uppercase",
+              letterSpacing: "0.05em",
+              marginBottom: "0.4rem",
+            }}
+          >
+            🗺️ Layers
+          </div>
+          {layerUrls.map((layer) => (
+            <label
+              key={layer.name}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "0.4rem",
+                cursor: "pointer",
+                padding: "0.25rem 0",
+                fontSize: "0.8rem",
+                color: visibleLayers[layer.name] ? "#22c55e" : "#cbd5e1",
+                transition: "color 0.2s",
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={!!visibleLayers[layer.name]}
+                onChange={() => toggleLayer(layer.name)}
+                style={{ accentColor: "#22c55e", cursor: "pointer" }}
+              />
+              {layer.name}
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 

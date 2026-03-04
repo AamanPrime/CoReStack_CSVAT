@@ -44,8 +44,11 @@ export default function ReportViewer({ results }) {
   const {
     cropping_intensity, surface_water, vegetation, waterbodies,
     village_name, state, district, tehsil, data_source,
-    mws_count, terrain, crop_intensity_change,
+    mws_count, terrain, crop_intensity_change, area_hectares,
   } = results;
+
+  // Primary total area: boundary area_hectares, fallback to terrain sum
+  const totalAreaHa = area_hectares || terrain?.total_area_ha || 0;
 
   // Normalize cropping/water data arrays
   const ciData = Array.isArray(cropping_intensity?.data)
@@ -115,9 +118,9 @@ export default function ReportViewer({ results }) {
               <div className="label">Years of Data</div>
             </div>
           )}
-          {terrain?.total_area_ha != null && (
+          {totalAreaHa > 0 && (
             <div className="stat-card stat-amber">
-              <div className="value">{terrain.total_area_ha.toFixed(2)}</div>
+              <div className="value">{totalAreaHa.toFixed(2)}</div>
               <div className="label">Total Area (ha)</div>
             </div>
           )}
