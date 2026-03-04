@@ -3,10 +3,11 @@
 Bridges CoRE Stack's MWS-indexed data with CSVAT's village-level analytics.
 
 Pipeline:
-1. Fetch MWS polygon geometries overlapping the village (from GeoServer)
+1. Fetch MWS polygon geometries overlapping the village (via CoRE Stack API)
 2. Compute spatial intersection areas using Shapely
 3. Fetch MWS-level analytics data from CoRE Stack API
 4. Aggregate to village level via area-weighted averaging
+5. Optionally fetch waterbody data for the tehsil
 """
 
 import logging
@@ -284,6 +285,61 @@ class MWSIntersectionService:
             "yearly_data": yearly_data,
         }
 
+    async def aggregate_waterbodies(
+        self,
+        state: str,
+        district: str,
+        tehsil: str,
+    ) -> dict:
+        """Fetch waterbody data for the tehsil from CoRE Stack.
+
+        Returns summary with waterbody count, total area, and seasonal coverage.
+        """
+        from app.services.corestack_client import corestack_client
+
+        try:
+            wb_data = await corestack_client.get_waterbodies_by_admin(
+                state, district, tehsil
+            )
+        except Exception as e:
+            logger.warning("Waterbody fetch failed: %s", e)
+            return {"count": 0, "waterbodies": [], "error": str(e)}
+
+        waterbodies = []
+        if isinstance(wb_data, dict):
+            for uid, wb in wb_data.items():
+                if isinstance(wb, dict):
+                    waterbodies.append({
+                        "uid": uid,
+                        "name": wb.get("name", uid),
+                        "area_ha": wb.get("area_ha", wb.get("area", 0)),
+                        "type": wb.get("type", "unknown"),
+                        "seasonal_data": {
+                            k: v for k, v in wb.items()
+                            if k.startswith(("k_", "kr_", "krz_"))
+                        },
+                        "zoi_properties": wb.get("zoi_properties", {}),
+                    })
+        elif isinstance(wb_data, list):
+            for wb in wb_data:
+                if isinstance(wb, dict):
+                    waterbodies.append({
+                        "uid": wb.get("uid", ""),
+                        "name": wb.get("name", ""),
+                        "area_ha": wb.get("area_ha", wb.get("area", 0)),
+                        "type": wb.get("type", "unknown"),
+                        "seasonal_data": {
+                            k: v for k, v in wb.items()
+                            if k.startswith(("k_", "kr_", "krz_"))
+                        },
+                        "zoi_properties": wb.get("zoi_properties", {}),
+                    })
+
+        return {
+            "count": len(waterbodies),
+            "waterbodies": waterbodies,
+        }
+
     async def compute_village_analytics(
         self,
         village_geojson: dict,
@@ -300,9 +356,28 @@ class MWSIntersectionService:
         """
         from app.services.corestack_client import corestack_client
 
-        # 1. Fetch MWS geometries from GeoServer
+        # 0. Resolve Unknown admin fields via CoRE Stack reverse geocoding
+        if not state or state == "Unknown" or not district or district == "Unknown" or not tehsil or tehsil == "Unknown":
+            try:
+                village_shape = shape(village_geojson)
+                centroid = village_shape.centroid
+                admin_info = await corestack_client.get_admin_details_by_latlon(
+                    centroid.y, centroid.x
+                )
+                if isinstance(admin_info, dict):
+                    if admin_info.get("state") and (not state or state == "Unknown"):
+                        state = admin_info["state"]
+                    if admin_info.get("district") and (not district or district == "Unknown"):
+                        district = admin_info["district"]
+                    if (admin_info.get("tehsil") or admin_info.get("block")) and (not tehsil or tehsil == "Unknown"):
+                        tehsil = admin_info.get("tehsil") or admin_info.get("block", tehsil)
+                    logger.info("Resolved admin via centroid: state=%s, district=%s, tehsil=%s", state, district, tehsil)
+            except Exception as e:
+                logger.warning("Admin details resolution failed: %s", e)
+
+        # 1. Fetch MWS geometries from CoRE Stack API (returns list of Feature dicts)
         logger.info("Fetching MWS geometries for %s/%s/%s", state, district, tehsil)
-        mws_features = await corestack_client.get_mws_geometries(
+        mws_features = await corestack_client.get_mws_features_for_tehsil(
             state, district, tehsil
         )
         if not mws_features:
@@ -355,6 +430,12 @@ class MWSIntersectionService:
         if "vegetation" in layers:
             results["vegetation"] = self.aggregate_vegetation(
                 intersections, mws_data_by_uid, years,
+            )
+
+        # 5. Waterbodies (fetched separately, not MWS-intersected)
+        if "waterbodies" in layers:
+            results["waterbodies"] = await self.aggregate_waterbodies(
+                state, district, tehsil,
             )
 
         results["mws_count"] = len(intersections)

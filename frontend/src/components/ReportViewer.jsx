@@ -29,7 +29,7 @@ ChartJS.defaults.borderColor = 'rgba(148,163,184,0.12)';
 export default function ReportViewer({ results }) {
   if (!results) return null;
 
-  const { cropping_intensity, surface_water, vegetation, village_name, state, district, tehsil, data_source } = results;
+  const { cropping_intensity, surface_water, vegetation, waterbodies, village_name, state, district, tehsil, data_source } = results;
 
   return (
     <div className="stagger">
@@ -289,6 +289,60 @@ export default function ReportViewer({ results }) {
             {Math.abs(vegetation.net_change_ha)} hectares of tree cover.
             An estimated {vegetation.degraded_land_ha} hectares are classified as
             degraded land based on vegetation transition analysis.
+          </div>
+        </div>
+      )}
+
+      {/* ─── Waterbodies ─── */}
+      {waterbodies && waterbodies.count > 0 && (
+        <div className="card animate-slide-up">
+          <div className="card-header">
+            <span className="icon">🏞️</span>
+            <h3>Waterbodies Analysis</h3>
+          </div>
+
+          <div className="stats-grid">
+            <div className="stat-card stat-blue">
+              <div className="value">{waterbodies.count}</div>
+              <div className="label">Total Waterbodies</div>
+            </div>
+            <div className="stat-card stat-blue">
+              <div className="value">
+                {waterbodies.waterbodies?.reduce((sum, wb) => sum + (wb.area_ha || 0), 0).toFixed(2)}
+              </div>
+              <div className="label">Total Area (ha)</div>
+            </div>
+          </div>
+
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>UID</th>
+                <th>Name</th>
+                <th>Area (ha)</th>
+                <th>Type</th>
+              </tr>
+            </thead>
+            <tbody>
+              {waterbodies.waterbodies?.slice(0, 20).map((wb, idx) => (
+                <tr key={wb.uid || idx}>
+                  <td style={{ fontSize: '0.8rem', fontFamily: 'monospace' }}>{wb.uid}</td>
+                  <td>{wb.name}</td>
+                  <td>{wb.area_ha}</td>
+                  <td>{wb.type}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {waterbodies.waterbodies?.length > 20 && (
+            <div style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: '0.5rem' }}>
+              Showing 20 of {waterbodies.waterbodies.length} waterbodies
+            </div>
+          )}
+
+          <div className="narrative">
+            The tehsil contains {waterbodies.count} identified waterbodies.
+            Waterbody data is sourced from CoRE Stack and includes seasonal coverage and zone of influence analytics.
           </div>
         </div>
       )}
