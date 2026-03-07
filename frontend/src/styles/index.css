@@ -98,12 +98,14 @@ body {
   background: var(--bg-base);
   color: var(--text-primary);
   min-height: 100vh;
+  min-height: 100dvh;
   line-height: 1.5;
   overflow: hidden;
 }
 
 #root {
   height: 100vh;
+  height: 100dvh;
   display: flex;
   flex-direction: column;
 }
@@ -214,6 +216,7 @@ a:hover {
   display: flex;
   flex: 1;
   height: calc(100vh - var(--navbar-height));
+  height: calc(100dvh - var(--navbar-height));
   position: relative;
   overflow: hidden;
 }
