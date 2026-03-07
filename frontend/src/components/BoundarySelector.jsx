@@ -66,27 +66,27 @@ export default function BoundarySelector({ onBoundarySelect, onMapUpdate }) {
       {activeTab === 'corestack' && (
         <>
           <div className="selector-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <span style={{ fontSize: '0.75rem', color: '#475569', minWidth: '60px' }}>State</span>
+            <span style={{ fontSize: '0.9rem', color: '#475569', minWidth: '70px', fontWeight: 500 }}>State</span>
             <div className="select-wrapper" style={{ flex: 1 }}>
-              <select value={csSelectedState} onChange={(e) => { setCsSelectedState(e.target.value); setCsSelectedDistrict(''); setCsSelectedTehsil(''); setCsVillages([]); }} style={{ width: '100%', padding: '0.35rem 0.5rem', borderRadius: '4px', border: '1px solid #cbd5e1', fontSize: '0.75rem', color: '#1e293b' }}>
+              <select value={csSelectedState} onChange={(e) => { setCsSelectedState(e.target.value); setCsSelectedDistrict(''); setCsSelectedTehsil(''); setCsVillages([]); }} style={{ width: '100%', padding: '0.5rem 0.6rem', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.9rem', color: '#1e293b' }}>
                 <option value="">Select State</option>
                 {csStates.map((s) => <option key={s.label} value={s.label}>{s.label}</option>)}
               </select>
             </div>
           </div>
           <div className="selector-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <span style={{ fontSize: '0.75rem', color: '#475569', minWidth: '60px' }}>District</span>
+            <span style={{ fontSize: '0.9rem', color: '#475569', minWidth: '70px', fontWeight: 500 }}>District</span>
             <div className="select-wrapper" style={{ flex: 1 }}>
-              <select value={csSelectedDistrict} onChange={(e) => { setCsSelectedDistrict(e.target.value); setCsSelectedTehsil(''); setCsVillages([]); }} disabled={!csSelectedState} style={{ width: '100%', padding: '0.35rem 0.5rem', borderRadius: '4px', border: '1px solid #cbd5e1', fontSize: '0.75rem', color: '#1e293b' }}>
+              <select value={csSelectedDistrict} onChange={(e) => { setCsSelectedDistrict(e.target.value); setCsSelectedTehsil(''); setCsVillages([]); }} disabled={!csSelectedState} style={{ width: '100%', padding: '0.5rem 0.6rem', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.9rem', color: '#1e293b' }}>
                 <option value="">Select District</option>
                 {csDistricts.map((d) => <option key={d.label} value={d.label}>{d.label}</option>)}
               </select>
             </div>
           </div>
           <div className="selector-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <span style={{ fontSize: '0.75rem', color: '#475569', minWidth: '60px' }}>Tehsil</span>
+            <span style={{ fontSize: '0.9rem', color: '#475569', minWidth: '70px', fontWeight: 500 }}>Tehsil</span>
             <div className="select-wrapper" style={{ flex: 1 }}>
-              <select value={csSelectedTehsil} onChange={(e) => handleCsTehsilChange(e.target.value)} disabled={!csSelectedDistrict} style={{ width: '100%', padding: '0.35rem 0.5rem', borderRadius: '4px', border: '1px solid #cbd5e1', fontSize: '0.75rem', color: '#1e293b' }}>
+              <select value={csSelectedTehsil} onChange={(e) => handleCsTehsilChange(e.target.value)} disabled={!csSelectedDistrict} style={{ width: '100%', padding: '0.5rem 0.6rem', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.9rem', color: '#1e293b' }}>
                 <option value="">Select Tehsil</option>
                 {csTehsils.map((t) => <option key={t.label} value={t.label}>{t.label}</option>)}
               </select>
@@ -94,12 +94,12 @@ export default function BoundarySelector({ onBoundarySelect, onMapUpdate }) {
           </div>
           
           {csVillages.length > 0 && (
-            <div style={{ marginTop: '0.5rem', maxHeight: '180px', overflowY: 'auto', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '4px', padding: '0.2rem' }}>
+            <div style={{ marginTop: '0.75rem', maxHeight: '240px', overflowY: 'auto', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '0.4rem' }}>
               {csVillages.map((feat, idx) => {
                 const name = feat.properties?.vill_name || feat.properties?.name || 'Village';
                 const isSelected = selectedVillageName === name;
                 return (
-                  <button key={idx} onClick={() => selectCsVillage(feat)} style={{ display: 'block', width: '100%', textAlign: 'left', padding: '0.4rem 0.5rem', background: isSelected ? '#ede9fe' : 'none', border: 'none', fontSize: '0.75rem', color: isSelected ? '#6d28d9' : '#0f172a', fontWeight: isSelected ? 600 : 400, borderBottom: '1px solid #f1f5f9', cursor: 'pointer' }}>
+                  <button key={idx} onClick={() => selectCsVillage(feat)} style={{ display: 'block', width: '100%', textAlign: 'left', padding: '0.6rem 0.75rem', background: isSelected ? '#ede9fe' : 'transparent', border: 'none', borderRadius: '4px', fontSize: '0.95rem', color: isSelected ? '#6d28d9' : '#0f172a', fontWeight: isSelected ? 600 : 400, borderBottom: '1px solid #f1f5f9', cursor: 'pointer', marginBottom: '2px' }}>
                     {name}
                   </button>
                 );
