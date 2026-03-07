@@ -85,6 +85,9 @@ class CoreStackClient:
                 f"{self.base_url}/get_tehsil_data/",
                 params={"state": state, "district": district, "tehsil": tehsil},
             )
+            if resp.status_code == 404:
+                logger.warning(f"CoRE Stack API 404 (No data found) for {tehsil}")
+                return {}
             resp.raise_for_status()
             return resp.json()
 
@@ -103,6 +106,8 @@ class CoreStackClient:
                     "tehsil": tehsil, "mws_id": mws_id,
                 },
             )
+            if resp.status_code == 404:
+                return {}
             resp.raise_for_status()
             return resp.json()
 
@@ -117,6 +122,8 @@ class CoreStackClient:
                 f"{self.base_url}/get_mws_geometries/",
                 params={"state": state, "district": district, "tehsil": tehsil},
             )
+            if resp.status_code == 404:
+                return {"type": "FeatureCollection", "features": []}
             resp.raise_for_status()
             return resp.json()
 
