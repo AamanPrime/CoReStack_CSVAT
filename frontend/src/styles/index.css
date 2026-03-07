@@ -1347,3 +1347,8 @@ textarea:focus {
   color: var(--text-primary);
   margin: 0;
 }
+
+/* Ensure the last element isn't cut off by mobile browser UI */
+.mobile-bottom-sheet .sidebar-content {
+  padding-bottom: calc(3rem + env(safe-area-inset-bottom, 0px));
+}
