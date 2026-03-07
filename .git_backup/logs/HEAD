@@ -1,4 +1,0 @@
-0000000000000000000000000000000000000000 cb6401d39180bcdb5ec70ddff3cea1ccc043621c M Rayhan Khan <rayhan22269@iiitd.ac.in> 1772685678 +0530	clone: from https://github.com/SDOS-2026/CSVAT_CoReStack
-cb6401d39180bcdb5ec70ddff3cea1ccc043621c fa24849a40f33e33b4b91c9c393077ef430c1363 M Rayhan Khan <rayhan22269@iiitd.ac.in> 1772865173 +0530	commit: UI Redesign: light theme, draggable floating sidebar, pixel-perfect PDF export, and backend optimization (removed Redis/Celery)
-fa24849a40f33e33b4b91c9c393077ef430c1363 9b3e7dc7dbaf56ee620455c4e6c194259351e42e M Rayhan Khan <rayhan22269@iiitd.ac.in> 1772865182 +0530	pull --rebase origin main (start): checkout 9b3e7dc7dbaf56ee620455c4e6c194259351e42e
-9b3e7dc7dbaf56ee620455c4e6c194259351e42e fa24849a40f33e33b4b91c9c393077ef430c1363 M Rayhan Khan <rayhan22269@iiitd.ac.in> 1772865189 +0530	rebase (abort): returning to refs/heads/main
