@@ -122,6 +122,7 @@ class MWSIntersectionService:
         for ix in intersections:
             uid = ix["mws_uid"]
             fraction = ix["overlap_fraction"]
+            area_ha = ix["overlap_area_ha"]
             mws_data = mws_data_by_uid.get(uid, {})
             value = mws_data.get(metric_key)
 
@@ -133,15 +134,17 @@ class MWSIntersectionService:
             except (ValueError, TypeError):
                 continue
 
-            weighted_sum += value * fraction
-            total_weight += fraction
-
-        if total_weight == 0:
-            return None
+            if aggregation == "weighted_sum":
+                weighted_sum += value * fraction
+            else:  # weighted_average
+                weighted_sum += value * area_ha
+                total_weight += area_ha
 
         if aggregation == "weighted_sum":
             return round(weighted_sum, 4)
         else:  # weighted_average
+            if total_weight == 0:
+                return None
             return round(weighted_sum / total_weight, 4)
 
     def aggregate_cropping_intensity(

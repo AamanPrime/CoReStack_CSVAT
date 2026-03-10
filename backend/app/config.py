@@ -39,9 +39,13 @@ class Settings(BaseSettings):
     # GeoServer (for MWS geometry downloads)
     GEOSERVER_BASE_URL: str = ""
 
+    # Redis URL
+    REDIS_URL: str = "redis://redis:6379/0"
+
     class Config:
         env_file = str(ENV_FILE)
         env_file_encoding = "utf-8"
+        extra = "ignore"
 
 
 @lru_cache()

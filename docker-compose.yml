@@ -15,7 +15,7 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U csvat -d csvat_db"]
+      test: [ "CMD-SHELL", "pg_isready -U csvat -d csvat_db" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -27,7 +27,7 @@ services:
       dockerfile: Dockerfile
     container_name: csvat_api
     ports:
-      - "8006:8000"
+      - "8000:8000"
     env_file:
       - ./backend/.env
     dns:
@@ -36,6 +36,30 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    volumes:
+      - ./backend:/app
+
+  # Redis for Celery Broker & Result Backend
+  redis:
+    image: redis:7-alpine
+    container_name: csvat_redis
+    ports:
+      - "6379:6379"
+
+  # Celery Worker
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: csvat_worker
+    command: [ "celery", "-A", "app.tasks.celery_app.celery_app", "worker", "--loglevel=info" ]
+    env_file:
+      - ./backend/.env
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
     volumes:
       - ./backend:/app
 
