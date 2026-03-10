@@ -26,6 +26,12 @@ from app.services.analytics.vegetation import (
 )
 from app.services.report_service import report_service
 from app.services.gee_service import fetch_all as gee_fetch_all
+from app.services.raster_service import (
+    has_raster_data,
+    get_cropping_intensity as raster_crop,
+    get_surface_water as raster_water,
+    get_tree_cover_change as raster_veg
+)
 
 logger = logging.getLogger(__name__)
 
@@ -179,47 +185,67 @@ def _run_pipeline(job_params: dict) -> dict:
         "tehsil": tehsil,
     }
 
-    # 3. Strategy A: Try MWS intersection (CoRE Stack 10m data)
+    # 3. Strategy A: Try Local Raster Processing (Raw Pixels 10m)
+    raster_succeeded = False
+    if has_raster_data():
+        try:
+            logger.info("Attempting Raw Raster Processing for %s", village_name)
+            
+            if "cropping_intensity" in layers:
+                results["cropping_intensity"] = raster_crop(geojson)
+            if "surface_water" in layers:
+                results["surface_water"] = raster_water(geojson)
+            if "vegetation" in layers:
+                results["vegetation"] = raster_veg(geojson)
+                
+            results["data_source"] = "local_raster"
+            raster_succeeded = True
+            logger.info("Raster processing succeeded for %s", village_name)
+        except Exception as e:
+            logger.warning("Raster processing failed, falling back to MWS: %s", str(e))
+
+    # 4. Strategy B: Try MWS intersection (CoRE Stack 10m data)
     mws_succeeded = False
-    try:
-        logger.info("Attempting MWS intersection for %s/%s/%s", state, district, tehsil)
+    if not raster_succeeded:
+        try:
+            logger.info("Attempting MWS intersection for %s/%s/%s", state, district, tehsil)
 
-        # Run the async MWS service via helper
-        mws_results = _run_async(
-            mws_service.compute_village_analytics(
-                geojson, state, district, tehsil, layers, years
-            )
-        )
-
-        # Format MWS results into schema
-        if "cropping_intensity" in layers and mws_results.get("cropping_intensity"):
-            results["cropping_intensity"] = cropping_from_mws(
-                village_name, mws_results["cropping_intensity"], years
+            # Run the async MWS service via helper
+            mws_results = _run_async(
+                mws_service.compute_village_analytics(
+                    geojson, state, district, tehsil, layers, years
+                )
             )
 
-        if "surface_water" in layers and mws_results.get("surface_water"):
-            results["surface_water"] = water_from_mws(
-                village_name, mws_results["surface_water"], years
+            # Format MWS results into schema
+            if "cropping_intensity" in layers and mws_results.get("cropping_intensity"):
+                results["cropping_intensity"] = cropping_from_mws(
+                    village_name, mws_results["cropping_intensity"], years
+                )
+
+            if "surface_water" in layers and mws_results.get("surface_water"):
+                results["surface_water"] = water_from_mws(
+                    village_name, mws_results["surface_water"], years
+                )
+
+            if "vegetation" in layers and mws_results.get("vegetation"):
+                results["vegetation"] = vegetation_from_mws(
+                    village_name, mws_results["vegetation"], years
+                )
+
+            results["data_source"] = "corestack_mws"
+            results["mws_count"] = mws_results.get("mws_count", 0)
+            mws_succeeded = True
+            logger.info(
+                "MWS intersection succeeded: %d MWS polygons",
+                mws_results.get("mws_count", 0),
             )
 
-        if "vegetation" in layers and mws_results.get("vegetation"):
-            results["vegetation"] = vegetation_from_mws(
-                village_name, mws_results["vegetation"], years
-            )
+        except Exception as e:
+            logger.warning("MWS intersection failed, falling back to GEE: %s", str(e))
 
-        results["data_source"] = "corestack_mws"
-        results["mws_count"] = mws_results.get("mws_count", 0)
-        mws_succeeded = True
-        logger.info(
-            "MWS intersection succeeded: %d MWS polygons",
-            mws_results.get("mws_count", 0),
-        )
-
-    except Exception as e:
-        logger.warning("MWS intersection failed, falling back to GEE: %s", str(e))
-
-    # 4. Strategy B: Direct GEE fallback (with user warning)
-    if not mws_succeeded:
+    # 5. Strategy C: Direct GEE fallback (with user warning)
+    if not raster_succeeded and not mws_succeeded:
         logger.info("Using direct GEE for %s", village_name)
         try:
             gee_data = gee_fetch_all(geojson, years[0], years[-1])

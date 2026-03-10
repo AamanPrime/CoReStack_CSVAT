@@ -74,7 +74,7 @@ export default function DesktopDashboard() {
   const availableLayers = [];
   const selectedLayers = ['cropping_intensity', 'surface_water', 'vegetation'];
   const selectedYears = [2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025];
-  const [executionMode, setExecutionMode] = useState('WASM');
+  const [executionMode, setExecutionMode] = useState('SERVER');
   const [results, setResults] = useState(null);
   const [isRunning, setIsRunning] = useState(false);
   const [error, setError] = useState(null);
