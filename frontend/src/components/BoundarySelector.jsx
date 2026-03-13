@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
-import { usePlacesAutocomplete, computeAreaHectares } from './GoogleMapsIntegration';
+import { computeAreaHectares } from './GoogleMapsIntegration';
 import { getActiveLocations, getVillageGeometries } from '../services/api';
 
 export default function BoundarySelector({ onBoundarySelect, onMapUpdate }) {
@@ -11,7 +11,7 @@ export default function BoundarySelector({ onBoundarySelect, onMapUpdate }) {
   const [csVillages, setCsVillages] = useState([]);
   const [selectedVillageName, setSelectedVillageName] = useState('');
 
-  const { predictions, search: searchGoogle, getPlaceDetails } = usePlacesAutocomplete();
+
 
   useEffect(() => {
     if (activeTab === 'corestack' && !csLocations) {
@@ -59,7 +59,6 @@ export default function BoundarySelector({ onBoundarySelect, onMapUpdate }) {
       {/* Subtle feature toggle keeping all 3 search modes */}
       <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.2rem' }}>
         <button onClick={() => setActiveTab('corestack')} style={{ background: 'none', border: 'none', color: activeTab === 'corestack' ? '#8b5cf6' : '#94a3b8', fontSize: '0.7rem', fontWeight: 600, cursor: 'pointer' }}>CORESTACK</button>
-        <button onClick={() => setActiveTab('google')} style={{ background: 'none', border: 'none', color: activeTab === 'google' ? '#8b5cf6' : '#94a3b8', fontSize: '0.7rem', fontWeight: 600, cursor: 'pointer' }}>SEARCH</button>
         <button onClick={() => setActiveTab('upload')} style={{ background: 'none', border: 'none', color: activeTab === 'upload' ? '#8b5cf6' : '#94a3b8', fontSize: '0.7rem', fontWeight: 600, cursor: 'pointer' }}>UPLOAD</button>
       </div>
 
@@ -109,16 +108,6 @@ export default function BoundarySelector({ onBoundarySelect, onMapUpdate }) {
         </>
       )}
 
-      {activeTab === 'google' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-          <input type="text" placeholder="Search places..." onChange={(e) => { if(e.target.value.length > 2) searchGoogle(e.target.value); }} style={{ width: '100%', padding: '0.4rem', fontSize: '0.75rem', border: '1px solid #cbd5e1', borderRadius: '4px' }}/>
-          <div style={{ display: 'flex', flexDirection: 'column' }}>
-            {predictions.map(p => (
-              <button key={p.place_id} onClick={async () => { const details = await getPlaceDetails(p.place_id); if (details) { onMapUpdate({ lat: details.lat, lng: details.lng }, details.geojson); onBoundarySelect({ type: 'geojson', boundary_geojson: details.geojson, village_name: details.name, state: details.state, district: details.district, tehsil: details.tehsil, source: 'google' }); } }} style={{ textAlign: 'left', padding: '0.4rem', borderBottom: '1px solid #f1f5f9', background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.75rem' }}>{p.description}</button>
-            ))}
-          </div>
-        </div>
-      )}
 
       {activeTab === 'upload' && (
         <div style={{ padding: '1rem', border: '1px dashed #cbd5e1', borderRadius: '4px', textAlign: 'center', fontSize: '0.75rem', color: '#64748b' }}>
