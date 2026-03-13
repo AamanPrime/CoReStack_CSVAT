@@ -6,12 +6,12 @@ A full-stack geospatial analytics platform built with **FastAPI**, **React (Vite
 
 ## Prerequisites
 
-| Tool              | Version  | Install Guide                                |
-| ----------------- | -------- | -------------------------------------------- |
-| **Docker**        | ≥ 24.x   | https://docs.docker.com/engine/install/      |
-| **Docker Compose**| ≥ 2.x    | Included with Docker Desktop                 |
-| **Node.js**       | ≥ 18.x   | https://nodejs.org/                          |
-| **npm**           | ≥ 9.x    | Comes with Node.js                           |
+| Tool               | Version | Install Guide                           |
+| ------------------ | ------- | --------------------------------------- |
+| **Docker**         | ≥ 24.x  | https://docs.docker.com/engine/install/ |
+| **Docker Compose** | ≥ 2.x   | Included with Docker Desktop            |
+| **Node.js**        | ≥ 18.x  | https://nodejs.org/                     |
+| **npm**            | ≥ 9.x   | Comes with Node.js                      |
 
 ---
 
@@ -55,22 +55,22 @@ cp backend/.env.example backend/.env
 
 Edit `backend/.env` and set:
 
-| Variable                    | Description                              |
-| --------------------------- | ---------------------------------------- |
-| `DATABASE_URL`              | PostgreSQL connection string             |
-| `REDIS_URL`                 | Redis connection string                  |
-| `CORESTACK_API_BASE_URL`    | CoRE Stack API endpoint                  |
-| `CORESTACK_API_KEY`         | Your CoRE Stack API key                  |
-| `JWT_SECRET_KEY`            | A random secret for JWT signing          |
-| `GEE_API_KEY`               | Google Earth Engine API key              |
-| `GEE_PROJECT`               | GEE project ID                           |
-| `GEE_SERVICE_ACCOUNT`       | GEE service account email                |
-| `GEE_KEY_FILE`              | Path to GEE service account key JSON     |
+| Variable                 | Description                          |
+| ------------------------ | ------------------------------------ |
+| `DATABASE_URL`           | PostgreSQL connection string         |
+| `REDIS_URL`              | Redis connection string              |
+| `CORESTACK_API_BASE_URL` | CoRE Stack API endpoint              |
+| `CORESTACK_API_KEY`      | Your CoRE Stack API key              |
+| `JWT_SECRET_KEY`         | A random secret for JWT signing      |
+| `GEE_API_KEY`            | Google Earth Engine API key          |
+| `GEE_PROJECT`            | GEE project ID                       |
+| `GEE_SERVICE_ACCOUNT`    | GEE service account email            |
+| `GEE_KEY_FILE`           | Path to GEE service account key JSON |
 
 **Frontend** — create `frontend/.env`:
 
 ```bash
-VITE_API_BASE=http://localhost:8006
+VITE_API_BASE=http://localhost:8000
 VITE_GOOGLE_MAPS_KEY=your-google-maps-api-key
 ```
 
@@ -82,12 +82,12 @@ docker compose up -d --build
 
 This starts **4 containers**:
 
-| Container      | Service          | Port           |
-| -------------- | ---------------- | -------------- |
+| Container      | Service              | Port          |
+| -------------- | -------------------- | ------------- |
 | `csvat_db`     | PostgreSQL + PostGIS | `5435 → 5432` |
-| `csvat_redis`  | Redis            | `6379 → 6379`  |
-| `csvat_api`    | FastAPI backend  | `8006 → 8000`  |
-| `csvat_worker` | Celery worker    | —              |
+| `csvat_redis`  | Redis                | `6379 → 6379` |
+| `csvat_api`    | FastAPI backend      | `8006 → 8000` |
+| `csvat_worker` | Celery worker        | —             |
 
 ### 4. Start frontend dev server
 
@@ -103,12 +103,12 @@ The frontend will be available at **http://localhost:5173**.
 
 ## Accessing the Application
 
-| Service             | URL                                  |
-| ------------------- | ------------------------------------ |
-| **Frontend**        | http://localhost:5173                 |
-| **Backend API**     | http://localhost:8006                 |
-| **API Docs (Swagger)** | http://localhost:8006/docs         |
-| **API Docs (ReDoc)**   | http://localhost:8006/redoc        |
+| Service                | URL                         |
+| ---------------------- | --------------------------- |
+| **Frontend**           | http://localhost:5173       |
+| **Backend API**        | http://localhost:8000       |
+| **API Docs (Swagger)** | http://localhost:8000/docs  |
+| **API Docs (ReDoc)**   | http://localhost:8000/redoc |
 
 ---
 
@@ -163,10 +163,10 @@ docker compose ps
 
 ## Troubleshooting
 
-| Issue | Solution |
-| ----- | -------- |
-| Containers won't start | Run `docker compose logs` to check errors |
-| Port conflict | Change ports in `docker-compose.yml` |
-| Database connection refused | Wait for `csvat_db` health check to pass |
-| Frontend can't reach API | Ensure `VITE_API_BASE` in `frontend/.env` matches the API port |
-| Worker crashes | Check `docker compose logs worker` for import errors |
+| Issue                       | Solution                                                       |
+| --------------------------- | -------------------------------------------------------------- |
+| Containers won't start      | Run `docker compose logs` to check errors                      |
+| Port conflict               | Change ports in `docker-compose.yml`                           |
+| Database connection refused | Wait for `csvat_db` health check to pass                       |
+| Frontend can't reach API    | Ensure `VITE_API_BASE` in `frontend/.env` matches the API port |
+| Worker crashes              | Check `docker compose logs worker` for import errors           |

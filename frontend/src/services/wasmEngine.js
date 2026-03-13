@@ -582,7 +582,30 @@ export async function runAnalyticsPipeline(boundaryInfo, selectedLayers, selecte
       return results;
     }
 
-    // MWS not available — throw special error so Dashboard can prompt user
+    // MWS vector data not available — try raster path before GEE fallback
+    onProgress?.('MWS vectors unavailable. Checking for raster layers…');
+    try {
+      const { runRasterAnalytics, checkRasterAvailability } = await import('./rasterEngine');
+      const rasterCheck = await checkRasterAvailability(
+        boundary.state, boundary.district, boundary.tehsil
+      );
+
+      if (rasterCheck.available) {
+        onProgress?.(`Found ${rasterCheck.layerCount} raster layers. Starting client-side raster processing…`);
+        const rasterResults = await runRasterAnalytics(
+          boundary, selectedLayers, sortedYears, onProgress
+        );
+        rasterResults.area_hectares = boundary.area_hectares || 0;
+        rasterResults.compute_mode = 'client_raster';
+        return rasterResults;
+      }
+
+      console.log('[CSVAT] No raster layers available, falling back to GEE prompt.');
+    } catch (rasterErr) {
+      console.warn('[CSVAT] Raster processing failed, falling back to GEE prompt:', rasterErr);
+    }
+
+    // Neither MWS vectors nor rasters available — prompt user for GEE
     throw new MWSUnavailableError(
       mwsResponse.message || 'Village not available on CoRE Stack.',
       boundary,
