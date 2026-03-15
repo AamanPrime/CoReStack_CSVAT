@@ -107,17 +107,18 @@ export default function DesktopDashboard() {
   };
 
   // ─── WASM Mode Submit ───
-  const handleWASMSubmit = async () => {
+  const handleWASMSubmit = async (computePath = 'raster') => {
     setIsRunning(true);
     setError(null);
     setResults(null);
     setShowGEEPrompt(false);
 
     try {
-      setProgress('Starting client-side analytics pipeline…');
+      setProgress(`Starting client-side analytics pipeline (${computePath.toUpperCase()})…`);
       const result = await runAnalyticsPipeline(
         boundary, selectedLayers, selectedYears,
         (msg) => setProgress(msg),
+        computePath
       );
       setProgress('Rendering report…');
       await delay(200);
@@ -191,10 +192,10 @@ export default function DesktopDashboard() {
     }
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = (path) => {
     if (!boundary) return;
     if (executionMode === 'SERVER') handleServerSubmit();
-    else handleWASMSubmit();
+    else handleWASMSubmit(path);
   };
 
   const handleGEEConfirm = async () => {
@@ -421,22 +422,44 @@ export default function DesktopDashboard() {
                   : 'Analytics dispatched to backend workers'}
               </div>
 
-              <button
-                className="btn btn-primary btn-lg"
-                onClick={handleSubmit}
-                disabled={isRunning}
-                id="run-analytics-btn"
-                style={{ width: '100%' }}
-              >
-                {isRunning ? (
-                  <>
-                    <span className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }}></span>
-                    Processing…
-                  </>
-                ) : (
-                  executionMode === 'WASM' ? '⚡ Run Analytics' : '🖥️ Run Analytics'
-                )}
-              </button>
+              {executionMode === 'WASM' ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                  <button
+                    className="btn btn-primary btn-lg"
+                    onClick={() => handleSubmit('raster')}
+                    disabled={isRunning}
+                    id="run-analytics-raster-btn"
+                    style={{ width: '100%', background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', borderColor: '#059669' }}
+                  >
+                    {isRunning ? (
+                      <><span className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }}></span> Processing…</>
+                    ) : '⚡ Raster Path (High Accuracy)'}
+                  </button>
+                  <button
+                    className="btn btn-secondary btn-lg"
+                    onClick={() => handleSubmit('mws')}
+                    disabled={isRunning}
+                    id="run-analytics-mws-btn"
+                    style={{ width: '100%' }}
+                  >
+                    {isRunning ? (
+                      <><span className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }}></span> Processing…</>
+                    ) : '⚡ MWS Path (Vector)'}
+                  </button>
+                </div>
+              ) : (
+                <button
+                  className="btn btn-primary btn-lg"
+                  onClick={() => handleSubmit()}
+                  disabled={isRunning}
+                  id="run-analytics-server-btn"
+                  style={{ width: '100%' }}
+                >
+                  {isRunning ? (
+                    <><span className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }}></span> Processing…</>
+                  ) : '🖥️ Run Analytics (Server)'}
+                </button>
+              )}
             </div>
           )}
         </div>
