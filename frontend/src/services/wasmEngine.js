@@ -548,9 +548,9 @@ export async function resolveBoundary(boundaryInfo) {
   return result;
 }
 
-// ─── Full Analytics Pipeline (MWS-First, Client-Side Pyodide WASM) ───
+// ─── Full Analytics Pipeline ───
 
-export async function runAnalyticsPipeline(boundaryInfo, selectedLayers, selectedYears, onProgress) {
+export async function runAnalyticsPipeline(boundaryInfo, selectedLayers, selectedYears, onProgress, computePath = 'raster') {
   // Step 1: Resolve boundary
   onProgress?.('Resolving village boundary…');
   const boundary = await resolveBoundary(boundaryInfo);
@@ -561,29 +561,12 @@ export async function runAnalyticsPipeline(boundaryInfo, selectedLayers, selecte
 
   const geojson = boundary.geojson || boundaryInfo.boundary_geojson;
   boundary.geojson = geojson;
+  boundary.boundary_geojson = geojson;
   const sortedYears = [...selectedYears].sort((a, b) => a - b);
 
-  // Step 2: Try MWS intersection (client-side via Pyodide WASM)
-  onProgress?.('Checking CoRE Stack data availability…');
-  try {
-    const mwsResponse = await tryMWSAnalytics(boundary, selectedLayers, sortedYears, onProgress);
-
-    if (mwsResponse.status === 'success' && mwsResponse.data) {
-      onProgress?.('CoRE Stack analytics complete!');
-      const results = mwsResponse.data;
-      results.data_source = results.data_source || 'CoRE Stack MWS (10m resolution)';
-      results.mws_count = mwsResponse.mws_count;
-      results.area_hectares = boundary.area_hectares || 0;
-
-      // Log discovered keys for debugging zero-output issues
-      if (results.discovered_keys) {
-        console.log('[CSVAT] CoRE Stack data keys:', results.discovered_keys);
-      }
-      return results;
-    }
-
-    // MWS vector data not available — try raster path before GEE fallback
-    onProgress?.('MWS vectors unavailable. Checking for raster layers…');
+  if (computePath === 'raster') {
+    // ─── RASTER PATH (High Accuracy) ───
+    onProgress?.('Checking CoRE Stack raster layer availability…');
     try {
       const { runRasterAnalytics, checkRasterAvailability } = await import('./rasterEngine');
       const rasterCheck = await checkRasterAvailability(
@@ -591,35 +574,56 @@ export async function runAnalyticsPipeline(boundaryInfo, selectedLayers, selecte
       );
 
       if (rasterCheck.available) {
-        onProgress?.(`Found ${rasterCheck.layerCount} raster layers. Starting client-side raster processing…`);
+        onProgress?.(`Found ${rasterCheck.layerCount} raster layers. Starting client-side raster processing (High Accuracy)…`);
         const rasterResults = await runRasterAnalytics(
           boundary, selectedLayers, sortedYears, onProgress
         );
         rasterResults.area_hectares = boundary.area_hectares || 0;
         rasterResults.compute_mode = 'client_raster';
+        onProgress?.('Raster analytics complete!');
         return rasterResults;
       }
 
       console.log('[CSVAT] No raster layers available, falling back to GEE prompt.');
-    } catch (rasterErr) {
-      console.warn('[CSVAT] Raster processing failed, falling back to GEE prompt:', rasterErr);
+      throw new MWSUnavailableError(
+        'No CoRE Stack raster layers found for this area. Would you like to use Google Earth Engine instead?',
+        boundary,
+      );
+    } catch (err) {
+      if (err instanceof MWSUnavailableError) throw err;
+      console.error('[CSVAT] Raster pipeline error:', err);
+      throw new MWSUnavailableError(
+        `CoRE Stack raster processing failed: ${err.message}. Would you like to use GEE instead?`,
+        boundary,
+      );
     }
+  } else {
+    // ─── MWS PATH (Vector) ───
+    onProgress?.('Checking CoRE Stack MWS data availability…');
+    try {
+      const mwsResponse = await tryMWSAnalytics(boundary, selectedLayers, sortedYears, onProgress);
 
-    // Neither MWS vectors nor rasters available — prompt user for GEE
-    throw new MWSUnavailableError(
-      mwsResponse.message || 'Village not available on CoRE Stack.',
-      boundary,
-    );
-  } catch (err) {
-    if (err instanceof MWSUnavailableError) {
-      throw err; // Re-throw so Dashboard catches it
+      if (mwsResponse.status === 'success' && mwsResponse.data) {
+        onProgress?.('CoRE Stack MWS analytics complete!');
+        const results = mwsResponse.data;
+        results.data_source = results.data_source || 'CoRE Stack MWS (10m resolution)';
+        results.mws_count = mwsResponse.mws_count;
+        results.area_hectares = boundary.area_hectares || 0;
+        return results;
+      }
+
+      throw new MWSUnavailableError(
+        mwsResponse.message || 'Village not available on CoRE Stack (MWS).',
+        boundary,
+      );
+    } catch (err) {
+      if (err instanceof MWSUnavailableError) throw err;
+      console.error('[CSVAT] MWS pipeline error:', err);
+      throw new MWSUnavailableError(
+        `CoRE Stack MWS unavailable: ${err.message}. Would you like to use GEE instead?`,
+        boundary,
+      );
     }
-    // Network/server error trying MWS — also prompt for GEE
-    console.error('[CSVAT] MWS pipeline error:', err);
-    throw new MWSUnavailableError(
-      `CoRE Stack unavailable: ${err.message}. Would you like to use GEE instead?`,
-      boundary,
-    );
   }
 }
 

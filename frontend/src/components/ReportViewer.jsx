@@ -325,12 +325,12 @@ export default function ReportViewer({ results }) {
                 <Bar
                   data={{
                     labels: vegetation.transitions
-                      .filter(t => t.to !== 'Forest')
-                      .map(t => `${t.from} → ${t.to}`),
+                      .filter(t => (t.to_label || t.to) !== 'Forest')
+                      .map(t => `${t.from_class || t.from} → ${t.to_label || t.to}`),
                     datasets: [{
                       label: 'Area (ha)',
                       data: vegetation.transitions
-                        .filter(t => t.to !== 'Forest')
+                        .filter(t => (t.to_label || t.to) !== 'Forest')
                         .map(t => t.area_ha),
                       backgroundColor: [
                         'rgba(239, 68, 68, 0.7)',
@@ -364,8 +364,8 @@ export default function ReportViewer({ results }) {
                 <tbody>
                   {vegetation.transitions.map((t, idx) => (
                     <tr key={idx}>
-                      <td>{t.from}</td>
-                      <td>{t.to}</td>
+                      <td>{t.from_class || t.from}</td>
+                      <td>{t.to_label || t.to}</td>
                       <td>{t.area_ha?.toFixed(2)}</td>
                     </tr>
                   ))}
@@ -425,19 +425,20 @@ export default function ReportViewer({ results }) {
             <Bar
               data={{
                 labels: crop_intensity_change
-                  .filter(t => !t.label.includes('Total'))
-                  .map(t => t.label),
+                  .filter(t => !(t.category || t.label || '').includes('Total'))
+                  .map(t => t.category || t.label),
                 datasets: [{
                   label: 'Area (ha)',
                   data: crop_intensity_change
-                    .filter(t => !t.label.includes('Total'))
+                    .filter(t => !(t.category || t.label || '').includes('Total'))
                     .map(t => t.area_ha),
                   backgroundColor: crop_intensity_change
-                    .filter(t => !t.label.includes('Total'))
+                    .filter(t => !(t.category || t.label || '').includes('Total'))
                     .map(t => {
-                      if (t.label.includes('Single To Double') || t.label.includes('Double To Triple') || t.label.includes('Single To Triple'))
+                      const lbl = t.category || t.label || '';
+                      if (lbl.includes('Single To Double') || lbl.includes('Double To Triple') || lbl.includes('Single To Triple'))
                         return 'rgba(34, 197, 94, 0.7)'; // improvement
-                      if (t.label.includes('Double To Single') || t.label.includes('Triple To Double') || t.label.includes('Triple To Single'))
+                      if (lbl.includes('Double To Single') || lbl.includes('Triple To Double') || lbl.includes('Triple To Single'))
                         return 'rgba(239, 68, 68, 0.7)'; // decline
                       return 'rgba(59, 130, 246, 0.7)'; // stable
                     }),
@@ -465,21 +466,23 @@ export default function ReportViewer({ results }) {
               </tr>
             </thead>
             <tbody>
-              {crop_intensity_change.map((t, idx) => (
+              {crop_intensity_change.map((t, idx) => {
+                const lbl = t.category || t.label || '';
+                return (
                 <tr key={idx}>
-                  <td>{t.label}</td>
+                  <td>{lbl}</td>
                   <td>{t.area_ha?.toFixed(2)}</td>
                   <td>
-                    {t.label.includes('Total') ? '—' :
-                      (t.label.includes('Single To Double') || t.label.includes('Double To Triple') || t.label.includes('Single To Triple'))
+                    {lbl.includes('Total') ? '—' :
+                      (lbl.includes('Single To Double') || lbl.includes('Double To Triple') || lbl.includes('Single To Triple'))
                         ? '↑ Improvement'
-                        : (t.label.includes('Double To Single') || t.label.includes('Triple To Double') || t.label.includes('Triple To Single'))
+                        : (lbl.includes('Double To Single') || lbl.includes('Triple To Double') || lbl.includes('Triple To Single'))
                           ? '↓ Decline'
                           : '→ Stable'
                     }
                   </td>
                 </tr>
-              ))}
+              );})}
             </tbody>
           </table>
 
@@ -694,9 +697,10 @@ function generateNarrative(results, ciData, swData) {
 
   // Crop intensity change summary
   if (crop_intensity_change && crop_intensity_change.length > 0) {
-    const improvements = crop_intensity_change.filter(t =>
-      t.label.includes('Single To Double') || t.label.includes('Double To Triple') || t.label.includes('Single To Triple')
-    );
+    const improvements = crop_intensity_change.filter(t => {
+      const lbl = t.category || t.label || '';
+      return lbl.includes('Single To Double') || lbl.includes('Double To Triple') || lbl.includes('Single To Triple');
+    });
     const totalImprovement = improvements.reduce((sum, t) => sum + (t.area_ha || 0), 0);
     if (totalImprovement > 0) {
       parts.push(
