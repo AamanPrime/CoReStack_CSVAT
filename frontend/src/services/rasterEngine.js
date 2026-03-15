@@ -37,11 +37,10 @@ export async function runRasterAnalytics(boundary, selectedLayers, selectedYears
     throw new Error('No raster layers constructed for this location.');
   }
 
-  // 2. Only use LULC layers (contain ALL classes: cropping + water + vegetation)
-  //    No need for separate surface water downloads
-  const lulcLayers = allLayers.filter(l => l.category === 'cropping_intensity');
+  // 2. Send ALL layers (LULC + surfaceWaterBodies) — backend separates by category
+  const layersToSend = allLayers;
 
-  onProgress?.(`Sending ${lulcLayers.length} LULC rasters to server for concurrent processing…`);
+  onProgress?.(`Sending ${layersToSend.length} rasters to server for concurrent processing…`);
 
   // 3. Send to backend /analyze endpoint for server-side rasterio processing
   const analyzeResp = await fetch(`${API_BASE}/api/v1/raster/analyze`, {
@@ -50,7 +49,7 @@ export async function runRasterAnalytics(boundary, selectedLayers, selectedYears
     body: JSON.stringify({
       village_geojson: villageGeojson,
       area_hectares: boundary.area_hectares || 0,
-      layers: lulcLayers.map(l => ({
+      layers: layersToSend.map(l => ({
         url: l.layer_url,
         category: l.category,
         fiscal_year: l.fiscal_year,

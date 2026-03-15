@@ -256,8 +256,10 @@ async def analyze_raster(request_body: dict):
     async def download_one(layer_info):
         url = layer_info.get("url", "")
         fy = layer_info.get("fiscal_year", "unknown")
+        cat = layer_info.get("category", "lulc")
+        dl_key = f"{cat}__{fy}"  # Unique key per category+year
         if "geoserver.core-stack.org" not in url:
-            return fy, None
+            return dl_key, cat, fy, None
         try:
             async with httpx.AsyncClient(timeout=120.0) as http:
                 resp = await http.get(
@@ -267,127 +269,176 @@ async def analyze_raster(request_body: dict):
                 )
                 ct = resp.headers.get("content-type", "")
                 if "xml" in ct.lower() or resp.status_code >= 400:
-                    logger.info("Layer %s not available (HTTP %s)", fy, resp.status_code)
-                    return fy, None
-                logger.info("Downloaded %s: %d bytes", fy, len(resp.content))
-                return fy, resp.content
+                    logger.info("Layer %s %s not available (HTTP %s)", cat, fy, resp.status_code)
+                    return dl_key, cat, fy, None
+                logger.info("Downloaded %s %s: %d bytes", cat, fy, len(resp.content))
+                return dl_key, cat, fy, resp.content
         except Exception as e:
-            logger.warning("Download failed for %s: %s", fy, e)
-            return fy, None
+            logger.warning("Download failed for %s %s: %s", cat, fy, e)
+            return dl_key, cat, fy, None
 
     logger.info("Starting concurrent download of %d layers...", len(layers))
     results = await asyncio.gather(*[download_one(l) for l in layers])
-    downloaded = {fy: data for fy, data in results if data is not None}
-    logger.info("Downloaded %d of %d layers", len(downloaded), len(layers))
 
-    if not downloaded:
+    # Separate downloads by category
+    lulc_downloads = {}   # fiscal_year → bytes
+    water_downloads = {}  # fiscal_year → bytes
+    for dl_key, cat, fy, data in results:
+        if data is None:
+            continue
+        if cat == "surface_water":
+            water_downloads[fy] = data
+        else:
+            lulc_downloads[fy] = data
+
+    total_dl = len(lulc_downloads) + len(water_downloads)
+    logger.info("Downloaded %d LULC + %d water = %d total layers",
+                len(lulc_downloads), len(water_downloads), total_dl)
+
+    if not lulc_downloads and not water_downloads:
         raise HTTPException(status_code=404, detail="No raster layers could be downloaded")
 
-    # ── Step 2: Process each raster → histograms + masked arrays ──
+    # ── Step 3: Process LULC rasters → cropping + vegetation ──
     cropping_results = []
-    water_results = []
+    water_results_lulc = []  # Fallback water from LULC classes
     vegetation_data = []
     raw_histograms = {}
     masked_arrays = {}  # Store for change detection
 
     pxha = None  # Will be set from first raster
 
-    for fiscal_year in sorted(downloaded.keys()):
-        raw_bytes = downloaded[fiscal_year]
+    def process_raster(raw_bytes, geom_shape):
+        """Process a GeoTIFF → histogram + masked array. Returns (histogram, masked, pxha) or None."""
+        nonlocal pxha
+        with tempfile.NamedTemporaryFile(suffix=".tiff", delete=True) as tmp:
+            tmp.write(raw_bytes)
+            tmp.flush()
+            with rasterio.open(tmp.name) as src:
+                if pxha is None:
+                    pxha = pixel_area_ha(src.res[0])
+                vb = geom_shape.bounds
+                try:
+                    win = from_bounds(vb[0], vb[1], vb[2], vb[3], src.transform)
+                    win = win.intersection(Window(0, 0, src.width, src.height))
+                    if win.width <= 0 or win.height <= 0:
+                        return None
+                except Exception:
+                    return None
+                data = src.read(1, window=win)
+                win_tf = src.window_transform(win)
+                pmask = geometry_mask(
+                    [mapping(geom_shape)], out_shape=data.shape,
+                    transform=win_tf, invert=True,
+                )
+                masked = np.where(pmask & ~np.isnan(data), data, np.nan)
+                valid = masked[~np.isnan(masked)]
+                if len(valid) == 0:
+                    return None
+                histogram = {}
+                for v in np.unique(valid):
+                    histogram[int(v)] = int(np.sum(valid == v))
+                return histogram, masked, pxha
+
+    for fiscal_year in sorted(lulc_downloads.keys()):
         try:
-            with tempfile.NamedTemporaryFile(suffix=".tiff", delete=True) as tmp:
-                tmp.write(raw_bytes)
-                tmp.flush()
+            result = process_raster(lulc_downloads[fiscal_year], geom)
+            if result is None:
+                continue
+            histogram, masked, px = result
+            raw_histograms[fiscal_year] = histogram
+            masked_arrays[fiscal_year] = masked
 
-                with rasterio.open(tmp.name) as src:
-                    if pxha is None:
-                        pxha = pixel_area_ha(src.res[0])
+            logger.info("  LULC %s: %s", fiscal_year, histogram)
 
-                    # Compute pixel window from village bbox
-                    vb = geom.bounds
-                    try:
-                        win = from_bounds(vb[0], vb[1], vb[2], vb[3], src.transform)
-                        win = win.intersection(Window(0, 0, src.width, src.height))
-                        if win.width <= 0 or win.height <= 0:
-                            continue
-                    except Exception:
-                        continue
+            # Extract cropping metrics
+            single_k = histogram.get(8, 0) * px
+            single_nk = histogram.get(9, 0) * px
+            double = histogram.get(10, 0) * px
+            triple = histogram.get(11, 0) * px
+            single = single_k + single_nk
+            trees = histogram.get(6, 0) * px
+            total_crop = single + double + triple
 
-                    # Read ONLY the village window
-                    data = src.read(1, window=win)
-                    win_tf = src.window_transform(win)
+            # Standard Cropping Intensity = GCA / NSA
+            # GCA (Gross Cropped Area) = single*1 + double*2 + triple*3
+            # NSA (Net Sown Area) = total cropped pixels
+            gca = single + double * 2 + triple * 3
+            intensity_idx = round(gca / total_crop, 3) if total_crop > 0 else 0
 
-                    # Create polygon mask (vectorized)
-                    mask = geometry_mask(
-                        [mapping(geom)], out_shape=data.shape,
-                        transform=win_tf, invert=True,
-                    )
+            cropping_results.append({
+                "fiscal_year": fiscal_year,
+                "single_crop_ha": round(single, 2),
+                "double_crop_ha": round(double, 2),
+                "triple_crop_ha": round(triple, 2),
+                "total_cropped_ha": round(total_crop, 2),
+                "intensity_index": intensity_idx,
+                "trees_ha": round(trees, 2),
+            })
 
-                    # Apply mask
-                    masked = np.where(mask & ~np.isnan(data), data, np.nan)
-                    valid = masked[~np.isnan(masked)]
+            # Fallback water from LULC classes (used if no surfaceWater raster)
+            kharif = histogram.get(2, 0) * px
+            kharif_rabi = histogram.get(3, 0) * px
+            perennial = histogram.get(4, 0) * px
+            water_results_lulc.append({
+                "fiscal_year": fiscal_year,
+                "kharif_ha": round(kharif, 2),
+                "rabi_ha": round(kharif_rabi, 2),
+                "perennial_ha": round(perennial, 2),
+                "total_water_ha": round(kharif + kharif_rabi + perennial, 2),
+            })
 
-                    logger.info("  %s: %d valid pixels", fiscal_year, len(valid))
-                    if len(valid) == 0:
-                        continue
-
-                    # Store masked array for change detection
-                    masked_arrays[fiscal_year] = masked
-
-                    # Build histogram
-                    histogram = {}
-                    for v in np.unique(valid):
-                        histogram[int(v)] = int(np.sum(valid == v))
-                    raw_histograms[fiscal_year] = histogram
-
-                    # Extract cropping metrics
-                    single_k = histogram.get(8, 0) * pxha
-                    single_nk = histogram.get(9, 0) * pxha
-                    double = histogram.get(10, 0) * pxha
-                    triple = histogram.get(11, 0) * pxha
-                    single = single_k + single_nk
-                    trees = histogram.get(6, 0) * pxha
-                    total_crop = single + double + triple
-
-                    # Intensity index = weighted crop cycles / village area
-                    village_area = request_body.get("area_hectares", 0) or (len(valid) * pxha)
-                    intensity_idx = round(
-                        (single + double * 2 + triple * 3) / village_area, 3
-                    ) if village_area > 0 else 0
-
-                    cropping_results.append({
-                        "fiscal_year": fiscal_year,
-                        "single_crop_ha": round(single, 2),
-                        "double_crop_ha": round(double, 2),
-                        "triple_crop_ha": round(triple, 2),
-                        "total_cropped_ha": round(total_crop, 2),
-                        "intensity_index": intensity_idx,
-                        "trees_ha": round(trees, 2),
-                    })
-
-                    # Extract water metrics (classes 2, 3, 4 from LULC)
-                    kharif = histogram.get(2, 0) * pxha
-                    kharif_rabi = histogram.get(3, 0) * pxha
-                    perennial = histogram.get(4, 0) * pxha
-
-                    water_results.append({
-                        "fiscal_year": fiscal_year,
-                        "kharif_ha": round(kharif, 2),
-                        "rabi_ha": round(kharif_rabi, 2),
-                        "perennial_ha": round(perennial, 2),
-                        "total_water_ha": round(kharif + kharif_rabi + perennial, 2),
-                    })
-
-                    # Vegetation
-                    vegetation_data.append({
-                        "fiscal_year": fiscal_year,
-                        "tree_cover_ha": round(trees, 2),
-                    })
+            # Vegetation
+            vegetation_data.append({
+                "fiscal_year": fiscal_year,
+                "tree_cover_ha": round(trees, 2),
+            })
 
         except Exception as e:
-            logger.warning("Failed to process %s: %s", fiscal_year, e)
+            logger.warning("Failed to process LULC %s: %s", fiscal_year, e)
             import traceback
             traceback.print_exc()
+
+    # ── Step 4: Process surfaceWaterBodies_annual rasters ──
+    # These use different class encoding:
+    #   1=Kharif only, 2=Kharif+Rabi, 3=Perennial (year-round)
+    water_results = []
+    for fiscal_year in sorted(water_downloads.keys()):
+        try:
+            result = process_raster(water_downloads[fiscal_year], geom)
+            if result is None:
+                continue
+            histogram, _, px = result
+            logger.info("  Water %s: %s", fiscal_year, histogram)
+
+            # surfaceWaterBodies_annual classes:
+            # 1=Kharif, 2=Kharif+Rabi, 3=Perennial
+            kharif_only = histogram.get(1, 0) * px
+            kharif_rabi = histogram.get(2, 0) * px
+            perennial = histogram.get(3, 0) * px
+
+            # Seasonal interpretation (matching MWS output):
+            # Kharif = kharif_only + kharif_rabi + perennial
+            # Rabi = kharif_rabi + perennial
+            # Zaid = perennial
+            kharif_total = kharif_only + kharif_rabi + perennial
+            rabi_total = kharif_rabi + perennial
+            zaid_total = perennial
+            total_water = kharif_total  # Total unique water pixels
+
+            water_results.append({
+                "fiscal_year": fiscal_year,
+                "kharif_ha": round(kharif_total, 2),
+                "rabi_ha": round(rabi_total, 2),
+                "zaid_ha": round(zaid_total, 2),
+                "total_water_ha": round(total_water, 2),
+            })
+
+        except Exception as e:
+            logger.warning("Failed to process water %s: %s", fiscal_year, e)
+
+    # Use surfaceWaterBodies results if available, else fall back to LULC water
+    if not water_results:
+        water_results = water_results_lulc
 
     # ── Step 3: Vegetation & Deforestation Analysis ──
     vegetation_analysis = {}
