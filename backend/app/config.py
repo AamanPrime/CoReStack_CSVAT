@@ -16,9 +16,8 @@ class Settings(BaseSettings):
     APP_NAME: str = "CSVAT"
     DEBUG: bool = True
 
-    # Database
-    DATABASE_URL: str = "postgresql://csvat:csvat_pass@localhost:5432/csvat_db"
-
+    # Database (SQLite for local dev, PostgreSQL for production)
+    DATABASE_URL: str = "sqlite:///./csvat.db"
 
     # CoRE Stack
     CORESTACK_API_BASE_URL: str = "https://api-doc.core-stack.org/api/v1"
@@ -38,9 +37,6 @@ class Settings(BaseSettings):
 
     # GeoServer (for MWS geometry downloads)
     GEOSERVER_BASE_URL: str = ""
-
-    # Redis URL
-    REDIS_URL: str = "redis://redis:6379/0"
 
     class Config:
         env_file = str(ENV_FILE)

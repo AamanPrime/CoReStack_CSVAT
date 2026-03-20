@@ -4,7 +4,6 @@ import uuid
 import enum
 from datetime import datetime, timezone
 from sqlalchemy import Column, String, Enum, JSON, DateTime, Text
-from sqlalchemy.dialects.postgresql import UUID
 from app.database import Base
 
 
@@ -23,7 +22,7 @@ class ExecutionMode(str, enum.Enum):
 class Job(Base):
     __tablename__ = "jobs"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     boundary_id = Column(String(255), nullable=True)
     boundary_geojson = Column(JSON, nullable=True)
     village_name = Column(String(255), nullable=True)

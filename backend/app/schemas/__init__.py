@@ -74,7 +74,7 @@ class JobCreate(BaseModel):
 
 
 class JobResponse(BaseModel):
-    id: UUID
+    id: str
     status: str
     village_name: Optional[str] = None
     state: Optional[str] = None

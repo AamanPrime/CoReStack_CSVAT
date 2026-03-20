@@ -1,8 +1,8 @@
 """CSVAT — Village Search Service.
 
 Provides village search with autocomplete from a comprehensive
-Indian village database. For production, this would connect to
-Census of India data or a PostGIS database.
+Indian village database. For production, this could connect to
+Census of India data or a persistent database.
 
 Current implementation uses an in-memory database of Indian villages
 with coordinates, covering all major states.
@@ -12,7 +12,7 @@ from typing import Optional
 
 # ─── Comprehensive Indian Village Database ───
 # Covers villages across major states with real coordinates.
-# For production: load from Census 2011 CSV / PostGIS table.
+# For production: load from Census 2011 CSV / persistent table.
 
 VILLAGE_DB = [
     # Rajasthan

@@ -1,7 +1,7 @@
 """CSVAT — Jobs API router.
 
 Handles job submission, status polling, and asset delivery.
-Uses PostGIS for persistence (replaces in-memory dict from MVP).
+Uses SQLite for persistence (replaces in-memory dict from MVP).
 
 Modes:
   - SERVER: dispatches analytics to Celery worker (async), client polls for results
@@ -69,7 +69,7 @@ async def create_job(request: JobSubmitRequest, background_tasks: BackgroundTask
     - mode=SERVER → dispatches native FastAPI background task, returns PENDING immediately.
     - mode=CLIENT → creates a PENDING job record; client runs WASM then calls /save.
     """
-    job_id = uuid.uuid4()
+    job_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc)
 
     mode = ExecutionMode.SERVER if request.mode == "SERVER" else ExecutionMode.CLIENT
@@ -101,7 +101,7 @@ async def create_job(request: JobSubmitRequest, background_tasks: BackgroundTask
             background_tasks.add_task(
                 run_analytics_task,
                 {
-                    "job_id": str(job_id),
+                    "job_id": job_id,
                     "boundary_id": request.boundary_id,
                     "boundary_geojson": request.boundary_geojson,
                     "village_name": request.village_name,
@@ -130,12 +130,7 @@ async def save_client_results(job_id: str, request: ClientResultsRequest, _auth:
 
     Called after client finishes WASM computation.
     """
-    try:
-        job_uuid = uuid.UUID(job_id)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid job ID format")
-
-    job = db.query(Job).filter(Job.id == job_uuid).first()
+    job = db.query(Job).filter(Job.id == job_id).first()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
 
@@ -166,12 +161,7 @@ async def get_job(job_id: str, _auth: dict = Depends(verify_token), db: Session 
 
     Maps to polling connector for async job monitoring.
     """
-    try:
-        job_uuid = uuid.UUID(job_id)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid job ID format")
-
-    job = db.query(Job).filter(Job.id == job_uuid).first()
+    job = db.query(Job).filter(Job.id == job_id).first()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
 
@@ -185,12 +175,7 @@ async def get_job_asset(job_id: str, asset_type: str, _auth: dict = Depends(veri
 
     Asset types: html, csv, pdf.
     """
-    try:
-        job_uuid = uuid.UUID(job_id)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid job ID format")
-
-    job = db.query(Job).filter(Job.id == job_uuid).first()
+    job = db.query(Job).filter(Job.id == job_id).first()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
 
