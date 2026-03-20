@@ -102,7 +102,7 @@ export default function Methodology() {
                 X<sub>village</sub> = Σ(x<sub>i</sub> × f<sub>i</sub>) / Σ(f<sub>i</sub>)
               </FormulaBox>
               <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '0.5rem' }}>
-                Used for: cropping intensity index, NDVI mean.
+                Used for: NDVI mean and similar ratio metrics.
                 Weighted average prevents bias from partial overlaps.
               </p>
             </div>
@@ -130,7 +130,21 @@ export default function Methodology() {
             ['Double Crop Area', 'Land cropped twice per year', 'ha', 'Weighted sum'],
             ['Triple Crop Area', 'Land cropped thrice per year', 'ha', 'Weighted sum'],
             ['Total Cropped Area', 'Sum of all crop areas', 'ha', 'Derived'],
+            ['Intensity Index', 'GCA / NSA (avg crop cycles per unit area)', '—', 'Derived'],
           ]} />
+          <SubSection title="Intensity Index Formula (GCA / NSA)">
+            <FormulaBox>
+              GCA = Single×1 + Double×2 + Triple×3{"\n"}
+              NSA = Single + Double + Triple{"\n"}
+              Intensity Index = GCA / NSA
+            </FormulaBox>
+            <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '0.5rem' }}>
+              The Gross Cropped Area (GCA) counts each crop cycle separately.
+              The Net Sown Area (NSA) is the total physical area.
+              An intensity of 2.0 means on average every hectare is cropped twice per year.
+              Both Raster and MWS paths use this identical formula.
+            </p>
+          </SubSection>
           <p style={{ ...pStyle, fontSize: '0.82rem', color: 'var(--text-muted)' }}>
             Source: CoRE Stack LULC classification from Sentinel-2 multi-temporal analysis.
             Each pixel is classified by how many distinct crop cycles are detected across
@@ -139,7 +153,12 @@ export default function Methodology() {
         </SubSection>
 
         <SubSection title="4.2 Surface Water Bodies">
-          <p style={pStyle}>Seasonal water body coverage aligned with Indian agricultural seasons.</p>
+          <p style={pStyle}>
+            Seasonal water body coverage aligned with Indian agricultural seasons.
+            Surface water data is sourced from {' '}
+            <strong>surfaceWaterBodies_annual</strong> vector records via the CoRE Stack tehsil API,
+            then intersected with the village boundary using the same MWS weighted aggregation.
+          </p>
           <MetricsTable rows={[
             ['Kharif Water Area', 'Water during monsoon (Jun–Sep)', 'ha', 'Weighted sum'],
             ['Rabi Water Area', 'Water during winter (Oct–Feb)', 'ha', 'Weighted sum'],
@@ -205,31 +224,42 @@ export default function Methodology() {
 
       {/* ─── 6. Execution Modes ─── */}
       <Section num="6" title="Execution Modes" color="var(--accent-purple, #8b5cf6)">
-        <p style={pStyle}>CSVAT supports two execution modes that produce identical results:</p>
+        <p style={pStyle}>CSVAT supports three execution paths with consistent formulas and data sources:</p>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', margin: '1rem 0' }}>
-          <div style={formulaCardStyle}>
-            <div style={{ fontWeight: 700, color: '#8b5cf6', marginBottom: '0.5rem' }}>⚡ Client (WASM)</div>
-            <ul style={{ ...ulStyle, fontSize: '0.82rem' }}>
-              <li>Data fetched via backend proxy</li>
-              <li>Spatial intersection runs in browser via Pyodide (Python WASM)</li>
-              <li>Zero server compute cost</li>
-              <li>Report rendered in React</li>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.75rem', margin: '1rem 0' }}>
+          <div style={{ ...formulaCardStyle, borderColor: '#10b981' }}>
+            <div style={{ fontWeight: 700, color: '#10b981', marginBottom: '0.5rem', fontSize: '0.9rem' }}>⚡ Raster (High Accuracy)</div>
+            <ul style={{ ...ulStyle, fontSize: '0.78rem' }}>
+              <li>Downloads LULC GeoTIFF rasters from GeoServer</li>
+              <li>Pixel-level zonal statistics via rasterio/GDAL</li>
+              <li>10m resolution within exact village polygon</li>
+              <li>Surface water from tehsil vector API</li>
+              <li>Most accurate — pixel-level counting</li>
             </ul>
           </div>
           <div style={formulaCardStyle}>
-            <div style={{ fontWeight: 700, color: '#3b82f6', marginBottom: '0.5rem' }}>🖥️ Server</div>
-            <ul style={{ ...ulStyle, fontSize: '0.82rem' }}>
-              <li>Data fetched by backend directly</li>
-              <li>Spatial intersection on server (Shapely + Python)</li>
-              <li>Celery workers for async processing</li>
+            <div style={{ fontWeight: 700, color: '#8b5cf6', marginBottom: '0.5rem', fontSize: '0.9rem' }}>⚡ MWS Vector</div>
+            <ul style={{ ...ulStyle, fontSize: '0.78rem' }}>
+              <li>Pre-aggregated MWS-level data from CoRE Stack API</li>
+              <li>Village-MWS polygon intersection + weighted aggregation</li>
+              <li>Faster — no raster downloads needed</li>
+              <li>Small area approximation from overlap fractions</li>
+            </ul>
+          </div>
+          <div style={formulaCardStyle}>
+            <div style={{ fontWeight: 700, color: '#3b82f6', marginBottom: '0.5rem', fontSize: '0.9rem' }}>🖥️ Server</div>
+            <ul style={{ ...ulStyle, fontSize: '0.78rem' }}>
+              <li>Same logic as MWS Vector, dispatched to backend workers</li>
+              <li>Celery async processing</li>
+              <li>Good for batch or low-power clients</li>
               <li>HTML/PDF/CSV exports server-generated</li>
             </ul>
           </div>
         </div>
         <p style={{ ...pStyle, fontSize: '0.82rem', color: 'var(--text-muted)' }}>
-          Both modes use identical mathematical formulas and data sources.
-          The only difference is <em>where</em> the computation runs — your browser or our server.
+          All three modes use the same GCA/NSA intensity formula and data sources.
+          The Raster path provides the highest accuracy by counting individual pixels;
+          the Vector paths approximate through MWS-level weighted aggregation.
         </p>
       </Section>
 

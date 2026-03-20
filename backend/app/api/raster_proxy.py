@@ -11,11 +11,12 @@ GeoServer URL pattern (from CoRE Stack's own website):
 
 Known workspaces:
   - LULC_level_3       → Cropping intensity (single/double/triple crop classification)
-  - surfaceWaterBodies → Surface water bodies by season
 
 Coverage ID naming convention:
   - LULC: LULC_{start_YY}_{end_YY}_{district}_{tehsil}_level_3
-  - Water: surfaceWaterBodies_{start_YY}_{end_YY}_{district}_{tehsil}
+
+Surface water data comes from the CoRE Stack tehsil vector API
+(surfaceWaterBodies_annual), NOT rasters — it only exists as a vector layer.
 """
 
 import logging
@@ -42,12 +43,9 @@ RASTER_LAYER_DEFS = [
         "coverage_template": "LULC_level_3:LULC_{yy_start}_{yy_end}_{district}_{tehsil}_level_3",
         "description": "LULC Classification (Single/Double/Triple Crop)",
     },
-    {
-        "category": "surface_water",
-        "workspace": "surfaceWaterBodies_annual",
-        "coverage_template": "surfaceWaterBodies_annual:surfaceWaterBodies_{yy_start}_{yy_end}_{district}_{tehsil}_annual",
-        "description": "Surface Water Bodies (Seasonal)",
-    },
+    # NOTE: Surface water does NOT exist as raster on GeoServer.
+    # It's served as vector layer (workspace: swb). Water data is fetched
+    # from the CoRE Stack tehsil API (surfaceWaterBodies_annual) instead.
 ]
 
 # Fiscal year ranges available on CoRE Stack (YY_YY format)
@@ -253,6 +251,8 @@ async def analyze_raster(request_body: dict):
     }
 
     # ── Step 1: Download all rasters concurrently ──
+    failed_downloads = []  # Track failed downloads for diagnostics
+
     async def download_one(layer_info):
         url = layer_info.get("url", "")
         fy = layer_info.get("fiscal_year", "unknown")
@@ -269,38 +269,34 @@ async def analyze_raster(request_body: dict):
                 )
                 ct = resp.headers.get("content-type", "")
                 if "xml" in ct.lower() or resp.status_code >= 400:
-                    logger.info("Layer %s %s not available (HTTP %s)", cat, fy, resp.status_code)
+                    logger.info("Layer %s %s not available (HTTP %s, ct=%s)", cat, fy, resp.status_code, ct)
+                    failed_downloads.append({"category": cat, "fiscal_year": fy, "reason": f"HTTP {resp.status_code}, content-type={ct}", "url": url})
                     return dl_key, cat, fy, None
                 logger.info("Downloaded %s %s: %d bytes", cat, fy, len(resp.content))
                 return dl_key, cat, fy, resp.content
         except Exception as e:
             logger.warning("Download failed for %s %s: %s", cat, fy, e)
+            failed_downloads.append({"category": cat, "fiscal_year": fy, "reason": str(e), "url": url})
             return dl_key, cat, fy, None
 
     logger.info("Starting concurrent download of %d layers...", len(layers))
     results = await asyncio.gather(*[download_one(l) for l in layers])
 
-    # Separate downloads by category
+    # Separate downloads by category (only LULC rasters — water comes from vector API)
     lulc_downloads = {}   # fiscal_year → bytes
-    water_downloads = {}  # fiscal_year → bytes
     for dl_key, cat, fy, data in results:
         if data is None:
             continue
-        if cat == "surface_water":
-            water_downloads[fy] = data
-        else:
+        if cat != "surface_water":
             lulc_downloads[fy] = data
 
-    total_dl = len(lulc_downloads) + len(water_downloads)
-    logger.info("Downloaded %d LULC + %d water = %d total layers",
-                len(lulc_downloads), len(water_downloads), total_dl)
+    logger.info("Downloaded %d LULC layers", len(lulc_downloads))
 
-    if not lulc_downloads and not water_downloads:
+    if not lulc_downloads:
         raise HTTPException(status_code=404, detail="No raster layers could be downloaded")
 
     # ── Step 3: Process LULC rasters → cropping + vegetation ──
     cropping_results = []
-    water_results_lulc = []  # Fallback water from LULC classes
     vegetation_data = []
     raw_histograms = {}
     masked_arrays = {}  # Store for change detection
@@ -375,18 +371,6 @@ async def analyze_raster(request_body: dict):
                 "trees_ha": round(trees, 2),
             })
 
-            # Fallback water from LULC classes (used if no surfaceWater raster)
-            kharif = histogram.get(2, 0) * px
-            kharif_rabi = histogram.get(3, 0) * px
-            perennial = histogram.get(4, 0) * px
-            water_results_lulc.append({
-                "fiscal_year": fiscal_year,
-                "kharif_ha": round(kharif, 2),
-                "rabi_ha": round(kharif_rabi, 2),
-                "perennial_ha": round(perennial, 2),
-                "total_water_ha": round(kharif + kharif_rabi + perennial, 2),
-            })
-
             # Vegetation
             vegetation_data.append({
                 "fiscal_year": fiscal_year,
@@ -398,47 +382,89 @@ async def analyze_raster(request_body: dict):
             import traceback
             traceback.print_exc()
 
-    # ── Step 4: Process surfaceWaterBodies_annual rasters ──
-    # These use different class encoding:
-    #   1=Kharif only, 2=Kharif+Rabi, 3=Perennial (year-round)
+    # ── Step 4: Surface water from tehsil vector API ──
+    # Surface water does NOT exist as raster on CoRE Stack GeoServer.
+    # It's a vector layer (workspace: swb). We fetch from the same tehsil
+    # API that the MWS/Server path uses (surfaceWaterBodies_annual).
     water_results = []
-    for fiscal_year in sorted(water_downloads.keys()):
-        try:
-            result = process_raster(water_downloads[fiscal_year], geom)
-            if result is None:
-                continue
-            histogram, _, px = result
-            logger.info("  Water %s: %s", fiscal_year, histogram)
+    water_source = "none"
+    try:
+        from app.services.corestack_client import corestack_client
+        from app.services.mws_intersection_service import mws_service
 
-            # surfaceWaterBodies_annual classes:
-            # 1=Kharif, 2=Kharif+Rabi, 3=Perennial
-            kharif_only = histogram.get(1, 0) * px
-            kharif_rabi = histogram.get(2, 0) * px
-            perennial = histogram.get(3, 0) * px
+        # Extract admin params from request
+        state = request_body.get("state", "")
+        district_name = request_body.get("district", "")
+        tehsil_name = request_body.get("tehsil", "")
 
-            # Seasonal interpretation (matching MWS output):
-            # Kharif = kharif_only + kharif_rabi + perennial
-            # Rabi = kharif_rabi + perennial
-            # Zaid = perennial
-            kharif_total = kharif_only + kharif_rabi + perennial
-            rabi_total = kharif_rabi + perennial
-            zaid_total = perennial
-            total_water = kharif_total  # Total unique water pixels
+        if state and district_name and tehsil_name:
+            # Fetch MWS geometries and compute intersections with village
+            mws_features = await corestack_client.get_mws_features_for_tehsil(
+                state, district_name, tehsil_name
+            )
+            intersections = mws_service.compute_intersections(village_geojson, mws_features)
 
-            water_results.append({
-                "fiscal_year": fiscal_year,
-                "kharif_ha": round(kharif_total, 2),
-                "rabi_ha": round(rabi_total, 2),
-                "zaid_ha": round(zaid_total, 2),
-                "total_water_ha": round(total_water, 2),
-            })
+            if intersections:
+                # Fetch tehsil data containing surfaceWaterBodies_annual
+                raw_tehsil = await corestack_client.get_tehsil_data(
+                    state, district_name, tehsil_name
+                )
+                layer_data = raw_tehsil
+                if isinstance(raw_tehsil, dict):
+                    layer_data = raw_tehsil.get("data", raw_tehsil)
 
-        except Exception as e:
-            logger.warning("Failed to process water %s: %s", fiscal_year, e)
+                # Build UID → record lookup for surface water
+                water_records = layer_data.get("surfaceWaterBodies_annual", []) if isinstance(layer_data, dict) else []
+                water_by_uid = {}
+                for rec in (water_records if isinstance(water_records, list) else []):
+                    if isinstance(rec, dict):
+                        uid = str(rec.get("uid") or rec.get("mws_uid") or rec.get("UID", ""))
+                        if uid:
+                            water_by_uid[uid] = rec
 
-    # Use surfaceWaterBodies results if available, else fall back to LULC water
-    if not water_results:
-        water_results = water_results_lulc
+                logger.info("Surface water (vector): %d MWS records, %d intersections",
+                            len(water_by_uid), len(intersections))
+
+                # Aggregate per fiscal year (matching MWS path logic)
+                for fy_start, fy_end in FISCAL_YEARS:
+                    fy = f"20{fy_start}-20{fy_end}"
+                    fiscal_year = f"{fy_start}-{fy_end}"
+                    kharif = mws_service.aggregate_mws_metric(
+                        intersections, water_by_uid,
+                        f"kharif_area_in_ha_{fy}", "weighted_sum",
+                    )
+                    rabi = mws_service.aggregate_mws_metric(
+                        intersections, water_by_uid,
+                        f"rabi_area_in_ha_{fy}", "weighted_sum",
+                    )
+                    zaid = mws_service.aggregate_mws_metric(
+                        intersections, water_by_uid,
+                        f"zaid_area_in_ha_{fy}", "weighted_sum",
+                    )
+                    total = mws_service.aggregate_mws_metric(
+                        intersections, water_by_uid,
+                        f"total_area_in_ha_{fy}", "weighted_sum",
+                    )
+                    water_results.append({
+                        "fiscal_year": fiscal_year,
+                        "kharif_ha": round(kharif or 0.0, 2),
+                        "rabi_ha": round(rabi or 0.0, 2),
+                        "zaid_ha": round(zaid or 0.0, 2),
+                        "total_water_ha": round(
+                            (total or 0.0) if total else
+                            (kharif or 0) + (rabi or 0) + (zaid or 0), 2
+                        ),
+                    })
+                water_source = "tehsil_vector_api"
+            else:
+                logger.warning("No MWS intersections for water aggregation")
+        else:
+            logger.warning("Missing admin params for water vector fetch: state=%s, district=%s, tehsil=%s",
+                           state, district_name, tehsil_name)
+    except Exception as e:
+        logger.warning("Surface water vector fetch failed: %s", e)
+        import traceback
+        traceback.print_exc()
 
     # ── Step 3: Vegetation & Deforestation Analysis ──
     vegetation_analysis = {}
@@ -556,4 +582,10 @@ async def analyze_raster(request_body: dict):
         "raw_histograms": raw_histograms,
         "data_source": "CoRE Stack Raster (10m)",
         "processing": "Server-side zonal statistics (rasterio/GDAL)",
+        "_debug": {
+            "lulc_downloads": len(lulc_downloads),
+            "water_source": water_source,
+            "water_records": len(water_results),
+            "failed_downloads": failed_downloads,
+        },
     }

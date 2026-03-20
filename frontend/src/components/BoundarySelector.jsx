@@ -120,7 +120,8 @@ export default function BoundarySelector({ onBoundarySelect, onMapUpdate }) {
                 const geojson = JSON.parse(ev.target.result);
                 const polygon = geojson.type === 'FeatureCollection' ? geojson.features[0].geometry : geojson.geometry || geojson;
                 onMapUpdate(null, polygon);
-                onBoundarySelect({ type: 'geojson', boundary_geojson: polygon, village_name: 'Custom', state: '-', district: '-', tehsil: '-', source: 'upload' });
+                const area = computeAreaHectares(polygon);
+                onBoundarySelect({ type: 'geojson', boundary_geojson: polygon, village_name: 'Custom Upload', state: '-', district: '-', tehsil: '-', area_hectares: area, source: 'upload' });
               };
               reader.readAsText(file);
             }

@@ -49,6 +49,9 @@ export async function runRasterAnalytics(boundary, selectedLayers, selectedYears
     body: JSON.stringify({
       village_geojson: villageGeojson,
       area_hectares: boundary.area_hectares || 0,
+      state,
+      district,
+      tehsil,
       layers: layersToSend.map(l => ({
         url: l.layer_url,
         category: l.category,
@@ -107,7 +110,7 @@ export async function runRasterAnalytics(boundary, selectedLayers, selectedYears
         fiscal_year: r.fiscal_year,
         kharif_ha: r.kharif_ha,
         rabi_ha: r.rabi_ha,
-        perennial_ha: r.perennial_ha,
+        zaid_ha: r.zaid_ha,
         total_water_ha: r.total_water_ha,
       })),
       source: serverResult.data_source,
@@ -168,6 +171,7 @@ export async function runRasterAnalytics(boundary, selectedLayers, selectedYears
   if (serverResult.raw_histograms) {
     results.raw_histograms = serverResult.raw_histograms;
     console.log('[Raster] Raw histograms:', serverResult.raw_histograms);
+    console.log('[Raster] Debug info:', serverResult._debug);
   }
 
   // Check if we got any actual data
