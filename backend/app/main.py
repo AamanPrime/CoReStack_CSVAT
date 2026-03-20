@@ -71,6 +71,31 @@ async def root():
     }
 
 
+from fastapi import Request
+from fastapi.responses import JSONResponse
+from sqlalchemy import text
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    logger.error("Global crash: %s", str(exc), exc_info=True)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal Server Error", "error": str(exc)},
+    )
+
 @app.get("/health", tags=["Health"])
 async def health():
-    return {"status": "healthy"}
+    db_status = "unknown"
+    try:
+        from app.database import SessionLocal
+        db = SessionLocal()
+        db.execute(text("SELECT 1"))
+        db.close()
+        db_status = "connected"
+    except Exception as e:
+        db_status = f"failed: {str(e)}"
+    
+    return {
+        "status": "healthy" if db_status == "connected" else "degraded",
+        "database": db_status
+    }
