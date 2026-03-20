@@ -1,6 +1,7 @@
 """CSVAT — Main FastAPI Application.
 
 CoRE Stack Village Analytics Tool — Backend Server.
+# Build version: 1.0.1
 """
 
 import logging
