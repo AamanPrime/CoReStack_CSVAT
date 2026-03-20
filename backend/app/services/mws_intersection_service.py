@@ -458,18 +458,19 @@ class MWSIntersectionService:
                     intersections, crop_by_uid,
                     f"triply_cropped_area_in_ha_{fy}", "weighted_sum",
                 )
-                intensity = self.aggregate_mws_metric(
-                    intersections, crop_by_uid,
-                    f"cropping_intensity_unit_less_{fy}", "weighted_average",
-                )
+                # Compute GCA/NSA intensity (consistent with Raster path):
+                # GCA = single*1 + double*2 + triple*3
+                # NSA = single + double + triple
+                s, d, t = (single or 0.0), (double or 0.0), (triple or 0.0)
+                nsa = s + d + t
+                gca = s + d * 2 + t * 3
+                intensity = round(gca / nsa, 3) if nsa > 0 else None
                 crop_results.append({
                     "year": fy,
                     "single_crop_ha": single or 0.0,
                     "double_crop_ha": double or 0.0,
                     "triple_crop_ha": triple or 0.0,
-                    "total_cropped_ha": round(
-                        (single or 0) + (double or 0) + (triple or 0), 4
-                    ),
+                    "total_cropped_ha": round(nsa, 4),
                     "cropping_intensity": intensity,
                 })
             results["cropping_intensity"] = crop_results

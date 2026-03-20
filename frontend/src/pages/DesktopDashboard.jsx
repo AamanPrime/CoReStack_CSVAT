@@ -395,7 +395,7 @@ export default function DesktopDashboard() {
 
 
           {/* Execution Mode & Run */}
-          {boundary && boundary.source === 'corestack' && (
+          {boundary && (boundary.source === 'corestack' || boundary.source === 'upload') && (
             <div className="analytics-section">
               <div style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '0.35rem' }}>
                 Execution Mode
