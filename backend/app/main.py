@@ -45,9 +45,10 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "*",                       # Allow all for production deployment (simplest)
-        "http://localhost:5173",   # Vite dev server
-        "http://localhost:3000",   # Alternative React port
+        "http://localhost:5173",
+        "http://localhost:3000",
+        "https://csvat-frontend.vercel.app",
+        "https://csvat-frontend.onrender.com", # In case they use Render for frontend too
     ],
     allow_credentials=True,
     allow_methods=["*"],
