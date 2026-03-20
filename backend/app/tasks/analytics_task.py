@@ -5,7 +5,7 @@ This task orchestrates the full server-side analytics pipeline:
 2. Try MWS intersection (CoRE Stack pre-computed data)
 3. Fall back to direct GEE if tehsil not active (with user warning)
 4. Generate reports
-5. Store results in PostGIS
+5. Store results in Database
 """
 
 import logging
@@ -44,7 +44,7 @@ GEE_FALLBACK_WARNING = (
 
 
 def _persist_job_result(job_id: str, status: str, results: dict = None, error: str = None):
-    """Persist analytics results back to the PostGIS database."""
+    """Persist analytics results back to the database."""
     try:
         import uuid
         from app.database import SessionLocal
@@ -59,7 +59,7 @@ def _persist_job_result(job_id: str, status: str, results: dict = None, error: s
 
         db = SessionLocal()
         try:
-            job = db.query(Job).filter(Job.id == uuid.UUID(job_id)).first()
+            job = db.query(Job).filter(Job.id == job_id).first()
             if job:
                 job.status = status_map.get(status, JobStatus.FAILED)
                 if results is not None:
@@ -287,7 +287,7 @@ def _run_pipeline(job_params: dict) -> dict:
 
     logger.info("Analytics completed for %s (source: %s)", village_name, results.get("data_source"))
 
-    # 6. Persist to PostGIS
+    # 6. Persist to Database
     if job_id:
         _persist_job_result(job_id, "SUCCESS", results)
 

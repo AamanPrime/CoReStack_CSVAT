@@ -20,16 +20,6 @@ async def lifespan(app: FastAPI):
     try:
         from app.database import engine, Base
         from app.models import Job, CachedBoundary  # noqa: F401 — register models
-        from sqlalchemy import text
-        
-        # Ensure PostGIS is enabled (essential for free Render Postgres instances)
-        try:
-            with engine.connect() as conn:
-                conn.execute(text("CREATE EXTENSION IF NOT EXISTS postgis;"))
-                conn.commit()
-            logger.info("PostGIS extension verified/enabled.")
-        except Exception as e:
-            logger.warning("Could not automatically enable PostGIS (maybe lacking permissions?): %s", e)
 
         Base.metadata.create_all(bind=engine)
         logger.info("Database tables created/verified.")
