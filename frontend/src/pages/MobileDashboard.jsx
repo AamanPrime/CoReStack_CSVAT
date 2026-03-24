@@ -268,7 +268,7 @@ export default function MobileDashboard() {
             <div className="report-overlay-inner">
               <div className="report-overlay-header">
                 <h2 style={{ fontSize: '1.3rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                  📊 Analytics Results — {results.data_source || 'Computed'}
+                   Analytics Results — {results.data_source || 'Computed'}
                   {executionMode === 'SERVER' && ' (Server Mode)'}
                 </h2>
                 <button className="report-close-btn" onClick={handleReset} title="Close & New Analysis">

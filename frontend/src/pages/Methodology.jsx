@@ -230,11 +230,11 @@ export default function Methodology() {
           <div style={{ ...formulaCardStyle, borderColor: '#10b981' }}>
             <div style={{ fontWeight: 700, color: '#10b981', marginBottom: '0.5rem', fontSize: '0.9rem' }}>⚡ Raster (High Accuracy)</div>
             <ul style={{ ...ulStyle, fontSize: '0.78rem' }}>
-              <li>Downloads LULC GeoTIFF rasters from GeoServer</li>
-              <li>Pixel-level zonal statistics via rasterio/GDAL</li>
+              <li>Backend extracts raw pixel data from LULC GeoTIFFs via rasterio</li>
+              <li>All analytics computed client-side in Pyodide (Python WASM)</li>
               <li>10m resolution within exact village polygon</li>
-              <li>Surface water from tehsil vector API</li>
-              <li>Most accurate — pixel-level counting</li>
+              <li>Surface water from tehsil vector API via MWS intersection</li>
+              <li>Most accurate — pixel-level counting, zero server computation</li>
             </ul>
           </div>
           <div style={formulaCardStyle}>
