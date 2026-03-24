@@ -52,6 +52,11 @@ export async function createJob(params) {
   return data;
 }
 
+export async function saveClientResults(jobId, results) {
+  const { data } = await api.post(`/jobs/${jobId}/client-results`, { results });
+  return data;
+}
+
 export async function getJob(jobId) {
   const { data } = await api.get(`/jobs/${jobId}`);
   return data;

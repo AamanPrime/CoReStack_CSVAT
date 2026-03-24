@@ -160,7 +160,7 @@ export default function ExportManager({ results, jobId }) {
   return (
     <div className="export-bar animate-fade-in">
       <button className="btn btn-secondary" onClick={handleHTMLExport} id="export-html-btn">
-        📊 Interactive HTML
+         Interactive HTML
       </button>
       <button className="btn btn-secondary" onClick={handleCSVExport} id="export-csv-btn">
         📋 Download CSV

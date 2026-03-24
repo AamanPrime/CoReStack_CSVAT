@@ -15,7 +15,7 @@ import {
   MWSUnavailableError,
   generateCSV,
 } from '../services/wasmEngine';
-import { createJob, pollJob, getLayers } from '../services/api';
+import { createJob, pollJob, getLayers, saveClientResults } from '../services/api';
 export default function DesktopDashboard() {
   // Sidebar state
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -114,6 +114,52 @@ export default function DesktopDashboard() {
     setShowGEEPrompt(false);
 
     try {
+      // ── FR-BA-03: Pre-validate boundary intersects active tehsil ──
+      setProgress('Validating boundary against active tehsils…');
+      try {
+        const bState = (boundary.state || '').trim();
+        const bDistrict = (boundary.district || '').trim();
+        const bTehsil = (boundary.tehsil || '').trim();
+        if (!bState || !bDistrict || !bTehsil || bState === '-' || bDistrict === '-' || bTehsil === '-') {
+          setError('Please select a valid State, District, and Tehsil before running analytics.');
+          setIsRunning(false);
+          setProgress('');
+          return;
+        }
+        // Check against active locations (same data the dropdown uses)
+        const { getActiveLocations } = await import('../services/api');
+        const locations = await getActiveLocations();
+        const stateObj = (locations || []).find(s => s.label?.toLowerCase() === bState.toLowerCase());
+        const distObj = stateObj?.district?.find(d => d.label?.toLowerCase() === bDistrict.toLowerCase());
+        const tehsilMatch = distObj?.blocks?.find(b => b.label?.toLowerCase() === bTehsil.toLowerCase());
+        if (!tehsilMatch) {
+          setError(`Tehsil "${bTehsil}" in ${bDistrict}, ${bState} is not active on CoRE Stack. Analytics cannot be computed.`);
+          setIsRunning(false);
+          setProgress('');
+          return;
+        }
+      } catch (valErr) {
+        console.warn('[Boundary validation] Skipping — check failed:', valErr.message);
+      }
+
+      // ── Create CLIENT job record for persistence ──
+      let jobId = null;
+      try {
+        const job = await createJob({
+          boundary_geojson: boundary.boundary_geojson || boundary.geojson || null,
+          village_name: boundary.village_name || boundary.name || 'Unknown',
+          state: boundary.state || '',
+          district: boundary.district || '',
+          tehsil: boundary.tehsil || '',
+          layers: selectedLayers,
+          years: selectedYears,
+          mode: 'CLIENT',
+        });
+        jobId = job.id;
+      } catch (jobErr) {
+        console.warn('[Job persist] Skipping job creation:', jobErr.message);
+      }
+
       setProgress(`Starting client-side analytics pipeline (${computePath.toUpperCase()})…`);
       const result = await runAnalyticsPipeline(
         boundary, selectedLayers, selectedYears,
@@ -123,6 +169,13 @@ export default function DesktopDashboard() {
       setProgress('Rendering report…');
       await delay(200);
       setResults(result);
+
+      // ── Save WASM results to PostGIS (non-blocking) ──
+      if (jobId) {
+        saveClientResults(jobId, result).catch(e =>
+          console.warn('[Job persist] Failed to save results:', e.message)
+        );
+      }
     } catch (err) {
       if (err instanceof MWSUnavailableError) {
         setGeePromptMessage(err.message);
@@ -318,7 +371,7 @@ export default function DesktopDashboard() {
             <div className="report-overlay-inner">
               <div className="report-overlay-header">
                 <h2 style={{ fontSize: '1.3rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                  📊 Analytics Results — {results.data_source || 'Computed'}
+                   Analytics Results — {results.data_source || 'Computed'}
                   {executionMode === 'SERVER' && ' (Server Mode)'}
                 </h2>
                 <button className="report-close-btn" onClick={handleReset} title="Close & New Analysis">
