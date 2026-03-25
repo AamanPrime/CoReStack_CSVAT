@@ -372,18 +372,22 @@ export function usePlacesAutocomplete() {
 
 export function computeAreaHectares(geojson) {
   if (!geojson?.coordinates?.[0]) return 0;
-  // For MultiPolygon, coordinates[0][0] is the outer ring of the first polygon
-  const coords =
-    geojson.type === "MultiPolygon"
-      ? geojson.coordinates[0][0]
-      : geojson.coordinates[0];
-  if (!coords || !Array.isArray(coords[0])) return 0;
-  const lats = coords.map((c) => c[1]);
-  const lons = coords.map((c) => c[0]);
-  const dLat = Math.max(...lats) - Math.min(...lats);
-  const dLon = Math.max(...lons) - Math.min(...lons);
-  const kmLat = dLat * 111;
-  const avgLat = (Math.min(...lats) + Math.max(...lats)) / 2;
-  const kmLon = dLon * 111 * Math.cos((avgLat * Math.PI) / 180);
-  return Math.round(kmLat * kmLon * 100);
+  // Collect all outer rings
+  const rings = geojson.type === "MultiPolygon"
+    ? geojson.coordinates.map((poly) => poly[0])
+    : [geojson.coordinates[0]];
+
+  let totalKm2 = 0;
+  for (const coords of rings) {
+    if (!coords || !Array.isArray(coords[0])) continue;
+    const lats = coords.map((c) => c[1]);
+    const lons = coords.map((c) => c[0]);
+    const dLat = Math.max(...lats) - Math.min(...lats);
+    const dLon = Math.max(...lons) - Math.min(...lons);
+    const kmLat = dLat * 111;
+    const avgLat = (Math.min(...lats) + Math.max(...lats)) / 2;
+    const kmLon = dLon * 111 * Math.cos((avgLat * Math.PI) / 180);
+    totalKm2 += kmLat * kmLon;
+  }
+  return Math.round(totalKm2 * 100);
 }
