@@ -30,12 +30,34 @@ export default function BoundarySelector({ onBoundarySelect, onMapUpdate }) {
     try {
       const data = await getVillageGeometries(csSelectedState, csSelectedDistrict, val);
       let features = data?.type === 'FeatureCollection' ? data.features : Array.isArray(data) ? data : [];
-      const seen = new Set();
-      setCsVillages(features.filter((f) => {
+      // Group features by village name, merging geometries into a MultiPolygon
+      const grouped = {};
+      for (const f of features) {
         const name = f?.properties?.vill_name || f?.properties?.name || '';
-        if (!name || seen.has(name)) return false;
-        seen.add(name); return true;
-      }));
+        if (!name) continue;
+        
+        if (!grouped[name]) {
+          grouped[name] = { ...f, geometry: JSON.parse(JSON.stringify(f.geometry)) };
+        } else {
+          // Merge geometry into existing entry as MultiPolygon
+          const existing = grouped[name].geometry;
+          const incoming = f.geometry;
+          if (existing && incoming) {
+            const existCoords = existing.type === 'MultiPolygon' 
+              ? existing.coordinates 
+              : [existing.coordinates];
+            const newCoords = incoming.type === 'MultiPolygon' 
+              ? incoming.coordinates 
+              : [incoming.coordinates];
+            
+            grouped[name].geometry = {
+              type: 'MultiPolygon',
+              coordinates: [...existCoords, ...newCoords],
+            };
+          }
+        }
+      }
+      setCsVillages(Object.values(grouped));
     } catch { setCsVillages([]); }
   };
 
