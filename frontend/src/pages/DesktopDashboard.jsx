@@ -115,31 +115,34 @@ export default function DesktopDashboard() {
 
     try {
       // ── FR-BA-03: Pre-validate boundary intersects active tehsil ──
-      setProgress('Validating boundary against active tehsils…');
-      try {
-        const bState = (boundary.state || '').trim();
-        const bDistrict = (boundary.district || '').trim();
-        const bTehsil = (boundary.tehsil || '').trim();
-        if (!bState || !bDistrict || !bTehsil || bState === '-' || bDistrict === '-' || bTehsil === '-') {
-          setError('Please select a valid State, District, and Tehsil before running analytics.');
-          setIsRunning(false);
-          setProgress('');
-          return;
+      // Skip for uploaded boundaries — they use GEE directly, no tehsil needed
+      if (boundary.source !== 'upload') {
+        setProgress('Validating boundary against active tehsils…');
+        try {
+          const bState = (boundary.state || '').trim();
+          const bDistrict = (boundary.district || '').trim();
+          const bTehsil = (boundary.tehsil || '').trim();
+          if (!bState || !bDistrict || !bTehsil || bState === '-' || bDistrict === '-' || bTehsil === '-') {
+            setError('Please select a valid State, District, and Tehsil before running analytics.');
+            setIsRunning(false);
+            setProgress('');
+            return;
+          }
+          // Check against active locations (same data the dropdown uses)
+          const { getActiveLocations } = await import('../services/api');
+          const locations = await getActiveLocations();
+          const stateObj = (locations || []).find(s => s.label?.toLowerCase() === bState.toLowerCase());
+          const distObj = stateObj?.district?.find(d => d.label?.toLowerCase() === bDistrict.toLowerCase());
+          const tehsilMatch = distObj?.blocks?.find(b => b.label?.toLowerCase() === bTehsil.toLowerCase());
+          if (!tehsilMatch) {
+            setError(`Tehsil "${bTehsil}" in ${bDistrict}, ${bState} is not active on CoRE Stack. Analytics cannot be computed.`);
+            setIsRunning(false);
+            setProgress('');
+            return;
+          }
+        } catch (valErr) {
+          console.warn('[Boundary validation] Skipping — check failed:', valErr.message);
         }
-        // Check against active locations (same data the dropdown uses)
-        const { getActiveLocations } = await import('../services/api');
-        const locations = await getActiveLocations();
-        const stateObj = (locations || []).find(s => s.label?.toLowerCase() === bState.toLowerCase());
-        const distObj = stateObj?.district?.find(d => d.label?.toLowerCase() === bDistrict.toLowerCase());
-        const tehsilMatch = distObj?.blocks?.find(b => b.label?.toLowerCase() === bTehsil.toLowerCase());
-        if (!tehsilMatch) {
-          setError(`Tehsil "${bTehsil}" in ${bDistrict}, ${bState} is not active on CoRE Stack. Analytics cannot be computed.`);
-          setIsRunning(false);
-          setProgress('');
-          return;
-        }
-      } catch (valErr) {
-        console.warn('[Boundary validation] Skipping — check failed:', valErr.message);
       }
 
       // ── Create CLIENT job record for persistence ──
@@ -247,6 +250,11 @@ export default function DesktopDashboard() {
 
   const handleSubmit = (path) => {
     if (!boundary) return;
+    // Uploaded boundaries always use WASM raster path (no tehsil data for server mode)
+    if (boundary.source === 'upload') {
+      handleWASMSubmit('raster');
+      return;
+    }
     if (executionMode === 'SERVER') handleServerSubmit();
     else handleWASMSubmit(path);
   };
@@ -372,7 +380,8 @@ export default function DesktopDashboard() {
               <div className="report-overlay-header">
                 <h2 style={{ fontSize: '1.3rem', fontWeight: 700, color: 'var(--text-primary)' }}>
                    Analytics Results — {results.data_source || 'Computed'}
-                  {executionMode === 'SERVER' && ' (Server Mode)'}
+                  {results.compute_mode === 'server' && ' (Server Mode)'}
+                  {results.compute_mode === 'client_raster' && ' (Client Raster)'}
                 </h2>
                 <button className="report-close-btn" onClick={handleReset} title="Close & New Analysis">
                   ✕
@@ -453,29 +462,9 @@ export default function DesktopDashboard() {
               <div style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '0.35rem' }}>
                 Execution Mode
               </div>
-              <div className="execution-mode-toggle">
-                <button
-                  className={`execution-mode-btn ${executionMode === 'WASM' ? 'active' : ''}`}
-                  onClick={() => setExecutionMode('WASM')}
-                  id="mode-wasm-btn"
-                >
-                  ⚡ Client (WASM)
-                </button>
-                <button
-                  className={`execution-mode-btn ${executionMode === 'SERVER' ? 'active' : ''}`}
-                  onClick={() => setExecutionMode('SERVER')}
-                  id="mode-server-btn"
-                >
-                  🖥️ Server
-                </button>
-              </div>
-              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>
-                {executionMode === 'WASM'
-                  ? 'Analytics run in your browser via WebAssembly'
-                  : 'Analytics dispatched to backend workers'}
-              </div>
 
-              {executionMode === 'WASM' ? (
+              {/* Uploaded GeoJSON: only Raster path (no tehsil data for MWS/Server) */}
+              {boundary.source === 'upload' ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                   <button
                     className="btn btn-primary btn-lg"
@@ -488,30 +477,74 @@ export default function DesktopDashboard() {
                       <><span className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }}></span> Processing…</>
                     ) : '⚡ Raster Path (High Accuracy)'}
                   </button>
-                  <button
-                    className="btn btn-secondary btn-lg"
-                    onClick={() => handleSubmit('mws')}
-                    disabled={isRunning}
-                    id="run-analytics-mws-btn"
-                    style={{ width: '100%' }}
-                  >
-                    {isRunning ? (
-                      <><span className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }}></span> Processing…</>
-                    ) : '⚡ MWS Path (Vector)'}
-                  </button>
+                  <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                    Uploaded boundary — pixel-level analytics via GEE IndiaSAT LULC v3
+                  </div>
                 </div>
               ) : (
-                <button
-                  className="btn btn-primary btn-lg"
-                  onClick={() => handleSubmit()}
-                  disabled={isRunning}
-                  id="run-analytics-server-btn"
-                  style={{ width: '100%' }}
-                >
-                  {isRunning ? (
-                    <><span className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }}></span> Processing…</>
-                  ) : '🖥️ Run Analytics (Server)'}
-                </button>
+                /* CoRE Stack boundary: full mode selection */
+                <>
+                  <div className="execution-mode-toggle">
+                    <button
+                      className={`execution-mode-btn ${executionMode === 'WASM' ? 'active' : ''}`}
+                      onClick={() => setExecutionMode('WASM')}
+                      id="mode-wasm-btn"
+                    >
+                      ⚡ Client (WASM)
+                    </button>
+                    <button
+                      className={`execution-mode-btn ${executionMode === 'SERVER' ? 'active' : ''}`}
+                      onClick={() => setExecutionMode('SERVER')}
+                      id="mode-server-btn"
+                    >
+                      🖥️ Server
+                    </button>
+                  </div>
+                  <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>
+                    {executionMode === 'WASM'
+                      ? 'Analytics run in your browser via WebAssembly'
+                      : 'Analytics dispatched to backend workers'}
+                  </div>
+
+                  {executionMode === 'WASM' ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                      <button
+                        className="btn btn-primary btn-lg"
+                        onClick={() => handleSubmit('raster')}
+                        disabled={isRunning}
+                        id="run-analytics-raster-btn"
+                        style={{ width: '100%', background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', borderColor: '#059669' }}
+                      >
+                        {isRunning ? (
+                          <><span className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }}></span> Processing…</>
+                        ) : '⚡ Raster Path (High Accuracy)'}
+                      </button>
+                      <button
+                        className="btn btn-secondary btn-lg"
+                        onClick={() => handleSubmit('mws')}
+                        disabled={isRunning}
+                        id="run-analytics-mws-btn"
+                        style={{ width: '100%' }}
+                      >
+                        {isRunning ? (
+                          <><span className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }}></span> Processing…</>
+                        ) : '⚡ MWS Path (Vector)'}
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      className="btn btn-primary btn-lg"
+                      onClick={() => handleSubmit()}
+                      disabled={isRunning}
+                      id="run-analytics-server-btn"
+                      style={{ width: '100%' }}
+                    >
+                      {isRunning ? (
+                        <><span className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }}></span> Processing…</>
+                      ) : '🖥️ Run Analytics (Server)'}
+                    </button>
+                  )}
+                </>
               )}
             </div>
           )}

@@ -205,129 +205,65 @@ async def check_raster_availability(
 
 @router.post("/extract")
 async def extract_raster_pixels(request_body: dict):
-    """Extract raw pixel data from rasters — NO analytics computation.
+    """Extract raw pixel data from IndiaSAT LULC v3 rasters via GEE.
 
-    Downloads LULC GeoTIFFs, clips to village polygon using rasterio
-    windowed reading + geometry_mask, returns compact pixel histograms
-    and masked pixel arrays. All statistics computation happens client-side
-    in Pyodide (browser WASM).
+    Primary: IndiaSAT LULC v3 (10m, native CRS) — same data as GeoServer.
+    Fallback: MODIS LULC (500m) + JRC Water (30m) — rough global estimate.
+
+    All statistics computation happens client-side in Pyodide (browser WASM).
 
     Returns per year:
       - histogram: {class_id: pixel_count}
       - masked_pixels: list of valid pixel values inside village boundary
-      - pixel_area_ha: area per pixel in hectares
+      - pixel_area_ha: area per pixel in hectares (from native CRS resolution)
       - fiscal_year: year label
     """
-    import tempfile, math, asyncio
+    import asyncio
 
-    try:
-        import rasterio
-        from rasterio.windows import from_bounds, Window
-        from rasterio.features import geometry_mask
-        from shapely.geometry import shape, mapping
-        import numpy as np
-    except ImportError as e:
-        raise HTTPException(status_code=500, detail=f"Missing dependency: {e}")
-
-    settings = get_settings()
     village_geojson = request_body.get("village_geojson")
-    layers = request_body.get("layers", [])
+    if not village_geojson:
+        raise HTTPException(status_code=400, detail="village_geojson required")
 
-    if not village_geojson or not layers:
-        raise HTTPException(status_code=400, detail="village_geojson and layers required")
+    # ── Primary: IndiaSAT LULC v3 (10m, high accuracy) ──
+    try:
+        from app.services.gee_service import fetch_corestack_lulc_all_years
+        extracted, pxha = await asyncio.to_thread(
+            fetch_corestack_lulc_all_years, village_geojson
+        )
+        if extracted:
+            logger.info("GEE IndiaSAT extraction succeeded: %d years", len(extracted))
+            return {
+                "status": "ok",
+                "data": extracted,
+                "pixel_area_ha": pxha,
+                "years_extracted": len(extracted),
+                "source": "GEE IndiaSAT LULC v3 (native CRS, 10m)",
+                "accuracy": "high",
+            }
+    except Exception as e:
+        logger.warning("IndiaSAT extraction failed: %s", e)
 
-    geom = shape(village_geojson)
-    centroid_lat = geom.centroid.y
+    # ── Fallback: MODIS/JRC (500m/30m, rough estimate) ──
+    logger.info("IndiaSAT unavailable — falling back to MODIS/JRC rough estimate")
+    try:
+        from app.services.gee_service import fetch_all as fetch_modis_all
+        modis_data = await asyncio.to_thread(
+            fetch_modis_all, village_geojson, 2017, 2024
+        )
+        if modis_data and modis_data.get("lulc"):
+            logger.info("MODIS/JRC fallback succeeded: %d LULC years", len(modis_data["lulc"]))
+            return {
+                "status": "ok",
+                "data": modis_data,
+                "pixel_area_ha": 25.0,  # ~500m × 500m
+                "years_extracted": len(modis_data.get("lulc", [])),
+                "source": "MODIS MCD12Q1 (500m) + JRC Water (30m) — rough estimate",
+                "accuracy": "low",
+            }
+    except Exception as modis_err:
+        logger.error("MODIS/JRC fallback also failed: %s", modis_err)
 
-    def pixel_area_ha_calc(res_deg):
-        lat_rad = math.radians(centroid_lat)
-        m_lat = 111_132.92 - 559.82 * math.cos(2 * lat_rad)
-        m_lon = 111_412.84 * math.cos(lat_rad)
-        return (res_deg * m_lat) * (res_deg * m_lon) / 10_000
-
-    # Download all rasters concurrently
-    async def download_one(layer_info):
-        url = layer_info.get("url", "")
-        fy = layer_info.get("fiscal_year", "unknown")
-        if "geoserver.core-stack.org" not in url:
-            return fy, None
-        try:
-            async with httpx.AsyncClient(timeout=120.0) as http:
-                resp = await http.get(
-                    url,
-                    headers={"X-API-Key": settings.CORESTACK_API_KEY},
-                    follow_redirects=True,
-                )
-                ct = resp.headers.get("content-type", "")
-                if "xml" in ct.lower() or resp.status_code >= 400:
-                    return fy, None
-                return fy, resp.content
-        except Exception:
-            return fy, None
-
-    results = await asyncio.gather(*[download_one(l) for l in layers])
-
-    pxha = None
-    extracted = []
-
-    for fiscal_year, raw_bytes in sorted(results, key=lambda x: x[0]):
-        if raw_bytes is None:
-            continue
-        try:
-            with tempfile.NamedTemporaryFile(suffix=".tiff", delete=True) as tmp:
-                tmp.write(raw_bytes)
-                tmp.flush()
-                with rasterio.open(tmp.name) as src:
-                    if pxha is None:
-                        pxha = pixel_area_ha_calc(src.res[0])
-                    vb = geom.bounds
-                    try:
-                        win = from_bounds(vb[0], vb[1], vb[2], vb[3], src.transform)
-                        win = win.intersection(Window(0, 0, src.width, src.height))
-                        if win.width <= 0 or win.height <= 0:
-                            continue
-                    except Exception:
-                        continue
-                    data = src.read(1, window=win)
-                    win_tf = src.window_transform(win)
-                    pmask = geometry_mask(
-                        [mapping(geom)], out_shape=data.shape,
-                        transform=win_tf, invert=True,
-                    )
-                    masked = np.where(pmask & ~np.isnan(data), data, np.nan)
-                    valid = masked[~np.isnan(masked)]
-                    if len(valid) == 0:
-                        continue
-
-                    # Histogram: {class_id: count}
-                    histogram = {}
-                    for v in np.unique(valid):
-                        histogram[str(int(v))] = int(np.sum(valid == v))
-
-                    # Masked pixel values as compact int list
-                    pixel_list = [int(v) for v in valid]
-
-                    extracted.append({
-                        "fiscal_year": fiscal_year,
-                        "histogram": histogram,
-                        "masked_pixels": pixel_list,
-                        "pixel_count": len(pixel_list),
-                        "pixel_area_ha": round(pxha, 8) if pxha else 0.01,
-                    })
-                    logger.info("Extracted %s: %d pixels, histogram=%s",
-                                fiscal_year, len(pixel_list), histogram)
-        except Exception as e:
-            logger.warning("Extract failed for %s: %s", fiscal_year, e)
-
-    if not extracted:
-        raise HTTPException(status_code=404, detail="No raster data could be extracted")
-
-    return {
-        "status": "ok",
-        "data": extracted,
-        "pixel_area_ha": round(pxha, 8) if pxha else 0.01,
-        "years_extracted": len(extracted),
-    }
+    raise HTTPException(status_code=404, detail="No raster data could be extracted from any source")
 
 @router.post("/analyze")
 async def analyze_raster(request_body: dict):

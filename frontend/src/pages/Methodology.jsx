@@ -12,31 +12,41 @@ export default function Methodology() {
 
       {/* ─── 1. Data Sources ─── */}
       <Section num="1" title="Data Sources" color="var(--accent-green)">
-        <p style={pStyle}>CSVAT draws from two primary data pipelines depending on availability:</p>
+        <p style={pStyle}>CSVAT uses IndiaSAT LULC v3 classified satellite imagery as its primary data source, accessed directly from Google Earth Engine:</p>
 
         <ComparisonTable />
 
-        <SubSection title="CoRE Stack (Primary — 10m Resolution)">
+        <SubSection title="IndiaSAT LULC v3 via GEE (Primary — 10m Resolution)">
           <ul style={ulStyle}>
-            <li><strong>Provider:</strong> Foundation for Ecological Security (FES), accessed via CoRE Stack REST APIs.</li>
+            <li><strong>Provider:</strong> Foundation for Ecological Security (FES) / CoRE Stack, published as GEE assets.</li>
             <li><strong>Satellite Source:</strong> Multi-temporal Sentinel-2 imagery, classified using IndiaSAT algorithms.</li>
-            <li><strong>Coverage:</strong> Active tehsils only — locations where CoRE Stack has completed its processing pipeline.</li>
-            <li><strong>Data Products:</strong> Pre-classified raster layers (LULC, surface water, change detection) and pre-aggregated vector summaries (per Micro-Watershed).</li>
-            <li><strong>Temporal Range:</strong> Fiscal years 2017-18 through 2024-25 (varies by tehsil).</li>
+            <li><strong>GEE Assets:</strong> <code>projects/corestack-datasets/assets/datasets/LULC_v3_river_basin/</code></li>
+            <li><strong>Coverage:</strong> Any Indian village — requires a boundary GeoJSON polygon (from CoRE Stack registry or user upload).</li>
+            <li><strong>Classes:</strong> 13 land cover classes (0–12): Built-up, Water (Kharif/Rabi/Zaid), Crops (Single/Double/Triple), Trees, Barren, Scrub, etc.</li>
+            <li><strong>CRS:</strong> Downloaded in the image's <strong>native CRS</strong> (no reprojection/resampling).</li>
+            <li><strong>Processing:</strong> Village geometry reprojected to raster CRS via <code>rasterio.warp.transform_geom</code>, then clipped with <code>geometry_mask</code>.</li>
+            <li><strong>Temporal Range:</strong> Fiscal years 2017-18 through 2024-25.</li>
           </ul>
         </SubSection>
 
-        <SubSection title="Google Earth Engine Fallback (500m Resolution)">
+        <SubSection title="CoRE Stack Vector API (MWS Path)">
           <ul style={ulStyle}>
-            <li><strong>Triggered when:</strong> The selected village's tehsil is not active on CoRE Stack. User is explicitly prompted before fallback is used.</li>
+            <li><strong>Provider:</strong> CoRE Stack REST APIs (pre-aggregated per Micro-Watershed).</li>
+            <li><strong>Data Products:</strong> Surface water bodies, cropping summaries, vegetation indices — already computed at MWS level.</li>
+            <li><strong>Coverage:</strong> Active tehsils only.</li>
+          </ul>
+        </SubSection>
+
+        <SubSection title="MODIS/JRC GEE Fallback (500m — Low Resolution)">
+          <ul style={ulStyle}>
+            <li><strong>Triggered when:</strong> User explicitly selects "🌐 Use GEE" in the fallback dialog (when CoRE Stack has no data for the tehsil).</li>
             <li><strong>LULC:</strong> MODIS MCD12Q1 (500m, IGBP classification — 17 land cover classes).</li>
             <li><strong>Water:</strong> JRC Global Surface Water v1.4 (30m — permanent vs. seasonal classification).</li>
             <li><strong>Vegetation:</strong> MODIS MOD13A2 NDVI (500m, 16-day composite).</li>
           </ul>
           <WarningBox>
-            GEE fallback data has fundamentally different classification schemas.
-            Cropping intensity (single/double/triple) and seasonal water breakdowns (Kharif/Rabi/Zaid)
-            are estimated via heuristic approximations, not directly measured.
+            MODIS/JRC fallback has fundamentally different classification schemas.
+            Cropping intensity and seasonal water breakdowns are estimated via heuristic approximations.
             See Section 5 (Limitations) for details.
           </WarningBox>
         </SubSection>
@@ -46,13 +56,12 @@ export default function Methodology() {
       <Section num="2" title="Boundary Selection & Village Identification" color="var(--accent-blue)">
         <p style={pStyle}>Villages are identified through two methods:</p>
         <ul style={ulStyle}>
-          <li><strong>CoRE Stack Registry:</strong> State → District → Tehsil → Village hierarchy. Village polygons are fetched as GeoJSON from the CoRE Stack API with verified administrative boundaries.</li>
-          <li><strong>GeoJSON Upload:</strong> Users can upload custom boundary files for areas not in the registry.</li>
+          <li><strong>CoRE Stack Registry:</strong> State → District → Tehsil → Village hierarchy. Village polygons are fetched as GeoJSON from the CoRE Stack API with verified administrative boundaries. Supports all three execution modes (Raster, MWS, Server).</li>
+          <li><strong>GeoJSON Upload (Pan-India):</strong> Users can upload any village boundary GeoJSON file. This mode bypasses CoRE Stack location selection and routes directly to the ⚡ Raster path, enabling analysis for <em>any</em> Indian village — no tehsil registration required.</li>
         </ul>
         <p style={pStyle}>
-          Once a village boundary is selected, the system identifies all Micro-Watersheds (MWS)
-          that spatially intersect the village polygon. MWS are hydrological units mapped by CoRE Stack
-          that carry pre-computed ecological attributes.
+          For CoRE Stack boundaries, the system identifies overlapping Micro-Watersheds (MWS) for vector analytics.
+          For uploaded boundaries, analytics are computed entirely from raster pixel data via GEE — no MWS intersection is needed.
         </p>
       </Section>
 
@@ -155,16 +164,23 @@ export default function Methodology() {
         <SubSection title="4.2 Surface Water Bodies">
           <p style={pStyle}>
             Seasonal water body coverage aligned with Indian agricultural seasons.
-            Surface water data is sourced from {' '}
-            <strong>surfaceWaterBodies_annual</strong> vector records via the CoRE Stack tehsil API,
-            then intersected with the village boundary using the same MWS weighted aggregation.
+            CSVAT uses a <strong>dual-source approach</strong> for maximum coverage:
           </p>
+          <ul style={ulStyle}>
+            <li><strong>Primary — LULC Raster (10m):</strong> Water classes from IndiaSAT LULC v3: Class 2 = Kharif Water, Class 3 = Kharif+Rabi Water, Class 4 = Perennial Water. Pixel-level extraction from the same raster used for cropping intensity.</li>
+            <li><strong>Fallback — MWS Vector:</strong> If the LULC raster has no water pixels (e.g., forest areas with small waterbodies below pixel resolution), the system falls back to <code>surfaceWaterBodies_annual</code> vector records from the CoRE Stack tehsil API, aggregated via MWS weighted intersection.</li>
+          </ul>
           <MetricsTable rows={[
-            ['Kharif Water Area', 'Water during monsoon (Jun–Sep)', 'ha', 'Weighted sum'],
-            ['Rabi Water Area', 'Water during winter (Oct–Feb)', 'ha', 'Weighted sum'],
-            ['Zaid Water Area', 'Water during summer (Mar–May)', 'ha', 'Weighted sum'],
-            ['Total Water Area', 'Combined seasonal water', 'ha', 'Derived'],
+            ['Kharif Water Area', 'Water during monsoon (Jun–Sep)', 'ha', 'Pixel count / Weighted sum'],
+            ['Rabi Water Area', 'Water during winter (Oct–Feb)', 'ha', 'Pixel count / Weighted sum'],
+            ['Zaid/Perennial Area', 'Water during summer (Mar–May) / perennial', 'ha', 'Pixel count / Weighted sum'],
+            ['Total Water Area', 'Sum of all seasonal water', 'ha', 'Derived'],
           ]} />
+          <WarningBox>
+            Small waterbodies (ponds, streams) may not be captured by the 10m LULC classification.
+            The MWS vector fallback uses a dedicated surface water layer that detects smaller features.
+            The data source label in the report indicates which source was used.
+          </WarningBox>
         </SubSection>
 
         <SubSection title="4.3 Vegetation & Deforestation">
@@ -203,11 +219,16 @@ export default function Methodology() {
             typically &lt;5% for compact villages, potentially higher for irregular shapes.
           </li>
           <li>
-            <strong>GEE Fallback Approximations:</strong> When CoRE Stack data is unavailable,
-            the fallback uses MODIS (500m) and JRC (30m) data which cannot directly measure:
+            <strong>GEE IndiaSAT Fallback (minor):</strong> The automatic GEE fallback uses the same
+            IndiaSAT LULC v3 dataset at 10m resolution. Pixel counts may differ by &lt;1% due to
+            floating-point grid alignment at village boundaries. Analytical conclusions are unaffected.
+          </li>
+          <li>
+            <strong>MODIS/JRC GEE Fallback (significant):</strong> When user explicitly selects the
+            low-resolution GEE path, MODIS (500m) and JRC (30m) data cannot directly measure:
             <ul style={{ ...ulStyle, marginTop: '0.3rem' }}>
               <li>Single/double/triple cropping — estimated from pixel class ratios</li>
-              <li>Kharif/Rabi/Zaid water split — seasonal estimated from JRC permanent/seasonal classes</li>
+              <li>Kharif/Rabi/Zaid water split — estimated from JRC permanent/seasonal classes</li>
               <li>Forest transition types — only net NDVI change, not transition matrices</li>
             </ul>
           </li>
@@ -224,17 +245,20 @@ export default function Methodology() {
 
       {/* ─── 6. Execution Modes ─── */}
       <Section num="6" title="Execution Modes" color="var(--accent-purple, #8b5cf6)">
-        <p style={pStyle}>CSVAT supports three execution paths with consistent formulas and data sources:</p>
+        <p style={pStyle}>CSVAT supports three execution paths. Uploaded GeoJSON boundaries are restricted to the Raster path (pan-India). CoRE Stack boundaries support all three:</p>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.75rem', margin: '1rem 0' }}>
           <div style={{ ...formulaCardStyle, borderColor: '#10b981' }}>
             <div style={{ fontWeight: 700, color: '#10b981', marginBottom: '0.5rem', fontSize: '0.9rem' }}>⚡ Raster (High Accuracy)</div>
             <ul style={{ ...ulStyle, fontSize: '0.78rem' }}>
-              <li>Backend extracts raw pixel data from LULC GeoTIFFs via rasterio</li>
+              <li>Backend downloads GeoTIFFs from GEE IndiaSAT LULC v3 assets</li>
+              <li>Native CRS — zero reprojection, zero resampling</li>
+              <li>Clipped to village boundary via rasterio geometry_mask (10m)</li>
               <li>All analytics computed client-side in Pyodide (Python WASM)</li>
-              <li>10m resolution within exact village polygon</li>
-              <li>Surface water from tehsil vector API via MWS intersection</li>
-              <li>Most accurate — pixel-level counting, zero server computation</li>
+              <li>Non-blocking: runs in asyncio thread pool</li>
+              <li><strong>Cropping, vegetation, and surface water</strong> all derived from LULC pixel classes</li>
+              <li>Water fallback to MWS vector if raster has no water pixels</li>
+              <li><strong>Pan-India</strong> — works for any boundary (upload or CoRE Stack)</li>
             </ul>
           </div>
           <div style={formulaCardStyle}>
@@ -244,6 +268,7 @@ export default function Methodology() {
               <li>Village-MWS polygon intersection + weighted aggregation</li>
               <li>Faster — no raster downloads needed</li>
               <li>Small area approximation from overlap fractions</li>
+              <li>CoRE Stack boundaries only (active tehsils)</li>
             </ul>
           </div>
           <div style={formulaCardStyle}>
@@ -252,14 +277,15 @@ export default function Methodology() {
               <li>Same logic as MWS Vector, dispatched to backend workers</li>
               <li>Celery async processing</li>
               <li>Good for batch or low-power clients</li>
-              <li>HTML/PDF/CSV exports server-generated</li>
+              <li>CoRE Stack boundaries only (active tehsils)</li>
             </ul>
           </div>
         </div>
         <p style={{ ...pStyle, fontSize: '0.82rem', color: 'var(--text-muted)' }}>
-          All three modes use the same GCA/NSA intensity formula and data sources.
-          The Raster path provides the highest accuracy by counting individual pixels;
-          the Vector paths approximate through MWS-level weighted aggregation.
+          All modes use the same GCA/NSA intensity formula.
+          The Raster path provides the highest accuracy by counting individual 10m pixels.
+          Surface water in the Raster path comes from LULC classes 2/3/4 (with MWS vector fallback for small waterbodies).
+          The report's data source label (e.g., "IndiaSAT LULC v3 Raster" vs "CoRE Stack MWS Vector") indicates which source was used for each section.
         </p>
       </Section>
 
@@ -373,17 +399,18 @@ function ComparisonTable() {
         <thead>
           <tr>
             <th style={headerStyle}>Attribute</th>
-            <th style={{ ...headerStyle, color: '#22c55e' }}>CoRE Stack</th>
-            <th style={{ ...headerStyle, color: '#3b82f6' }}>GEE Fallback</th>
+            <th style={{ ...headerStyle, color: '#10b981' }}>⚡ Raster Path</th>
+            <th style={{ ...headerStyle, color: '#8b5cf6' }}>⚡ MWS Vector Path</th>
           </tr>
         </thead>
         <tbody>
           {[
-            ['Resolution', '10m (Sentinel-2)', '500m (MODIS) / 30m (JRC)'],
-            ['Crop Classification', 'Single / Double / Triple', 'Cropland only (heuristic split)'],
-            ['Water Seasons', 'Kharif / Rabi / Zaid', 'Permanent / Seasonal (heuristic split)'],
-            ['Forest Transitions', 'Full transition matrix', 'Net NDVI change only'],
-            ['Coverage', 'Active tehsils only', 'Global'],
+            ['Source', 'GEE IndiaSAT LULC v3', 'CoRE Stack REST API'],
+            ['Resolution', '10m (Sentinel-2)', 'MWS-level aggregates'],
+            ['Crop Classification', '13 classes incl. Single/Double/Triple', 'Pre-computed per MWS'],
+            ['Water Seasons', 'Kharif / Rabi / Zaid (pixel-level)', 'Kharif / Rabi / Zaid (MWS-level)'],
+            ['Forest Transitions', 'Full transition matrix (pixel-level)', 'Weighted aggregation'],
+            ['Coverage', 'Any village with boundary GeoJSON', 'Active tehsils only'],
           ].map(([attr, core, gee], i) => (
             <tr key={i}>
               <td style={{ ...cellStyle, fontWeight: 500 }}>{attr}</td>
