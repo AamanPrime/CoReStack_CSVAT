@@ -47,6 +47,7 @@ def compute_raster_analytics(extracted_data, pixel_area_ha):
     }
     
     cropping_results = []
+    surface_water_results = []
     vegetation_data = []
     raw_histograms = {}
     pixel_arrays = {}
@@ -85,6 +86,20 @@ def compute_raster_analytics(extracted_data, pixel_area_ha):
             'total_cropped_ha': round(total_crop, 2),
             'intensity_index': intensity_idx,
             'trees_ha': round(trees, 2),
+        })
+        
+        # ── Surface water from LULC classes: 2=Kharif, 3=Kharif+Rabi, 4=Perennial ──
+        kharif_water = hist.get(2, 0) * pxha
+        kharif_rabi_water = hist.get(3, 0) * pxha
+        perennial_water = hist.get(4, 0) * pxha
+        total_water = kharif_water + kharif_rabi_water + perennial_water
+        
+        surface_water_results.append({
+            'fiscal_year': fy,
+            'kharif_ha': round(kharif_water, 2),
+            'rabi_ha': round(kharif_rabi_water, 2),
+            'zaid_ha': round(perennial_water, 2),
+            'total_water_ha': round(total_water, 2),
         })
         
         vegetation_data.append({
@@ -199,6 +214,7 @@ def compute_raster_analytics(extracted_data, pixel_area_ha):
     return {
         'status': 'ok',
         'cropping_intensity': sorted(cropping_results, key=lambda x: x['fiscal_year']),
+        'surface_water': sorted(surface_water_results, key=lambda x: x['fiscal_year']),
         'vegetation': sorted(vegetation_data, key=lambda x: x['fiscal_year']),
         'vegetation_analysis': vegetation_analysis,
         'crop_intensity_change': crop_intensity_change,
@@ -317,27 +333,13 @@ export async function runRasterAnalytics(boundary, selectedLayers, selectedYears
   const { state, district, tehsil, boundary_geojson: villageGeojson } = boundary;
   const villageName = boundary.village_name || boundary.name || 'Village';
 
-  // Step 1: Get available raster layer URLs
-  onProgress?.('Fetching available raster layer URLs…');
-  const layerResp = await fetch(
-    `${API_BASE}/api/v1/raster/layers?state=${enc(state)}&district=${enc(district)}&tehsil=${enc(tehsil)}`
-  );
-  if (!layerResp.ok) throw new Error(`Failed to fetch raster layer list: ${layerResp.status}`);
-  const layerData = await layerResp.json();
-  const allLayers = layerData.data || [];
-
-  if (!allLayers.length) {
-    throw new Error('No raster layers available for this location.');
-  }
-
-  // Step 2: Backend extracts raw pixel data (NO computation — just data acquisition)
-  onProgress?.(`Extracting pixel data from ${allLayers.length} rasters…`);
+  // Step 1: Backend extracts raw pixel data from GEE IndiaSAT LULC v3 (all years)
+  onProgress?.('Extracting pixel data from GEE IndiaSAT LULC v3 (all years)…');
   const extractResp = await fetch(`${API_BASE}/api/v1/raster/extract`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       village_geojson: villageGeojson,
-      layers: allLayers.map(l => ({ url: l.layer_url, fiscal_year: l.fiscal_year })),
     }),
   });
 
@@ -462,7 +464,22 @@ aggregate_water_mws(w_village, w_mws, w_records, w_years)
     };
   }
 
-  if (waterData) {
+  // Surface water: use raster-derived if it has actual data, else fall back to MWS vector
+  const rasterWaterHasData = pyResult.surface_water?.some(r => r.total_water_ha > 0);
+
+  if (rasterWaterHasData) {
+    results.surface_water = {
+      village_name: villageName,
+      data: pyResult.surface_water.map(r => ({
+        year: r.fiscal_year, fiscal_year: r.fiscal_year,
+        kharif_ha: r.kharif_ha, rabi_ha: r.rabi_ha,
+        zaid_ha: r.zaid_ha, total_water_ha: r.total_water_ha,
+      })),
+      source: 'IndiaSAT LULC v3 Raster (10m)',
+      processing: 'Client-side raster class extraction (Pyodide WASM)',
+    };
+  } else if (waterData) {
+    // LULC raster had no water pixels — use MWS vector water (captures smaller bodies)
     results.surface_water = {
       village_name: villageName,
       data: waterData.map(r => ({
@@ -470,7 +487,7 @@ aggregate_water_mws(w_village, w_mws, w_records, w_years)
         kharif_ha: r.kharif_ha, rabi_ha: r.rabi_ha,
         zaid_ha: r.zaid_ha, total_water_ha: r.total_water_ha,
       })),
-      source: 'CoRE Stack Tehsil API (surfaceWaterBodies_annual)',
+      source: 'CoRE Stack MWS Vector (surfaceWaterBodies_annual)',
       processing: 'Client-side MWS intersection (Pyodide/Shapely)',
     };
   }

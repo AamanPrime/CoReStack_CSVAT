@@ -490,13 +490,15 @@ async function fetchAllGEEData(geojson, years) {
 export async function resolveBoundary(boundaryInfo) {
   let result;
   if (boundaryInfo.type === 'geojson') {
+    const isUpload = boundaryInfo.source === 'upload';
     result = {
       name: boundaryInfo.village_name || 'Custom Upload',
-      state: boundaryInfo.state || 'Unknown',
-      district: boundaryInfo.district || 'Unknown',
-      tehsil: boundaryInfo.tehsil || 'Unknown',
+      state: boundaryInfo.state || (isUpload ? '' : 'Unknown'),
+      district: boundaryInfo.district || (isUpload ? '' : 'Unknown'),
+      tehsil: boundaryInfo.tehsil || (isUpload ? '' : 'Unknown'),
       geojson: boundaryInfo.boundary_geojson,
       area_hectares: boundaryInfo.area_hectares || 0,
+      source: boundaryInfo.source || 'unknown',
     };
   } else {
     // For admin-selected boundaries, fetch boundary from backend API
@@ -516,9 +518,10 @@ export async function resolveBoundary(boundaryInfo) {
     };
   }
 
-  // If district or tehsil is Unknown, try CoRE Stack admin-details resolution
-  // using village centroid to get canonical CoRE Stack names
+  // If district or tehsil is Unknown (CoRE Stack boundaries), try admin-details resolution
+  // Skip for uploads — they don't need location metadata for GEE raster extraction
   if (
+    result.source !== 'upload' &&
     result.geojson &&
     (result.district === 'Unknown' || result.tehsil === 'Unknown' || !result.district || !result.tehsil)
   ) {
@@ -534,7 +537,6 @@ export async function resolveBoundary(boundaryInfo) {
         const adminData = await adminResp.json();
         const details = adminData.data || adminData;
         if (details) {
-          // CoRE Stack returns canonical names — prefer them
           if (details.state) result.state = details.state;
           if (details.district) result.district = details.district;
           if (details.tehsil || details.block) result.tehsil = details.tehsil || details.block;
@@ -566,34 +568,50 @@ export async function runAnalyticsPipeline(boundaryInfo, selectedLayers, selecte
 
   if (computePath === 'raster') {
     // ─── RASTER PATH (High Accuracy) ───
-    onProgress?.('Checking CoRE Stack raster layer availability…');
-    try {
-      const { runRasterAnalytics, checkRasterAvailability } = await import('./rasterEngine');
-      const rasterCheck = await checkRasterAvailability(
-        boundary.state, boundary.district, boundary.tehsil
-      );
+    const { runRasterAnalytics, checkRasterAvailability } = await import('./rasterEngine');
 
-      if (rasterCheck.available) {
-        onProgress?.(`Found ${rasterCheck.layerCount} raster layers. Starting client-side raster processing (High Accuracy)…`);
-        const rasterResults = await runRasterAnalytics(
-          boundary, selectedLayers, sortedYears, onProgress
+    // Uploaded boundaries: skip CoRE Stack layer check — /extract goes directly to GEE
+    const isUpload = boundaryInfo.source === 'upload';
+
+    if (!isUpload) {
+      onProgress?.('Checking CoRE Stack raster layer availability…');
+      try {
+        const rasterCheck = await checkRasterAvailability(
+          boundary.state, boundary.district, boundary.tehsil
         );
-        rasterResults.area_hectares = boundary.area_hectares || 0;
-        rasterResults.compute_mode = 'client_raster';
-        onProgress?.('Raster analytics complete!');
-        return rasterResults;
+        if (!rasterCheck.available) {
+          console.log('[CSVAT] No raster layers available, falling back to GEE prompt.');
+          throw new MWSUnavailableError(
+            'No CoRE Stack raster layers found for this area. Would you like to use Google Earth Engine instead?',
+            boundary,
+          );
+        }
+        onProgress?.(`Found ${rasterCheck.layerCount} raster layers. Starting client-side raster processing (High Accuracy)…`);
+      } catch (err) {
+        if (err instanceof MWSUnavailableError) throw err;
+        console.error('[CSVAT] Raster availability check error:', err);
+        throw new MWSUnavailableError(
+          `CoRE Stack raster processing failed: ${err.message}. Would you like to use GEE instead?`,
+          boundary,
+        );
       }
+    } else {
+      onProgress?.('Starting GEE IndiaSAT raster extraction…');
+    }
 
-      console.log('[CSVAT] No raster layers available, falling back to GEE prompt.');
-      throw new MWSUnavailableError(
-        'No CoRE Stack raster layers found for this area. Would you like to use Google Earth Engine instead?',
-        boundary,
+    try {
+      const rasterResults = await runRasterAnalytics(
+        boundary, selectedLayers, sortedYears, onProgress
       );
+      rasterResults.area_hectares = boundary.area_hectares || 0;
+      rasterResults.compute_mode = 'client_raster';
+      onProgress?.('Raster analytics complete!');
+      return rasterResults;
     } catch (err) {
       if (err instanceof MWSUnavailableError) throw err;
       console.error('[CSVAT] Raster pipeline error:', err);
       throw new MWSUnavailableError(
-        `CoRE Stack raster processing failed: ${err.message}. Would you like to use GEE instead?`,
+        `Raster processing failed: ${err.message}. Would you like to use GEE instead?`,
         boundary,
       );
     }

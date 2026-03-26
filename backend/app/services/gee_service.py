@@ -259,3 +259,173 @@ def fetch_all(geometry: dict, start_year: int = 2017, end_year: int = 2023) -> d
         "water": fetch_water_multi_year(geometry, start_year, end_year),
         "ndvi": fetch_ndvi_multi_year(geometry, start_year, end_year),
     }
+
+
+# ─── CoRE Stack IndiaSAT LULC v3 (via GEE assets) ───
+
+# GEE asset path template for IndiaSAT v3 LULC (10m resolution)
+# Classes: 0=Background, 1=Built Up, 2=Kharif Water, 3=Kharif+Rabi Water,
+#          4=Perennial Water, 5=Crops, 6=Trees, 7=Barren,
+#          8=Single Kharif, 9=Single Non-Kharif, 10=Double, 11=Triple, 12=Shrubs
+CORESTACK_LULC_ASSET = (
+    "projects/corestack-datasets/assets/datasets/"
+    "LULC_v3_river_basin/pan_india_lulc_v3_{start}_{end}"
+)
+
+# Fiscal year ranges (start_year, end_year) matching CoRE Stack naming
+CORESTACK_FISCAL_YEARS = [
+    (2017, 2018), (2018, 2019), (2019, 2020), (2020, 2021),
+    (2021, 2022), (2022, 2023), (2023, 2024), (2024, 2025),
+]
+
+
+def fetch_corestack_lulc_pixels(geometry: dict, start_year: int, end_year: int) -> dict | None:
+    """Extract IndiaSAT LULC v3 pixel array for a village polygon via GEE.
+
+    Downloads a village-clipped GeoTIFF from GEE using getDownloadURL()
+    in the image's NATIVE CRS (no reprojection = no resampling artifacts).
+    Then reprojects the village geometry to match, and applies rasterio
+    geometry_mask for precise clipping.
+
+    This produces pixel-identical results to GeoServer WCS downloads.
+
+    Returns same format as GeoServer /extract:
+        {histogram, masked_pixels, fiscal_year, pixel_count, pixel_area_ha}
+    Returns None if the asset doesn't exist or extraction fails.
+    """
+    _init_ee()
+
+    import math
+    import tempfile
+    import httpx
+    import numpy as np
+    import rasterio
+    from rasterio.features import geometry_mask
+    from rasterio.warp import transform_geom
+    from shapely.geometry import shape, mapping
+
+    asset_path = CORESTACK_LULC_ASSET.format(start=start_year, end=end_year)
+    fy_label = f"20{str(start_year)[-2:]}-{str(end_year)[-2:]}"
+
+    try:
+        image = ee.Image(asset_path).select("predicted_label")
+        geom = ee.Geometry(geometry)
+
+        # ── Get native CRS + transform from the image (matches GeoServer) ──
+        proj_info = image.projection().getInfo()
+        native_crs = proj_info.get("crs", "EPSG:4326")
+        native_transform = proj_info.get("transform")  # [scaleX, shearX, translateX, shearY, scaleY, translateY]
+
+        logger.info("GEE LULC %s: native CRS=%s, transform=%s", fy_label, native_crs, native_transform)
+
+        # Build download params using native CRS (NO reprojection)
+        download_params = {
+            "region": geom,
+            "format": "GEO_TIFF",
+        }
+        if native_transform and native_crs != "EPSG:4326":
+            download_params["crs"] = native_crs
+            download_params["crsTransform"] = native_transform
+        else:
+            # Fallback: use native CRS with scale=10
+            download_params["crs"] = native_crs
+            download_params["scale"] = 10
+
+        url = image.getDownloadURL(download_params)
+
+        logger.info("Downloading GEE GeoTIFF for %s (CRS=%s) …", fy_label, native_crs)
+        resp = httpx.get(url, timeout=120.0, follow_redirects=True)
+        if resp.status_code != 200:
+            logger.warning("GEE download failed for %s: HTTP %s", fy_label, resp.status_code)
+            return None
+
+        content_type = resp.headers.get("content-type", "")
+        if "json" in content_type or "html" in content_type:
+            logger.warning("GEE returned error for %s: %s", fy_label, resp.text[:200])
+            return None
+
+        # ── Process with rasterio (native CRS) ──
+        geom_shape = shape(geometry)  # Village geometry in EPSG:4326
+
+        with tempfile.NamedTemporaryFile(suffix=".tiff", delete=True) as tmp:
+            tmp.write(resp.content)
+            tmp.flush()
+            with rasterio.open(tmp.name) as src:
+                raster_crs = str(src.crs)
+                data = src.read(1)
+
+                # Reproject village geometry from EPSG:4326 → raster's native CRS
+                if raster_crs and raster_crs != "EPSG:4326":
+                    geom_reprojected = transform_geom(
+                        "EPSG:4326", raster_crs, mapping(geom_shape)
+                    )
+                    geom_native = shape(geom_reprojected)
+                else:
+                    geom_native = geom_shape
+
+                # Precise village boundary mask in native CRS
+                pmask = geometry_mask(
+                    [mapping(geom_native)], out_shape=data.shape,
+                    transform=src.transform, invert=True,
+                )
+                masked = np.where(pmask & (data != 0), data.astype(float), np.nan)
+                valid = masked[~np.isnan(masked)]
+
+                if len(valid) == 0:
+                    logger.warning("No valid pixels for %s", fy_label)
+                    return None
+
+                # Compute pixel area from actual raster resolution
+                res_x, res_y = abs(src.res[0]), abs(src.res[1])
+                if raster_crs and "4326" not in raster_crs:
+                    # Native CRS is in meters → pixel area = res_x * res_y m²
+                    pixel_area_ha = (res_x * res_y) / 10_000
+                else:
+                    # CRS is in degrees → convert to meters
+                    center_lat = (src.bounds.bottom + src.bounds.top) / 2
+                    m_lat = 111_132.92 - 559.82 * math.cos(2 * math.radians(center_lat))
+                    m_lon = 111_412.84 * math.cos(math.radians(center_lat))
+                    pixel_area_ha = (res_x * m_lon) * (res_y * m_lat) / 10_000
+
+                # Histogram: {class_id: count}
+                histogram = {}
+                for v in np.unique(valid):
+                    histogram[str(int(v))] = int(np.sum(valid == v))
+
+                # Spatially-ordered pixel values (row-major, preserves position)
+                pixel_list = [int(v) for v in valid]
+
+                logger.info("GEE LULC %s: %d pixels, pxha=%.6f, CRS=%s, histogram=%s",
+                            fy_label, len(pixel_list), pixel_area_ha, raster_crs, histogram)
+
+                return {
+                    "fiscal_year": fy_label,
+                    "histogram": histogram,
+                    "masked_pixels": pixel_list,
+                    "pixel_count": len(pixel_list),
+                    "pixel_area_ha": round(pixel_area_ha, 8),
+                }
+
+    except Exception as e:
+        logger.warning("GEE pixel extraction failed for %s: %s", asset_path, e)
+        return None
+
+
+def fetch_corestack_lulc_all_years(geometry: dict) -> tuple[list, float]:
+    """Extract IndiaSAT LULC pixel arrays for ALL fiscal years via GEE.
+
+    Downloads clipped GeoTIFFs and processes with rasterio for each year.
+    Returns: (extracted_list, pixel_area_ha) matching raster_proxy /extract format.
+    """
+    _init_ee()
+
+    extracted = []
+    pixel_area_ha = 0.01  # 10m resolution
+
+    for start_yr, end_yr in CORESTACK_FISCAL_YEARS:
+        result = fetch_corestack_lulc_pixels(geometry, start_yr, end_yr)
+        if result:
+            extracted.append(result)
+            pixel_area_ha = result["pixel_area_ha"]
+
+    return extracted, pixel_area_ha
