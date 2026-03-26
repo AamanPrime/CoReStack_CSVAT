@@ -45,7 +45,7 @@ def _job_to_response(job: Job) -> JobResponse:
     """Convert SQLAlchemy Job to Pydantic response."""
     results = job.result_json or {}
     return JobResponse(
-        id=job.id,
+        id=str(job.id),
         status=job.status.value if isinstance(job.status, JobStatus) else job.status,
         village_name=job.village_name,
         state=job.state,

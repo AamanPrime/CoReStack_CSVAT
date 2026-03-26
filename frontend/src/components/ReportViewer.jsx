@@ -74,7 +74,7 @@ export default function ReportViewer({ results }) {
           🌾 Village Analytics Report
         </h2>
         <p style={{ color: 'var(--text-secondary)', marginTop: '0.5rem' }}>
-          {village_name} — {district}, {state}
+          {village_name}{(district || state) ? ` — ${[district, state].filter(Boolean).join(', ')}` : ' — Pan-India (Upload)'}
         </p>
         {data_source && (
           <div style={{
@@ -88,18 +88,24 @@ export default function ReportViewer({ results }) {
           </div>
         )}
         <div className="boundary-info" style={{ marginTop: '1rem' }}>
-          <div className="boundary-info-item">
-            <span className="label">State</span>
-            <span className="value">{state}</span>
-          </div>
-          <div className="boundary-info-item">
-            <span className="label">District</span>
-            <span className="value">{district}</span>
-          </div>
-          <div className="boundary-info-item">
-            <span className="label">Tehsil</span>
-            <span className="value">{tehsil}</span>
-          </div>
+          {state && (
+            <div className="boundary-info-item">
+              <span className="label">State</span>
+              <span className="value">{state}</span>
+            </div>
+          )}
+          {district && (
+            <div className="boundary-info-item">
+              <span className="label">District</span>
+              <span className="value">{district}</span>
+            </div>
+          )}
+          {tehsil && (
+            <div className="boundary-info-item">
+              <span className="label">Tehsil</span>
+              <span className="value">{tehsil}</span>
+            </div>
+          )}
         </div>
       </div>
 
