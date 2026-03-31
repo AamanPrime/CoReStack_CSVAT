@@ -6,6 +6,7 @@ services:
   db:
     image: postgis/postgis:15-3.3
     container_name: csvat_db
+    restart: unless-stopped
     environment:
       POSTGRES_DB: csvat_db
       POSTGRES_USER: csvat
@@ -26,6 +27,7 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: csvat_api
+    restart: unless-stopped
     ports:
       - "8000:8000"
     env_file:
@@ -36,6 +38,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      redis:
+        condition: service_started
     volumes:
       - ./backend:/app
 
@@ -43,8 +47,12 @@ services:
   redis:
     image: redis:7-alpine
     container_name: csvat_redis
+    restart: unless-stopped
+    command: redis-server --save 60 1 --loglevel warning
     ports:
       - "6379:6379"
+    volumes:
+      - redisdata:/data
 
   # Celery Worker
   worker:
@@ -52,6 +60,7 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: csvat_worker
+    restart: unless-stopped
     command: [ "celery", "-A", "app.tasks.celery_app.celery_app", "worker", "--loglevel=info" ]
     env_file:
       - ./backend/.env
@@ -65,3 +74,4 @@ services:
 
 volumes:
   pgdata:
+  redisdata:
