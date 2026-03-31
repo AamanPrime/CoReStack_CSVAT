@@ -296,7 +296,8 @@ export default function DesktopDashboard() {
     setPendingBoundary(null);
   };
 
-  const handleDownloadExcel = () => {
+  const handleDownloadExcel = (e) => {
+    if (e) { e.preventDefault(); e.stopPropagation(); }
     if (!results) {
       alert("No data to download. Please run analytics first.");
       return;
@@ -308,10 +309,15 @@ export default function DesktopDashboard() {
     const a = document.createElement('a');
     a.href = url;
     a.download = `CSVAT_${safeName}_Data.csv`;
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    a.style.display = 'none';
     document.body.appendChild(a);
     a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    setTimeout(() => {
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }, 500);
   };
 
   return (

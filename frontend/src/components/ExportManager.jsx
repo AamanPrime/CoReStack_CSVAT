@@ -1,9 +1,7 @@
 /**
  * CSVAT — ExportManager Component.
  * Handles HTML, CSV, JSON, and PDF exports.
- *
- * - WASM mode: HTML/CSV/JSON generated client-side, PDF via browser print
- * - SERVER mode: PDF downloaded from backend /api/v1/jobs/{id}/assets/pdf
+ * PDF is generated client-side with jsPDF and downloaded directly (no print dialog).
  */
 import React, { useState } from 'react';
 import { generateCSV, generateHTMLReport } from '../services/wasmEngine';
@@ -13,172 +11,204 @@ export default function ExportManager({ results, jobId }) {
 
   if (!results) return null;
 
+  const safeName = (results.village_name || 'report').replace(/\s+/g, '_');
+
   const downloadBlob = (content, filename, mimeType) => {
-    const blob = new Blob([content], { type: mimeType });
+    const blob = content instanceof Blob ? content : new Blob([content], { type: mimeType });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
     a.download = filename;
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    a.style.display = 'none';
     document.body.appendChild(a);
     a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  };
-
-  const safeName = (results.village_name || 'report').replace(/\s+/g, '_');
-
-  const handleHTMLExport = () => {
-    const html = generateHTMLReport(results);
-    downloadBlob(html, `CSVAT_${safeName}_Report.html`, 'text/html');
-  };
-
-  const handleCSVExport = () => {
-    const csv = generateCSV(results);
-    downloadBlob(csv, `CSVAT_${safeName}_Data.csv`, 'text/csv');
-  };
-
-  const handleJSONExport = () => {
-    const json = JSON.stringify(results, null, 2);
-    downloadBlob(json, `CSVAT_${safeName}_Raw.json`, 'application/json');
-  };
-
-  const handlePDFExport = async () => {
-    if (jobId) {
-      // Server mode: download PDF from backend
-      setPdfLoading(true);
-      try {
-        const url = `/api/v1/jobs/${jobId}/assets/pdf`;
-        const response = await fetch(url);
-        if (!response.ok) throw new Error('PDF generation failed');
-        const blob = await response.blob();
-        const downloadUrl = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = downloadUrl;
-        a.download = `CSVAT_${safeName}_Report.pdf`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(downloadUrl);
-      } catch (err) {
-        console.error('PDF download failed:', err);
-        // Fallback to browser print
-        handlePDFBrowserPrint();
-      } finally {
-        setPdfLoading(false);
-      }
-    } else {
-      // Client mode: use browser print
-      handlePDFBrowserPrint();
-    }
-  };
-
-  const handlePDFBrowserPrint = () => {
-    // Inject temporary print-only CSS that hides everything except the results overlay
-    const printStyle = document.createElement('style');
-    printStyle.id = 'csvat-print-styles';
-    printStyle.textContent = `
-      @media print {
-        /* Reset html/body so content flows across pages */
-        html, body {
-          height: auto !important;
-          overflow: visible !important;
-          margin: 0 !important;
-          padding: 0 !important;
-        }
-
-        /* Hide navbar */
-        .navbar { display: none !important; }
-
-        /* Make all parent containers static and auto-height */
-        .app-layout,
-        .map-container {
-          display: block !important;
-          position: static !important;
-          width: 100% !important;
-          height: auto !important;
-          max-height: none !important;
-          overflow: visible !important;
-        }
-
-        /* Hide everything inside map-container except report-overlay */
-        .map-container > *:not(.report-overlay) { display: none !important; }
-
-        /* The report overlay — make it flow naturally across pages */
-        .report-overlay {
-          display: block !important;
-          position: static !important;
-          width: 100% !important;
-          height: auto !important;
-          max-height: none !important;
-          overflow: visible !important;
-          background: white !important;
-          animation: none !important;
-        }
-        .report-overlay-inner {
-          max-height: none !important;
-          overflow: visible !important;
-          max-width: 100% !important;
-          padding: 1rem !important;
-        }
-
-        /* Hide sidebar */
-        .sidebar { display: none !important; }
-
-        /* Hide interactive elements */
-        .export-bar, #new-analysis-btn,
-        .report-close-btn,
-        .report-overlay-header button,
-        .gee-prompt-overlay { display: none !important; }
-
-        /* Print-friendly cards */
-        .card {
-          break-inside: avoid;
-          page-break-inside: avoid;
-          box-shadow: none !important;
-          border: 1px solid #ddd !important;
-          margin-bottom: 1rem !important;
-        }
-        .chart-wrapper {
-          break-inside: avoid;
-          page-break-inside: avoid;
-        }
-        canvas { max-width: 100% !important; }
-      }
-    `;
-    document.head.appendChild(printStyle);
-
-    // Trigger native browser print
-    window.print();
-
-    // Clean up the injected style after print dialog closes
     setTimeout(() => {
-      const el = document.getElementById('csvat-print-styles');
-      if (el) el.remove();
-    }, 1000);
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }, 500);
+  };
+
+  const handleHTMLExport = (e) => {
+    if (e) { e.preventDefault(); e.stopPropagation(); }
+    downloadBlob(generateHTMLReport(results), `CSVAT_${safeName}_Report.html`, 'text/html');
+  };
+
+  const handleCSVExport = (e) => {
+    if (e) { e.preventDefault(); e.stopPropagation(); }
+    downloadBlob(generateCSV(results), `CSVAT_${safeName}_Data.csv`, 'text/csv');
+  };
+
+  const handleJSONExport = (e) => {
+    if (e) { e.preventDefault(); e.stopPropagation(); }
+    downloadBlob(JSON.stringify(results, null, 2), `CSVAT_${safeName}_Raw.json`, 'application/json');
+  };
+
+  const handlePDFExport = async (e) => {
+    if (e) { e.preventDefault(); e.stopPropagation(); }
+    setPdfLoading(true);
+    try {
+      // Prefer server-generated PDF if available
+      if (jobId) {
+        const response = await fetch(`/api/v1/jobs/${jobId}/assets/pdf`);
+        if (response.ok) {
+          const blob = await response.blob();
+          downloadBlob(blob, `CSVAT_${safeName}_Report.pdf`, 'application/pdf');
+          return;
+        }
+      }
+
+      // Client-side PDF via jsPDF — no print dialog, no page navigation
+      const { jsPDF } = await import('jspdf');
+      const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+      const pageW = doc.internal.pageSize.getWidth();
+      const margin = 14;
+      const colW = pageW - margin * 2;
+      let y = 20;
+
+      const nl = (extra = 6) => {
+        y += extra;
+        if (y > 272) { doc.addPage(); y = 20; }
+      };
+
+      // Header bar
+      doc.setFillColor(15, 23, 42);
+      doc.rect(0, 0, pageW, 30, 'F');
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(15); doc.setFont('helvetica', 'bold');
+      doc.text('CSVAT Village Analytics Report', margin, 13);
+      doc.setFontSize(8); doc.setFont('helvetica', 'normal');
+      doc.text(
+        `${results.village_name || ''} | ${results.state || ''} | ${results.district || ''} | ${results.tehsil || ''}`,
+        margin, 20
+      );
+      doc.text(
+        `Generated: ${new Date().toLocaleDateString()}    Source: ${results.data_source || 'CoRE Stack'}`,
+        margin, 26
+      );
+      y = 38;
+
+      const section = (title) => {
+        nl(3);
+        doc.setFillColor(241, 245, 249);
+        doc.rect(margin, y, colW, 7, 'F');
+        doc.setTextColor(15, 23, 42);
+        doc.setFontSize(10); doc.setFont('helvetica', 'bold');
+        doc.text(title, margin + 2, y + 5);
+        nl(10);
+      };
+
+      const table = (headers, rows) => {
+        const cw = colW / headers.length;
+        // Header row
+        doc.setFillColor(226, 232, 240);
+        doc.rect(margin, y, colW, 6, 'F');
+        doc.setFontSize(7.5); doc.setFont('helvetica', 'bold');
+        doc.setTextColor(15, 23, 42);
+        headers.forEach((h, i) => doc.text(h, margin + i * cw + 2, y + 4));
+        nl(7);
+        // Data rows
+        doc.setFont('helvetica', 'normal');
+        rows.forEach((row, ri) => {
+          if (y > 272) { doc.addPage(); y = 20; }
+          if (ri % 2 === 0) {
+            doc.setFillColor(248, 250, 252);
+            doc.rect(margin, y, colW, 6, 'F');
+          }
+          doc.setTextColor(30, 41, 59);
+          row.forEach((cell, i) => doc.text(String(cell ?? '—'), margin + i * cw + 2, y + 4));
+          nl(7);
+        });
+      };
+
+      // Cropping Intensity
+      const ci = results.cropping_intensity;
+      if (ci?.data?.length) {
+        section('Cropping Intensity');
+        table(
+          ['Year', 'Single (ha)', 'Double (ha)', 'Triple (ha)', 'Total (ha)', 'Intensity'],
+          ci.data.map(d => [
+            d.year,
+            d.single_crop_ha,
+            d.double_crop_ha,
+            d.triple_crop_ha,
+            d.total_cropped_ha,
+            d.cropping_intensity ?? '—',
+          ])
+        );
+      }
+
+      // Surface Water
+      const sw = results.surface_water;
+      if (sw?.data?.length) {
+        section('Seasonal Surface Water');
+        table(
+          ['Year', 'Kharif (ha)', 'Rabi (ha)', 'Zaid (ha)', 'Total (ha)'],
+          sw.data.map(d => [
+            d.year,
+            d.kharif_ha ?? d.seasonal_monsoon_ha ?? 0,
+            d.rabi_ha ?? d.seasonal_winter_ha ?? 0,
+            d.zaid_ha ?? d.perennial_ha ?? 0,
+            d.total_water_ha,
+          ])
+        );
+      }
+
+      // Vegetation
+      const vg = results.vegetation;
+      if (vg) {
+        section('Vegetation & Deforestation');
+        table(
+          ['Metric', 'Value (ha)'],
+          [
+            ['Tree Cover Gain', vg.tree_cover_gain_ha],
+            ['Tree Cover Loss', vg.tree_cover_loss_ha],
+            ['Net Change', vg.net_change_ha],
+            ['Degraded Land', vg.degraded_land_ha],
+          ]
+        );
+      }
+
+      // Footer on every page
+      const totalPages = doc.internal.getNumberOfPages();
+      for (let i = 1; i <= totalPages; i++) {
+        doc.setPage(i);
+        doc.setFontSize(7); doc.setTextColor(148, 163, 184);
+        doc.text(`CSVAT CoRE Stack Analytics  |  Page ${i} of ${totalPages}`, margin, 292);
+      }
+
+      // Direct download — no dialog opens
+      downloadBlob(doc.output('blob'), `CSVAT_${safeName}_Report.pdf`, 'application/pdf');
+
+    } catch (err) {
+      console.error('PDF generation failed:', err);
+      alert('PDF generation failed. Please try the HTML export instead.');
+    } finally {
+      setPdfLoading(false);
+    }
   };
 
   return (
     <div className="export-bar animate-fade-in">
-      <button className="btn btn-secondary" onClick={handleHTMLExport} id="export-html-btn">
-         Interactive HTML
+      <button className="btn btn-secondary" type="button" onClick={handleHTMLExport} id="export-html-btn">
+        📄 Interactive HTML
       </button>
-      <button className="btn btn-secondary" onClick={handleCSVExport} id="export-csv-btn">
+      <button className="btn btn-secondary" type="button" onClick={handleCSVExport} id="export-csv-btn">
         📋 Download CSV
       </button>
-      <button className="btn btn-secondary" onClick={handleJSONExport} id="export-json-btn">
+      <button className="btn btn-secondary" type="button" onClick={handleJSONExport} id="export-json-btn">
         🗂️ Download JSON
       </button>
       <button
         className="btn btn-secondary"
+        type="button"
         onClick={handlePDFExport}
         disabled={pdfLoading}
         id="export-pdf-btn"
       >
         {pdfLoading ? '⏳ Generating…' : '📄 Download PDF'}
       </button>
-      <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem', alignSelf: 'center' }}>
-        {jobId ? '📄 PDF via server' : '💻 All exports client-side'}
-      </span>
     </div>
   );
 }
