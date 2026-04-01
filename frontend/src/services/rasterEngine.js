@@ -7,7 +7,7 @@
  *
  * ALL analytics computation runs client-side in Pyodide (Python WASM):
  *   - Cropping intensity (GCA/NSA formula)
- *   - Vegetation change detection (deforestation transitions)
+ *   - Vegetation change detection (tree cover loss transitions)
  *   - Crop intensity change detection
  *
  * Surface water comes from the tehsil vector API via MWS intersection,
@@ -38,10 +38,10 @@ def compute_raster_analytics(extracted_data, pixel_area_ha):
         extracted_data = extracted_data.to_py()
     pxha = float(pixel_area_ha)
     
-    # Transition labels for deforestation (matches server-side exactly)
+    # Transition labels for tree cover change (matches server-side exactly)
     TRANSITION_LABELS = {
         1: 'Built Up', 2: 'Kharif Water', 3: 'Kharif+Rabi Water',
-        4: 'Perennial Water', 6: 'Forest', 7: 'Barren',
+        4: 'Perennial Water', 6: 'Tree Cover', 7: 'Barren',
         8: 'Farm', 9: 'Farm', 10: 'Farm', 11: 'Farm',
         12: 'Scrub Land',
     }
@@ -88,17 +88,25 @@ def compute_raster_analytics(extracted_data, pixel_area_ha):
             'trees_ha': round(trees, 2),
         })
         
-        # ── Surface water from LULC classes: 2=Kharif, 3=Kharif+Rabi, 4=Perennial ──
-        kharif_water = hist.get(2, 0) * pxha
-        kharif_rabi_water = hist.get(3, 0) * pxha
-        perennial_water = hist.get(4, 0) * pxha
-        total_water = kharif_water + kharif_rabi_water + perennial_water
+        # ── Surface water from LULC classes (cumulative by season) ──
+        # Class 2 = Kharif-only water, Class 3 = Kharif+Rabi, Class 4 = Perennial (all year)
+        # Kharif includes ALL water present during monsoon (2+3+4)
+        # Rabi includes water persisting into winter (3+4)
+        # Zaid includes only perennial water (4)
+        kharif_only = hist.get(2, 0) * pxha
+        kharif_rabi = hist.get(3, 0) * pxha
+        perennial = hist.get(4, 0) * pxha
+        
+        kharif_total = kharif_only + kharif_rabi + perennial
+        rabi_total = kharif_rabi + perennial
+        zaid_total = perennial
+        total_water = kharif_only + kharif_rabi + perennial  # unique water area (not double-counted)
         
         surface_water_results.append({
             'fiscal_year': fy,
-            'kharif_ha': round(kharif_water, 2),
-            'rabi_ha': round(kharif_rabi_water, 2),
-            'zaid_ha': round(perennial_water, 2),
+            'kharif_ha': round(kharif_total, 2),
+            'rabi_ha': round(rabi_total, 2),
+            'zaid_ha': round(zaid_total, 2),
             'total_water_ha': round(total_water, 2),
         })
         
@@ -125,7 +133,7 @@ def compute_raster_analytics(extracted_data, pixel_area_ha):
             tree_ha_first = round(int(np.sum(tree_a)) * pxha, 2)
             tree_ha_last = round(int(np.sum(tree_b)) * pxha, 2)
             
-            # Deforestation: tree -> non-tree
+            # Tree cover loss: tree -> non-tree
             lost = tree_a & (b != 6)
             lost_vals = b[lost]
             transitions = []
@@ -142,12 +150,12 @@ def compute_raster_analytics(extracted_data, pixel_area_ha):
                     existing[0]['area_ha'] = round(existing[0]['area_ha'] + area, 2)
                 else:
                     transitions.append({
-                        'from_class': 'Forest', 'to_label': label,
+                        'from_class': 'Tree Cover', 'to_label': label,
                         'to_class': ci, 'area_ha': area
                     })
                 degraded_total += area
             
-            # Afforestation: non-tree -> tree
+            # Tree cover gain: non-tree -> tree
             gained = ~tree_a & tree_b & valid
             afforestation = round(int(np.sum(gained)) * pxha, 2)
             
@@ -155,7 +163,7 @@ def compute_raster_analytics(extracted_data, pixel_area_ha):
             retained = tree_a & tree_b
             retained_ha = round(int(np.sum(retained)) * pxha, 2)
             transitions.insert(0, {
-                'from_class': 'Forest', 'to_label': 'Forest',
+                'from_class': 'Tree Cover', 'to_label': 'Tree Cover',
                 'to_class': 6, 'area_ha': retained_ha
             })
             transitions.sort(key=lambda x: x['area_ha'], reverse=True)

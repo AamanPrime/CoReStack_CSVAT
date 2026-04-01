@@ -7,7 +7,7 @@
  *  2. Summary Stats Cards (MWS count, data source, year range)
  *  3. Cropping Intensity Trends (stacked bar + table)
  *  4. Surface Water — Kharif / Rabi / Zaid (bar + table)
- *  5. Vegetation & Deforestation (stats + transitions horizontal bar)
+ *  5. Vegetation & Tree Cover Change (stats + transitions horizontal bar)
  *  6. Cropping Intensity Change Transitions (horizontal bar)
  *  7. Terrain Composition (doughnut/bar)
  *  8. Waterbodies
@@ -124,16 +124,14 @@ export default function ReportViewer({ results }) {
               <div className="label">Years of Data</div>
             </div>
           )}
-          {totalAreaHa > 0 && (
-            <div className="stat-card stat-amber">
-              <div className="value">{totalAreaHa.toFixed(2)}</div>
-              <div className="label">Total Area (ha)</div>
-            </div>
-          )}
+          <div className="stat-card stat-amber">
+            <div className="value">{totalAreaHa.toFixed(2)}</div>
+            <div className="label">Total Area (ha)</div>
+          </div>
           {vegetation && (
             <div className="stat-card stat-red">
-              <div className="value">{vegetation.transitions?.filter(t => t.to !== 'Forest' && t.area_ha > 0).length || 0}</div>
-              <div className="label">Deforestation Types</div>
+              <div className="value">{vegetation.transitions?.filter(t => (t.to_label || t.to) !== 'Tree Cover' && (t.to_label || t.to) !== 'Forest' && t.area_ha > 0).length || 0}</div>
+              <div className="label">Tree Cover Loss Types</div>
             </div>
           )}
         </div>
@@ -294,22 +292,22 @@ export default function ReportViewer({ results }) {
         </div>
       )}
 
-      {/* ─── Vegetation & Deforestation ─── */}
+      {/* ─── Vegetation & Tree Cover Change ─── */}
       {vegetation && (
         <div className="card animate-slide-up">
           <div className="card-header">
             <span className="icon">🌳</span>
-            <h3>Vegetation & Deforestation Analysis</h3>
+            <h3>Vegetation & Tree Cover Change Analysis</h3>
           </div>
 
           <div className="stats-grid">
             <div className="stat-card stat-green">
               <div className="value">{vegetation.tree_cover_gain_ha?.toFixed(2) ?? '—'}</div>
-              <div className="label">Afforestation (ha)</div>
+              <div className="label">Tree Cover Gain (ha)</div>
             </div>
             <div className="stat-card stat-red">
               <div className="value">{vegetation.tree_cover_loss_ha?.toFixed(2) ?? '—'}</div>
-              <div className="label">Deforestation (ha)</div>
+              <div className="label">Tree Cover Loss (ha)</div>
             </div>
             <div className={`stat-card ${(vegetation.net_change_ha ?? 0) >= 0 ? 'stat-green' : 'stat-red'}`}>
               <div className="value">{vegetation.net_change_ha?.toFixed(2) ?? '—'}</div>
@@ -321,22 +319,22 @@ export default function ReportViewer({ results }) {
             </div>
           </div>
 
-          {/* Vegetation Transitions (SRS: Forest→Farm, Forest→Barren, etc.) */}
+          {/* Vegetation Transitions (SRS: Tree Cover→Farm, Tree Cover→Barren, etc.) */}
           {vegetation.transitions && vegetation.transitions.length > 0 && (
             <>
               <h4 style={{ color: 'var(--text-secondary)', margin: '1.5rem 0 0.75rem', fontSize: '1rem' }}>
-                Deforestation Transitions
+                Tree Cover Loss Transitions
               </h4>
               <div className="chart-wrapper" style={{ height: '280px' }}>
                 <Bar
                   data={{
                     labels: vegetation.transitions
-                      .filter(t => (t.to_label || t.to) !== 'Forest')
+                      .filter(t => (t.to_label || t.to) !== 'Tree Cover' && (t.to_label || t.to) !== 'Forest')
                       .map(t => `${t.from_class || t.from} → ${t.to_label || t.to}`),
                     datasets: [{
                       label: 'Area (ha)',
                       data: vegetation.transitions
-                        .filter(t => (t.to_label || t.to) !== 'Forest')
+                        .filter(t => (t.to_label || t.to) !== 'Tree Cover' && (t.to_label || t.to) !== 'Forest')
                         .map(t => t.area_ha),
                       backgroundColor: [
                         'rgba(239, 68, 68, 0.7)',
@@ -412,9 +410,9 @@ export default function ReportViewer({ results }) {
 
           <div className="narrative">
             Vegetation analysis compares land cover between the study period,
-            tracking how forest land transitions to other use types.
-            {vegetation.net_change_ha < 0 && ` The village experienced a net loss of ${Math.abs(vegetation.net_change_ha).toFixed(2)} ha of forest cover.`}
-            {vegetation.net_change_ha >= 0 && ` The village shows a net gain of ${vegetation.net_change_ha?.toFixed(2)} ha of forest cover.`}
+            tracking how tree cover transitions to other use types.
+            {vegetation.net_change_ha < 0 && ` The village experienced a net loss of ${Math.abs(vegetation.net_change_ha).toFixed(2)} ha of tree cover.`}
+            {vegetation.net_change_ha >= 0 && ` The village shows a net gain of ${vegetation.net_change_ha?.toFixed(2)} ha of tree cover.`}
           </div>
         </div>
       )}
@@ -501,7 +499,7 @@ export default function ReportViewer({ results }) {
       )}
 
       {/* ─── Terrain Composition ─── */}
-      {terrain && terrain.total_area_ha > 0 && (
+      {terrain && (
         <div className="card animate-slide-up">
           <div className="card-header">
             <span className="icon">⛰️</span>
@@ -556,7 +554,7 @@ export default function ReportViewer({ results }) {
                     <tr key={k}>
                       <td>{k.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</td>
                       <td>{v.toFixed(2)}</td>
-                      <td>{((v / terrain.total_area_ha) * 100).toFixed(1)}%</td>
+                      <td>{terrain.total_area_ha > 0 ? ((v / terrain.total_area_ha) * 100).toFixed(1) : '0.0'}%</td>
                     </tr>
                   ))}
                 <tr style={{ fontWeight: 700 }}>
@@ -678,12 +676,12 @@ function generateNarrative(results, ciData, swData) {
   if (vegetation) {
     if (vegetation.net_change_ha < 0) {
       parts.push(
-        `The area experienced a net deforestation of ${Math.abs(vegetation.net_change_ha).toFixed(2)} ha, ` +
-        `with ${vegetation.tree_cover_loss_ha?.toFixed(2)} ha of forest loss and ${vegetation.tree_cover_gain_ha?.toFixed(2)} ha of afforestation.`
+        `The area experienced a net tree cover loss of ${Math.abs(vegetation.net_change_ha).toFixed(2)} ha, ` +
+        `with ${vegetation.tree_cover_loss_ha?.toFixed(2)} ha lost and ${vegetation.tree_cover_gain_ha?.toFixed(2)} ha gained.`
       );
     } else if (vegetation.net_change_ha > 0) {
       parts.push(
-        `The area shows positive reforestation with a net gain of ${vegetation.net_change_ha?.toFixed(2)} ha of forest cover.`
+        `The area shows a net tree cover gain of ${vegetation.net_change_ha?.toFixed(2)} ha.`
       );
     }
   }
