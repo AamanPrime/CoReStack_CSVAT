@@ -7,9 +7,9 @@
  *   3. Places Autocomplete hook (live village search)
  *   4. Geometry helpers (place → bounding box for GEE)
  */
-import React, { useEffect, useRef, useState, useCallback } from "react";
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 
-const MAPS_KEY = import.meta.env.VITE_GOOGLE_MAPS_KEY || "";
+const MAPS_KEY = import.meta.env.VITE_GOOGLE_MAPS_KEY || '';
 
 // ─── Script Loader ───
 
@@ -28,15 +28,15 @@ function loadGoogleMaps() {
     }
 
     // Use the new Google Maps JavaScript API loading
-    const script = document.createElement("script");
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${MAPS_KEY}&libraries=places&v=weekly`;
+    const script = document.createElement('script');
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${MAPS_KEY}&libraries=places,geometry&v=weekly`;
     script.async = true;
     script.defer = true;
     script.onload = () => {
       mapsLoaded = true;
       resolve();
     };
-    script.onerror = () => reject(new Error("Failed to load Google Maps"));
+    script.onerror = () => reject(new Error('Failed to load Google Maps'));
     document.head.appendChild(script);
   });
 
@@ -49,19 +49,16 @@ export function MapView({
   geojson,
   center,
   zoom = 13,
-  height = "350px",
+  height = '350px',
   onMapClick,
   layerUrls = [],
   activeLayerNames = [],
-  interactive = true,
-  maskOutside = false,
 }) {
   const mapRef = useRef(null);
   const mapInstance = useRef(null);
-  const polygonRef = useRef(null);
+
   const markerRef = useRef(null);
   const overlaysRef = useRef({});
-  const [isMapReady, setIsMapReady] = useState(false);
 
   // Initialize map
   useEffect(() => {
@@ -75,25 +72,20 @@ export function MapView({
       mapInstance.current = new window.google.maps.Map(mapRef.current, {
         center: defaultCenter,
         zoom: center ? zoom : 5,
-        mapTypeId: "hybrid",
+        mapTypeId: 'hybrid',
         mapTypeControl: false,
         streetViewControl: false,
         fullscreenControl: false,
-        zoomControl: true,
-        gestureHandling: interactive ? 'auto' : 'cooperative',
-        keyboardShortcuts: interactive,
-        disableDefaultUI: false,
+        zoomControl: false,
       });
 
       // Click handler for placing markers
       if (onMapClick) {
-        mapInstance.current.addListener("click", (e) => {
+        mapInstance.current.addListener('click', (e) => {
           const latLng = { lat: e.latLng.lat(), lng: e.latLng.lng() };
           onMapClick(latLng);
         });
       }
-
-      setIsMapReady(true);
     });
 
     return () => {
@@ -101,90 +93,42 @@ export function MapView({
     };
   }, []);
 
-  // Draw polygon when geojson changes
+  // Draw polygon when geojson changes — using native GeoJSON Data Layer
   useEffect(() => {
     if (!mapInstance.current || !window.google?.maps) return;
+    const map = mapInstance.current;
 
-    // Clear previous polygon(s)
-    if (polygonRef.current) {
-      if (Array.isArray(polygonRef.current)) {
-        polygonRef.current.forEach((p) => p.setMap(null));
-      } else {
-        polygonRef.current.setMap(null);
-      }
-      polygonRef.current = null;
-    }
+    // Clear previous GeoJSON features
+    map.data.forEach((feature) => map.data.remove(feature));
 
     if (!geojson?.coordinates?.[0]) return;
 
-    // Collect all outer rings: MultiPolygon has multiple polygons, Polygon has one
-    const rings =
-      geojson.type === "MultiPolygon"
-        ? geojson.coordinates.map((poly) => poly[0]) // outer ring of each polygon
-        : [geojson.coordinates[0]]; // single outer ring
+    // Wrap raw geometry in a GeoJSON Feature for map.data.addGeoJson
+    const featureCollection = {
+      type: 'FeatureCollection',
+      features: [{ type: 'Feature', geometry: geojson, properties: {} }],
+    };
 
+    map.data.addGeoJson(featureCollection);
+
+    // Style the rendered polygon
+    map.data.setStyle({
+      strokeColor: '#22c55e',
+      strokeOpacity: 0.9,
+      strokeWeight: 3,
+      fillColor: '#22c55e',
+      fillOpacity: 0.15,
+    });
+
+    // Fit bounds to the rendered geometry
     const bounds = new window.google.maps.LatLngBounds();
-    
-    if (maskOutside) {
-      // Outer path: A safe way to cover the entire Earth in Google Maps without Date Line collapsing
-      const worldCoords = [
-        { lat: -85, lng: -180 },
-        { lat: 85, lng: -180 },
-        { lat: 85, lng: 180 },
-        { lat: -85, lng: 180 },
-        { lat: -85, lng: 0 } // Anchor at Prime Meridian to prevent shortest-path collapse!
-      ];
-      
-      // Inner paths: the selected region boundaries (reverse to cut hole)
-      const holePaths = rings.map((ring) => {
-        const path = ring.map(([lng, lat]) => {
-          bounds.extend({ lat, lng });
-          return { lat, lng };
-        });
-        return path.reverse();
+    map.data.forEach((feature) => {
+      feature.getGeometry().forEachLatLng((latLng) => {
+        bounds.extend(latLng);
       });
-
-      // Dark overlay covering everything EXCEPT the selected region, 100% opaque
-      const maskPolygon = new window.google.maps.Polygon({
-        paths: [worldCoords, ...holePaths],
-        strokeWeight: 0,
-        fillColor: "#111827", // Exact match of .story-split-map CSS background
-        fillOpacity: 1.0, 
-        map: mapInstance.current,
-      });
-
-      // Green boundary outline on the region itself
-      const outlinePolygons = holePaths.map((path) => new window.google.maps.Polygon({
-        paths: path,
-        strokeColor: "#22c55e",
-        strokeOpacity: 1,
-        strokeWeight: 3,
-        fillOpacity: 0, 
-        map: mapInstance.current,
-      }));
-
-      polygonRef.current = [maskPolygon, ...outlinePolygons];
-    } else {
-      // Standard highlighting behavior (fill inside)
-      const polygons = rings.map((ring) => {
-        const coords = ring.map(([lng, lat]) => ({ lat, lng }));
-        coords.forEach((c) => bounds.extend(c));
-        return new window.google.maps.Polygon({
-          paths: coords,
-          strokeColor: "#22c55e",
-          strokeOpacity: 0.9,
-          strokeWeight: 3,
-          fillColor: "#22c55e",
-          fillOpacity: 0.15,
-          map: mapInstance.current,
-        });
-      });
-      polygonRef.current = polygons;
-    }
-
-    // Fit bounds to all polygons
-    mapInstance.current.fitBounds(bounds, maskOutside ? 10 : 60);
-  }, [geojson, isMapReady]);
+    });
+    map.fitBounds(bounds, 60);
+  }, [geojson]);
 
   // Update center when it changes
   useEffect(() => {
@@ -202,14 +146,14 @@ export function MapView({
         icon: {
           path: window.google.maps.SymbolPath.CIRCLE,
           scale: 8,
-          fillColor: "#22c55e",
+          fillColor: '#22c55e',
           fillOpacity: 1,
-          strokeColor: "#ffffff",
+          strokeColor: '#ffffff',
           strokeWeight: 2,
         },
       });
     }
-  }, [center, zoom, isMapReady]);
+  }, [center, zoom]);
 
   // ─── Layer Overlay Management ───
   useEffect(() => {
@@ -226,10 +170,16 @@ export function MapView({
               const proj = mapInstance.current.getProjection();
               const numTiles = 1 << zoom;
               const sw = proj.fromPointToLatLng(
-                new window.google.maps.Point((coord.x * tileSize) / numTiles, ((coord.y + 1) * tileSize) / numTiles)
+                new window.google.maps.Point(
+                  (coord.x * tileSize) / numTiles,
+                  ((coord.y + 1) * tileSize) / numTiles,
+                ),
               );
               const ne = proj.fromPointToLatLng(
-                new window.google.maps.Point(((coord.x + 1) * tileSize) / numTiles, (coord.y * tileSize) / numTiles)
+                new window.google.maps.Point(
+                  ((coord.x + 1) * tileSize) / numTiles,
+                  (coord.y * tileSize) / numTiles,
+                ),
               );
               const bbox = `${sw.lng()},${sw.lat()},${ne.lng()},${ne.lat()}`;
               return `${layerInfo.url}&BBOX=${bbox}&WIDTH=${tileSize}&HEIGHT=${tileSize}`;
@@ -258,20 +208,26 @@ export function MapView({
         delete overlaysRef.current[layerName];
       }
     });
-  }, [activeLayerNames, layerUrls, isMapReady]);
+  }, [activeLayerNames, layerUrls]);
 
-  const isFullScreen = height === "100%";
+  const isFullScreen = height === '100%';
 
   return (
-    <div style={{ position: "relative", width: "100%", height: isFullScreen ? "100%" : "auto" }}>
+    <div
+      style={{
+        position: 'relative',
+        width: '100%',
+        height: isFullScreen ? '100%' : 'auto',
+      }}
+    >
       <div
         ref={mapRef}
         style={{
-          width: "100%",
+          width: '100%',
           height,
-          borderRadius: isFullScreen ? 0 : "12px",
-          border: isFullScreen ? "none" : "1px solid var(--border-light)",
-          overflow: "hidden",
+          borderRadius: isFullScreen ? 0 : '12px',
+          border: isFullScreen ? 'none' : '1px solid var(--border-light)',
+          overflow: 'hidden',
         }}
       />
     </div>
@@ -310,8 +266,8 @@ export function usePlacesAutocomplete() {
     serviceRef.current.getPlacePredictions(
       {
         input: query,
-        componentRestrictions: { country: "in" }, // India only
-        types: ["locality", "sublocality", "administrative_area_level_3"], // Villages/towns
+        componentRestrictions: { country: 'in' }, // India only
+        types: ['locality', 'sublocality', 'administrative_area_level_3'], // Villages/towns
         sessionToken: sessionTokenRef.current,
       },
       (results, status) => {
@@ -325,7 +281,7 @@ export function usePlacesAutocomplete() {
               place_id: r.place_id,
               description: r.description,
               main_text: r.structured_formatting?.main_text || r.description,
-              secondary_text: r.structured_formatting?.secondary_text || "",
+              secondary_text: r.structured_formatting?.secondary_text || '',
             })),
           );
         } else {
@@ -340,7 +296,7 @@ export function usePlacesAutocomplete() {
 
     return new Promise((resolve) => {
       geocoderRef.current.geocode({ placeId }, (results, status) => {
-        if (status === "OK" && results?.[0]) {
+        if (status === 'OK' && results?.[0]) {
           const result = results[0];
           const loc = result.geometry.location;
           const viewport = result.geometry.viewport;
@@ -348,7 +304,7 @@ export function usePlacesAutocomplete() {
           // Extract address components
           const components = result.address_components || [];
           const getComponent = (type) =>
-            components.find((c) => c.types.includes(type))?.long_name || "";
+            components.find((c) => c.types.includes(type))?.long_name || '';
 
           const lat = loc.lat();
           const lng = loc.lng();
@@ -359,7 +315,7 @@ export function usePlacesAutocomplete() {
             const ne = viewport.getNorthEast();
             const sw = viewport.getSouthWest();
             geojson = {
-              type: "Polygon",
+              type: 'Polygon',
               coordinates: [
                 [
                   [sw.lng(), sw.lat()],
@@ -374,7 +330,7 @@ export function usePlacesAutocomplete() {
             // Default ~5km bounding box
             const d = 0.025;
             geojson = {
-              type: "Polygon",
+              type: 'Polygon',
               coordinates: [
                 [
                   [lng - d, lat - d],
@@ -393,14 +349,14 @@ export function usePlacesAutocomplete() {
 
           resolve({
             name:
-              getComponent("locality") ||
-              getComponent("sublocality") ||
-              result.formatted_address.split(",")[0],
-            state: getComponent("administrative_area_level_1"),
-            district: getComponent("administrative_area_level_2"),
+              getComponent('locality') ||
+              getComponent('sublocality') ||
+              result.formatted_address.split(',')[0],
+            state: getComponent('administrative_area_level_1'),
+            district: getComponent('administrative_area_level_2'),
             tehsil:
-              getComponent("administrative_area_level_3") ||
-              getComponent("sublocality_level_1"),
+              getComponent('administrative_area_level_3') ||
+              getComponent('sublocality_level_1'),
             lat,
             lng,
             geojson,
@@ -423,21 +379,39 @@ export function usePlacesAutocomplete() {
 export function computeAreaHectares(geojson) {
   if (!geojson?.coordinates?.[0]) return 0;
   // Collect all outer rings
-  const rings = geojson.type === "MultiPolygon"
-    ? geojson.coordinates.map((poly) => poly[0])
-    : [geojson.coordinates[0]];
+  const rings =
+    geojson.type === 'MultiPolygon'
+      ? geojson.coordinates.map((poly) => poly[0])
+      : [geojson.coordinates[0]];
 
+  // Try Google Maps geodesic computeArea (most accurate — accounts for Earth's curvature)
+  if (window.google?.maps?.geometry?.spherical?.computeArea) {
+    let totalM2 = 0;
+    for (const coords of rings) {
+      if (!coords || !Array.isArray(coords[0])) continue;
+      const path = coords.map(
+        ([lng, lat]) => new window.google.maps.LatLng(lat, lng),
+      );
+      totalM2 += window.google.maps.geometry.spherical.computeArea(path);
+    }
+    return Math.round(totalM2 / 10000); // m² → hectares
+  }
+
+  // Fallback: Shoelace formula (for when Google Maps isn't loaded yet)
   let totalKm2 = 0;
   for (const coords of rings) {
     if (!coords || !Array.isArray(coords[0])) continue;
+    const n = coords.length;
+    let areaDeg2 = 0;
+    for (let i = 0; i < n; i++) {
+      const [x1, y1] = coords[i];
+      const [x2, y2] = coords[(i + 1) % n];
+      areaDeg2 += x1 * y2 - x2 * y1;
+    }
+    areaDeg2 = Math.abs(areaDeg2) / 2;
     const lats = coords.map((c) => c[1]);
-    const lons = coords.map((c) => c[0]);
-    const dLat = Math.max(...lats) - Math.min(...lats);
-    const dLon = Math.max(...lons) - Math.min(...lons);
-    const kmLat = dLat * 111;
     const avgLat = (Math.min(...lats) + Math.max(...lats)) / 2;
-    const kmLon = dLon * 111 * Math.cos((avgLat * Math.PI) / 180);
-    totalKm2 += kmLat * kmLon;
+    totalKm2 += areaDeg2 * 111.0 * 111.0 * Math.cos((avgLat * Math.PI) / 180);
   }
   return Math.round(totalKm2 * 100);
 }

@@ -343,11 +343,11 @@ def aggregate_vegetation(intersections, deforest_records, afforest_records, year
         'net_change_ha': round(gain - loss, 2),
         'degraded_land_ha': round((forest_to_barren or 0) + (forest_to_scrub or 0), 2),
         'transitions': [
-            {'from': 'Forest', 'to': 'Forest', 'area_ha': round(forest_stable or 0, 2)},
-            {'from': 'Forest', 'to': 'Barren', 'area_ha': round(forest_to_barren or 0, 2)},
-            {'from': 'Forest', 'to': 'Built Up', 'area_ha': round(forest_to_built or 0, 2)},
-            {'from': 'Forest', 'to': 'Farm', 'area_ha': round(forest_to_farm or 0, 2)},
-            {'from': 'Forest', 'to': 'Scrub Land', 'area_ha': round(forest_to_scrub or 0, 2)},
+            {'from': 'Tree Cover', 'to': 'Tree Cover', 'area_ha': round(forest_stable or 0, 2)},
+            {'from': 'Tree Cover', 'to': 'Barren', 'area_ha': round(forest_to_barren or 0, 2)},
+            {'from': 'Tree Cover', 'to': 'Built Up', 'area_ha': round(forest_to_built or 0, 2)},
+            {'from': 'Tree Cover', 'to': 'Farm', 'area_ha': round(forest_to_farm or 0, 2)},
+            {'from': 'Tree Cover', 'to': 'Scrub Land', 'area_ha': round(forest_to_scrub or 0, 2)},
         ],
         'yearly_data': [],
     }
@@ -488,6 +488,9 @@ async function fetchAllGEEData(geojson, years) {
 // ─── Boundary Resolution ───
 
 export async function resolveBoundary(boundaryInfo) {
+  // Import area computation from GoogleMapsIntegration
+  const { computeAreaHectares } = await import('../components/GoogleMapsIntegration');
+
   let result;
   if (boundaryInfo.type === 'geojson') {
     const isUpload = boundaryInfo.source === 'upload';
@@ -545,6 +548,11 @@ export async function resolveBoundary(boundaryInfo) {
     } catch (e) {
       console.warn('CoRE Stack admin-details resolution failed:', e.message);
     }
+  }
+
+  // Always compute precise area from geometry (never rely on pre-passed values)
+  if (result.geojson) {
+    result.area_hectares = computeAreaHectares(result.geojson);
   }
 
   return result;
@@ -709,6 +717,7 @@ export function generateCSV(results) {
   add('District', results.district);
   add('Tehsil', results.tehsil);
   add('Data Source', results.data_source || 'Unknown');
+  add('Total Area (ha)', (results.area_hectares || 0).toFixed(2));
   add('');
 
   if (results.cropping_intensity?.data) {
@@ -730,14 +739,14 @@ export function generateCSV(results) {
   }
 
   if (results.vegetation) {
-    add('=== Vegetation & Deforestation ===');
-    add('Afforestation (ha)', results.vegetation.tree_cover_gain_ha);
-    add('Deforestation (ha)', results.vegetation.tree_cover_loss_ha);
+    add('=== Vegetation & Tree Cover Change ===');
+    add('Tree Cover Gain (ha)', results.vegetation.tree_cover_gain_ha);
+    add('Tree Cover Loss (ha)', results.vegetation.tree_cover_loss_ha);
     add('Net Change (ha)', results.vegetation.net_change_ha);
     add('Degraded Land (ha)', results.vegetation.degraded_land_ha);
     if (results.vegetation.transitions) {
       add('');
-      add('--- Deforestation Transitions ---');
+      add('--- Tree Cover Loss Transitions ---');
       add('From', 'To', 'Area (ha)');
       for (const t of results.vegetation.transitions) {
         add(t.from, t.to, t.area_ha);
@@ -819,6 +828,7 @@ th:first-child,td:first-child{text-align:left}
 <div class="mi"><label>Tehsil</label><span>${results.tehsil}</span></div>
 <div class="mi"><label>Generated</label><span>${now}</span></div>
 <div class="mi"><label>Engine</label><span>Pyodide WASM</span></div>
+<div class="mi"><label>Total Area</label><span>${(results.area_hectares || 0).toFixed(2)} ha</span></div>
 </div></div>
 ${ci ? `<div class="sec"><h2>🌱 Cropping Intensity Trends</h2>
 <div class="cc"><canvas id="ciChart"></canvas></div>
@@ -830,19 +840,19 @@ ${sw ? `<div class="sec"><h2>💧 Seasonal Surface Water (Kharif / Rabi / Zaid)<
 <table><thead><tr><th>Year</th><th>Kharif (ha)</th><th>Rabi (ha)</th><th>Zaid (ha)</th><th>Total (ha)</th></tr></thead>
 <tbody>${swData.map(d=>`<tr><td>${d.year}</td><td>${d.kharif_ha ?? d.seasonal_monsoon_ha ?? 0}</td><td>${d.rabi_ha ?? d.seasonal_winter_ha ?? 0}</td><td>${d.zaid_ha ?? d.perennial_ha ?? 0}</td><td>${d.total_water_ha}</td></tr>`).join('')}</tbody></table>
 <p class="nar">Surface water availability across Kharif (Jun-Sep), Rabi (Oct-Feb), and Zaid (Mar-May) seasons.</p></div>` : ''}
-${vg ? `<div class="sec"><h2>🌳 Vegetation & Deforestation</h2>
+${vg ? `<div class="sec"><h2>🌳 Vegetation & Tree Cover Change</h2>
 <div class="sg">
-<div class="sc"><div class="v pos">${vg.tree_cover_gain_ha}</div><div class="l">Afforestation (ha)</div></div>
-<div class="sc"><div class="v neg">${vg.tree_cover_loss_ha}</div><div class="l">Deforestation (ha)</div></div>
+<div class="sc"><div class="v pos">${vg.tree_cover_gain_ha}</div><div class="l">Tree Cover Gain (ha)</div></div>
+<div class="sc"><div class="v neg">${vg.tree_cover_loss_ha}</div><div class="l">Tree Cover Loss (ha)</div></div>
 <div class="sc"><div class="v ${vg.net_change_ha>=0?'pos':'neg'}">${vg.net_change_ha}</div><div class="l">Net Change (ha)</div></div>
 <div class="sc"><div class="v warn">${vg.degraded_land_ha}</div><div class="l">Degraded (ha)</div></div>
 </div>
-${vg.transitions ? `<h3 style="margin-top:1.5rem;font-size:1.1rem;color:var(--heading)">Deforestation Transitions</h3>
+${vg.transitions ? `<h3 style="margin-top:1.5rem;font-size:1.1rem;color:var(--heading)">Tree Cover Loss Transitions</h3>
 <div class="cc" style="height:280px"><canvas id="vgTransChart"></canvas></div>
 <table><thead><tr><th>From</th><th>To</th><th>Area (ha)</th></tr></thead>
 <tbody>${vg.transitions.map(t=>`<tr><td>${t.from}</td><td>${t.to}</td><td>${t.area_ha}</td></tr>`).join('')}</tbody></table>` : ''}
 ${vg.yearly_data?.length ? `<div class="cc"><canvas id="vgChart"></canvas></div>` : ''}
-<p class="nar">Vegetation analysis tracks forest cover changes and land degradation.</p></div>` : ''}
+<p class="nar">Vegetation analysis tracks tree cover changes and land degradation.</p></div>` : ''}
 ${results.crop_intensity_change ? `<div class="sec"><h2>🔄 Cropping Intensity Change Detection</h2>
 <div class="cc" style="height:320px"><canvas id="cicChart"></canvas></div>
 <table><thead><tr><th>Transition</th><th>Area (ha)</th></tr></thead>
@@ -872,7 +882,7 @@ const onChartComplete = (chart) => {
 };
 ${ci ? `new Chart(document.getElementById('ciChart'),{type:'bar',data:{labels:${JSON.stringify(ciData.map(d=>d.year))},datasets:[{label:'Single Crop',data:${JSON.stringify(ciData.map(d=>d.single_crop_ha))},backgroundColor:'#22c55e',borderRadius:4},{label:'Double Crop',data:${JSON.stringify(ciData.map(d=>d.double_crop_ha))},backgroundColor:'#3b82f6',borderRadius:4},{label:'Triple Crop',data:${JSON.stringify(ciData.map(d=>d.triple_crop_ha))},backgroundColor:'#f59e0b',borderRadius:4}]},options:{animation:{onComplete:function(){onChartComplete(this)}},responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'#1e293b',font:{weight:500}}}},scales:{x:{stacked:true,grid:{display:false}},y:{stacked:true,title:{display:true,text:'Area (Hectares)'}}}}});` : ''}
 ${sw ? `new Chart(document.getElementById('swChart'),{type:'bar',data:{labels:${JSON.stringify(swData.map(d=>d.year))},datasets:[{label:'Kharif',data:${JSON.stringify(swData.map(d=>d.kharif_ha ?? d.seasonal_monsoon_ha ?? 0))},backgroundColor:'#14b8a6',borderRadius:4},{label:'Rabi',data:${JSON.stringify(swData.map(d=>d.rabi_ha ?? d.seasonal_winter_ha ?? 0))},backgroundColor:'#3b82f6',borderRadius:4},{label:'Zaid',data:${JSON.stringify(swData.map(d=>d.zaid_ha ?? d.perennial_ha ?? 0))},backgroundColor:'#93c5fd',borderRadius:4}]},options:{animation:{onComplete:function(){onChartComplete(this)}},responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'#1e293b',font:{weight:500}}}},scales:{x:{grid:{display:false}},y:{title:{display:true,text:'Area (Hectares)'}}}}});` : ''}
-${vg?.transitions?.length ? `new Chart(document.getElementById('vgTransChart'),{type:'bar',data:{labels:${JSON.stringify(vg.transitions.filter(t=>t.to!=='Forest').map(t=>t.from+' → '+t.to))},datasets:[{label:'Area (ha)',data:${JSON.stringify(vg.transitions.filter(t=>t.to!=='Forest').map(t=>t.area_ha))},backgroundColor:['#ef4444','#f59e0b','#eab308','#9ca3af'],borderRadius:4}]},options:{animation:{onComplete:function(){onChartComplete(this)}},responsive:true,maintainAspectRatio:false,indexAxis:'y',scales:{x:{title:{display:true,text:'Area (Hectares)'}}},plugins:{legend:{display:false}}}});` : ''}
+${vg?.transitions?.length ? `new Chart(document.getElementById('vgTransChart'),{type:'bar',data:{labels:${JSON.stringify(vg.transitions.filter(t=>t.to!=='Tree Cover'&&t.to!=='Forest').map(t=>t.from+' → '+t.to))},datasets:[{label:'Area (ha)',data:${JSON.stringify(vg.transitions.filter(t=>t.to!=='Tree Cover'&&t.to!=='Forest').map(t=>t.area_ha))},backgroundColor:['#ef4444','#f59e0b','#eab308','#9ca3af'],borderRadius:4}]},options:{animation:{onComplete:function(){onChartComplete(this)}},responsive:true,maintainAspectRatio:false,indexAxis:'y',scales:{x:{title:{display:true,text:'Area (Hectares)'}}},plugins:{legend:{display:false}}}});` : ''}
 ${vg?.yearly_data?.length ? `new Chart(document.getElementById('vgChart'),{type:'line',data:{labels:${JSON.stringify(vg.yearly_data.map(d=>d.year))},datasets:[{label:'Tree Cover (ha)',data:${JSON.stringify(vg.yearly_data.map(d=>d.tree_cover_ha))},borderColor:'#16a34a',backgroundColor:'rgba(22,163,74,0.1)',fill:true,borderWidth:3,tension:.3,pointRadius:4,pointBackgroundColor:'#16a34a'}]},options:{animation:{onComplete:function(){onChartComplete(this)}},responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'#1e293b',font:{weight:500}}}},scales:{x:{grid:{display:false}},y:{title:{display:true,text:'Area (Hectares)'}}}}});` : ''}
 ${results.crop_intensity_change ? `new Chart(document.getElementById('cicChart'),{type:'bar',data:{labels:${JSON.stringify(results.crop_intensity_change.filter(t=>!t.label.includes('Total')).map(t=>t.label))},datasets:[{label:'Area (ha)',data:${JSON.stringify(results.crop_intensity_change.filter(t=>!t.label.includes('Total')).map(t=>t.area_ha))},backgroundColor:${JSON.stringify(results.crop_intensity_change.filter(t=>!t.label.includes('Total')).map(t=>{if(t.label.includes('Single To Double')||t.label.includes('Double To Triple')||t.label.includes('Single To Triple'))return'#22c55e';if(t.label.includes('Double To Single')||t.label.includes('Triple To Double')||t.label.includes('Triple To Single'))return'#ef4444';return'#3b82f6'}))},borderRadius:4}]},options:{animation:{onComplete:function(){onChartComplete(this)}},responsive:true,maintainAspectRatio:false,indexAxis:'y',scales:{x:{title:{display:true,text:'Area (Hectares)'}}},plugins:{legend:{display:false}}}});` : ''}
 ${results.terrain?.total_area_ha ? `new Chart(document.getElementById('terrainChart'),{type:'doughnut',data:{labels:${JSON.stringify(Object.entries(results.terrain).filter(([k])=>k!=='total_area_ha').filter(([,v])=>v>0).map(([k])=>k.replace(/_/g,' ')))},datasets:[{data:${JSON.stringify(Object.entries(results.terrain).filter(([k])=>k!=='total_area_ha').filter(([,v])=>v>0).map(([,v])=>v))},backgroundColor:['#f59e0b','#22c55e','#9ca3af','#ef4444','#3b82f6'],borderWidth:2,borderColor:'#fff'}]},options:{animation:{onComplete:function(){onChartComplete(this)}},responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'right',labels:{color:'#1e293b',font:{weight:500}}}}}});` : ''}
