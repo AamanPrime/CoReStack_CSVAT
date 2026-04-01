@@ -341,22 +341,11 @@ export async function runRasterAnalytics(boundary, selectedLayers, selectedYears
   const { state, district, tehsil, boundary_geojson: villageGeojson } = boundary;
   const villageName = boundary.village_name || boundary.name || 'Village';
 
-  // Step 1: Backend extracts raw pixel data from GEE IndiaSAT LULC v3 (all years)
-  onProgress?.('Extracting pixel data from GEE IndiaSAT LULC v3 (all years)…');
-  const extractResp = await fetch(`${API_BASE}/api/v1/raster/extract`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      village_geojson: villageGeojson,
-    }),
-  });
+  // Step 1: Client-side tiled TIFF extraction (100% browser-side, zero rasterio)
+  onProgress?.('Starting client-side tiled TIFF extraction…');
+  const { runTiledExtraction } = await import('./tileEngine.js');
+  const extractResult = await runTiledExtraction(villageGeojson, villageName, onProgress);
 
-  if (!extractResp.ok) {
-    const errText = await extractResp.text();
-    throw new Error(`Pixel extraction failed (${extractResp.status}): ${errText}`);
-  }
-
-  const extractResult = await extractResp.json();
   if (extractResult.status !== 'ok' || !extractResult.data?.length) {
     throw new Error('No pixel data could be extracted from rasters.');
   }
