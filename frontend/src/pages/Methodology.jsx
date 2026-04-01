@@ -98,7 +98,7 @@ export default function Methodology() {
                 X<sub>village</sub> = Σ (x<sub>i</sub> × f<sub>i</sub>)
               </FormulaBox>
               <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '0.5rem' }}>
-                Used for: cropped area (ha), water body area (ha), deforestation area (ha).
+                Used for: cropped area (ha), water body area (ha), tree cover change area (ha).
                 Sum of overlap-weighted values.
               </p>
             </div>
@@ -168,13 +168,13 @@ export default function Methodology() {
           </p>
           <ul style={ulStyle}>
             <li><strong>Primary — LULC Raster (10m):</strong> Water classes from IndiaSAT LULC v3: Class 2 = Kharif Water, Class 3 = Kharif+Rabi Water, Class 4 = Perennial Water. Pixel-level extraction from the same raster used for cropping intensity.</li>
-            <li><strong>Fallback — MWS Vector:</strong> If the LULC raster has no water pixels (e.g., forest areas with small waterbodies below pixel resolution), the system falls back to <code>surfaceWaterBodies_annual</code> vector records from the CoRE Stack tehsil API, aggregated via MWS weighted intersection.</li>
+            <li><strong>Fallback — MWS Vector:</strong> If the LULC raster has no water pixels (e.g., tree cover areas with small waterbodies below pixel resolution), the system falls back to <code>surfaceWaterBodies_annual</code> vector records from the CoRE Stack tehsil API, aggregated via MWS weighted intersection.</li>
           </ul>
           <MetricsTable rows={[
-            ['Kharif Water Area', 'Water during monsoon (Jun–Sep)', 'ha', 'Pixel count / Weighted sum'],
-            ['Rabi Water Area', 'Water during winter (Oct–Feb)', 'ha', 'Pixel count / Weighted sum'],
-            ['Zaid/Perennial Area', 'Water during summer (Mar–May) / perennial', 'ha', 'Pixel count / Weighted sum'],
-            ['Total Water Area', 'Sum of all seasonal water', 'ha', 'Derived'],
+            ['Kharif Water Area', 'All water during monsoon (Jun–Sep) — includes Rabi + Zaid water', 'ha', 'Pixel count / Weighted sum'],
+            ['Rabi Water Area', 'Water persisting into winter (Oct–Feb) — includes Zaid water', 'ha', 'Pixel count / Weighted sum'],
+            ['Zaid/Perennial Area', 'Only perennial water that persists year-round (Mar–May)', 'ha', 'Pixel count / Weighted sum'],
+            ['Total Water Area', 'Unique water area (not double-counted)', 'ha', 'Derived'],
           ]} />
           <WarningBox>
             Small waterbodies (ponds, streams) may not be captured by the 10m LULC classification.
@@ -183,17 +183,17 @@ export default function Methodology() {
           </WarningBox>
         </SubSection>
 
-        <SubSection title="4.3 Vegetation & Deforestation">
-          <p style={pStyle}>Forest cover change detection between the analysis start and end years.</p>
+        <SubSection title="4.3 Vegetation & Tree Cover Change">
+          <p style={pStyle}>Tree cover change detection between the analysis start and end years.</p>
           <MetricsTable rows={[
-            ['Deforestation', 'Total tree cover lost', 'ha', 'Weighted sum'],
-            ['Afforestation', 'Total tree cover gained', 'ha', 'Weighted sum'],
-            ['Net Change', 'Afforestation − Deforestation', 'ha', 'Derived'],
-            ['Degraded Land', 'Forest → Barren + Forest → Scrub', 'ha', 'Derived'],
+            ['Tree Cover Loss', 'Total tree cover lost', 'ha', 'Weighted sum'],
+            ['Tree Cover Gain', 'Total tree cover gained', 'ha', 'Weighted sum'],
+            ['Net Change', 'Tree Cover Gain − Tree Cover Loss', 'ha', 'Derived'],
+            ['Degraded Land', 'Tree Cover → Barren + Tree Cover → Scrub', 'ha', 'Derived'],
           ]} />
           <p style={{ ...pStyle, fontSize: '0.82rem', }}>
-            <strong>Transition classes tracked:</strong> Forest → Forest (stable), Forest → Barren,
-            Forest → Built Up, Forest → Farm, Forest → Scrub Land.
+            <strong>Transition classes tracked:</strong> Tree Cover → Tree Cover (stable), Tree Cover → Barren,
+            Tree Cover → Built Up, Tree Cover → Farm, Tree Cover → Scrub Land.
           </p>
         </SubSection>
 
@@ -229,7 +229,7 @@ export default function Methodology() {
             <ul style={{ ...ulStyle, marginTop: '0.3rem' }}>
               <li>Single/double/triple cropping — estimated from pixel class ratios</li>
               <li>Kharif/Rabi/Zaid water split — estimated from JRC permanent/seasonal classes</li>
-              <li>Forest transition types — only net NDVI change, not transition matrices</li>
+              <li>Tree cover transition types — only net NDVI change, not transition matrices</li>
             </ul>
           </li>
           <li>
@@ -409,7 +409,7 @@ function ComparisonTable() {
             ['Resolution', '10m (Sentinel-2)', 'MWS-level aggregates'],
             ['Crop Classification', '13 classes incl. Single/Double/Triple', 'Pre-computed per MWS'],
             ['Water Seasons', 'Kharif / Rabi / Zaid (pixel-level)', 'Kharif / Rabi / Zaid (MWS-level)'],
-            ['Forest Transitions', 'Full transition matrix (pixel-level)', 'Weighted aggregation'],
+            ['Tree Cover Transitions', 'Full transition matrix (pixel-level)', 'Weighted aggregation'],
             ['Coverage', 'Any village with boundary GeoJSON', 'Active tehsils only'],
           ].map(([attr, core, gee], i) => (
             <tr key={i}>
