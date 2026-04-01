@@ -29,7 +29,7 @@ function loadGoogleMaps() {
 
     // Use the new Google Maps JavaScript API loading
     const script = document.createElement("script");
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${MAPS_KEY}&libraries=places&v=weekly`;
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${MAPS_KEY}&libraries=places,geometry&v=weekly`;
     script.async = true;
     script.defer = true;
     script.onload = () => {
@@ -56,7 +56,7 @@ export function MapView({
 }) {
   const mapRef = useRef(null);
   const mapInstance = useRef(null);
-  const polygonRef = useRef(null);
+
   const markerRef = useRef(null);
   const overlaysRef = useRef({});
 
@@ -93,47 +93,41 @@ export function MapView({
     };
   }, []);
 
-  // Draw polygon when geojson changes
+  // Draw polygon when geojson changes — using native GeoJSON Data Layer
   useEffect(() => {
     if (!mapInstance.current || !window.google?.maps) return;
+    const map = mapInstance.current;
 
-    // Clear previous polygon(s)
-    if (polygonRef.current) {
-      if (Array.isArray(polygonRef.current)) {
-        polygonRef.current.forEach((p) => p.setMap(null));
-      } else {
-        polygonRef.current.setMap(null);
-      }
-      polygonRef.current = null;
-    }
+    // Clear previous GeoJSON features
+    map.data.forEach((feature) => map.data.remove(feature));
 
     if (!geojson?.coordinates?.[0]) return;
 
-    // Collect all outer rings: MultiPolygon has multiple polygons, Polygon has one
-    const rings =
-      geojson.type === "MultiPolygon"
-        ? geojson.coordinates.map((poly) => poly[0]) // outer ring of each polygon
-        : [geojson.coordinates[0]]; // single outer ring
+    // Wrap raw geometry in a GeoJSON Feature for map.data.addGeoJson
+    const featureCollection = {
+      type: "FeatureCollection",
+      features: [{ type: "Feature", geometry: geojson, properties: {} }],
+    };
 
-    const bounds = new window.google.maps.LatLngBounds();
-    const polygons = rings.map((ring) => {
-      const coords = ring.map(([lng, lat]) => ({ lat, lng }));
-      coords.forEach((c) => bounds.extend(c));
-      return new window.google.maps.Polygon({
-        paths: coords,
-        strokeColor: "#22c55e",
-        strokeOpacity: 0.9,
-        strokeWeight: 3,
-        fillColor: "#22c55e",
-        fillOpacity: 0.15,
-        map: mapInstance.current,
-      });
+    map.data.addGeoJson(featureCollection);
+
+    // Style the rendered polygon
+    map.data.setStyle({
+      strokeColor: "#22c55e",
+      strokeOpacity: 0.9,
+      strokeWeight: 3,
+      fillColor: "#22c55e",
+      fillOpacity: 0.15,
     });
 
-    polygonRef.current = polygons;
-
-    // Fit bounds to all polygons
-    mapInstance.current.fitBounds(bounds, 60);
+    // Fit bounds to the rendered geometry
+    const bounds = new window.google.maps.LatLngBounds();
+    map.data.forEach((feature) => {
+      feature.getGeometry().forEachLatLng((latLng) => {
+        bounds.extend(latLng);
+      });
+    });
+    map.fitBounds(bounds, 60);
   }, [geojson]);
 
   // Update center when it changes
@@ -377,17 +371,32 @@ export function computeAreaHectares(geojson) {
     ? geojson.coordinates.map((poly) => poly[0])
     : [geojson.coordinates[0]];
 
+  // Try Google Maps geodesic computeArea (most accurate — accounts for Earth's curvature)
+  if (window.google?.maps?.geometry?.spherical?.computeArea) {
+    let totalM2 = 0;
+    for (const coords of rings) {
+      if (!coords || !Array.isArray(coords[0])) continue;
+      const path = coords.map(([lng, lat]) => new window.google.maps.LatLng(lat, lng));
+      totalM2 += window.google.maps.geometry.spherical.computeArea(path);
+    }
+    return Math.round(totalM2 / 10000); // m² → hectares
+  }
+
+  // Fallback: Shoelace formula (for when Google Maps isn't loaded yet)
   let totalKm2 = 0;
   for (const coords of rings) {
     if (!coords || !Array.isArray(coords[0])) continue;
+    const n = coords.length;
+    let areaDeg2 = 0;
+    for (let i = 0; i < n; i++) {
+      const [x1, y1] = coords[i];
+      const [x2, y2] = coords[(i + 1) % n];
+      areaDeg2 += x1 * y2 - x2 * y1;
+    }
+    areaDeg2 = Math.abs(areaDeg2) / 2;
     const lats = coords.map((c) => c[1]);
-    const lons = coords.map((c) => c[0]);
-    const dLat = Math.max(...lats) - Math.min(...lats);
-    const dLon = Math.max(...lons) - Math.min(...lons);
-    const kmLat = dLat * 111;
     const avgLat = (Math.min(...lats) + Math.max(...lats)) / 2;
-    const kmLon = dLon * 111 * Math.cos((avgLat * Math.PI) / 180);
-    totalKm2 += kmLat * kmLon;
+    totalKm2 += areaDeg2 * 111.0 * 111.0 * Math.cos((avgLat * Math.PI) / 180);
   }
   return Math.round(totalKm2 * 100);
 }
