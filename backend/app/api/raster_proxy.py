@@ -203,6 +203,94 @@ async def check_raster_availability(
         return {"available": False, "status_code": 0}
 
 
+@router.post("/tile-url")
+async def get_tile_download_url(request_body: dict):
+    """Return a GEE download URL for a tile bbox + fiscal year.
+
+    The browser downloads and processes the TIFF itself using geotiff.js.
+    No rasterio/GDAL needed — just GEE authentication forwarding.
+
+    Request body:
+        bbox: [minLng, minLat, maxLng, maxLat]
+        fiscal_year: "2022-23"
+
+    Response:
+        { url, native_crs, pixel_size_m }
+    """
+    import asyncio
+
+    bbox = request_body.get("bbox")
+    fiscal_year = request_body.get("fiscal_year")
+
+    if not bbox or not fiscal_year:
+        raise HTTPException(status_code=400, detail="bbox and fiscal_year required")
+
+    if len(bbox) != 4:
+        raise HTTPException(status_code=400, detail="bbox must be [minLng, minLat, maxLng, maxLat]")
+
+    # Parse fiscal year "2022-23" → (2022, 2023)
+    parts = fiscal_year.replace("20", "").split("-")
+    if len(parts) != 2:
+        raise HTTPException(status_code=400, detail=f"Invalid fiscal_year format: {fiscal_year}")
+
+    try:
+        start_year = int("20" + parts[0])
+        end_year = int("20" + parts[1])
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"Invalid fiscal_year: {fiscal_year}")
+
+    def _get_url():
+        """Generate GEE download URL (runs in thread — ee library is synchronous)."""
+        from app.services.gee_service import _init_ee, CORESTACK_LULC_ASSET
+        _init_ee()
+
+        import ee as _ee
+
+        asset_path = CORESTACK_LULC_ASSET.format(start=start_year, end=end_year)
+        image = _ee.Image(asset_path).select("predicted_label")
+
+        # Create region geometry from bbox
+        region = _ee.Geometry.Rectangle(bbox)
+
+        # Get native CRS + transform
+        proj_info = image.projection().getInfo()
+        native_crs = proj_info.get("crs", "EPSG:4326")
+        native_transform = proj_info.get("transform")
+
+        # Build download params in native CRS (no reprojection = no resampling)
+        download_params = {
+            "region": region,
+            "format": "GEO_TIFF",
+        }
+        if native_transform and native_crs != "EPSG:4326":
+            download_params["crs"] = native_crs
+            download_params["crsTransform"] = native_transform
+        else:
+            download_params["crs"] = native_crs
+            download_params["scale"] = 10
+
+        url = image.getDownloadURL(download_params)
+
+        # Extract pixel size in meters from transform
+        pixel_size_m = 10.0  # default IndiaSAT
+        if native_transform:
+            pixel_size_m = abs(native_transform[0])
+
+        return url, native_crs, pixel_size_m
+
+    try:
+        url, native_crs, pixel_size_m = await asyncio.to_thread(_get_url)
+        logger.info("Tile URL generated for %s bbox=%s CRS=%s", fiscal_year, bbox, native_crs)
+        return {
+            "url": url,
+            "native_crs": native_crs,
+            "pixel_size_m": pixel_size_m,
+        }
+    except Exception as e:
+        logger.error("Tile URL generation failed for %s: %s", fiscal_year, e)
+        raise HTTPException(status_code=502, detail=f"GEE tile URL generation failed: {e}")
+
+
 @router.post("/extract")
 async def extract_raster_pixels(request_body: dict):
     """Extract raw pixel data from IndiaSAT LULC v3 rasters via GEE.

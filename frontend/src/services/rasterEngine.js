@@ -341,13 +341,39 @@ export async function runRasterAnalytics(boundary, selectedLayers, selectedYears
   const { state, district, tehsil, boundary_geojson: villageGeojson } = boundary;
   const villageName = boundary.village_name || boundary.name || 'Village';
 
-  // Step 1: Client-side tiled TIFF extraction (100% browser-side, zero rasterio)
-  onProgress?.('Starting client-side tiled TIFF extraction…');
-  const { runTiledExtraction } = await import('./tileEngine.js');
-  const extractResult = await runTiledExtraction(villageGeojson, villageName, onProgress);
+  // Step 1: Attempt Client-side tiled TIFF extraction (100% browser-side)
+  let extractResult;
+  try {
+    onProgress?.('Starting client-side tiled TIFF extraction…');
+    const { runTiledExtraction } = await import('./tileEngine.js');
+    extractResult = await runTiledExtraction(villageGeojson, villageName, onProgress);
+    
+    if (extractResult.status !== 'ok' || !extractResult.data?.length) {
+      throw new Error('No pixel data could be extracted client-side.');
+    }
+  } catch (err) {
+    console.warn('Client-side TIFF extraction failed, falling back to server-side extraction:', err);
+    onProgress?.('Client-side extraction failed. Falling back to server-side extraction…');
+    
+    // Fallback: Backend extracts raw pixel data from GEE IndiaSAT LULC v3
+    const API_BASE = (import.meta.env.VITE_API_BASE || 'http://localhost:8000').replace(/\/$/, '');
+    const extractResp = await fetch(`${API_BASE}/api/v1/raster/extract`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        village_geojson: villageGeojson,
+      }),
+    });
 
-  if (extractResult.status !== 'ok' || !extractResult.data?.length) {
-    throw new Error('No pixel data could be extracted from rasters.');
+    if (!extractResp.ok) {
+      const errText = await extractResp.text();
+      throw new Error(`Server-side pixel extraction failed (${extractResp.status}): ${errText}`);
+    }
+
+    extractResult = await extractResp.json();
+    if (extractResult.status !== 'ok' || !extractResult.data?.length) {
+      throw new Error('No pixel data could be extracted from server-side rasters.');
+    }
   }
 
   const pixelAreaHa = extractResult.pixel_area_ha;

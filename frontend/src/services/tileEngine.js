@@ -408,10 +408,7 @@ export async function runTiledExtraction(boundaryGeoJSON, villageName, onProgres
     onProgress?.(`Downloading ${totalTiles} tile(s) for ${fyLabel}…`);
 
     const downloadTasks = tiles.map((tileBbox, idx) => () =>
-      downloadAndStoreTile(villageName, fyLabel, tileBbox, idx).catch((err) => {
-        console.warn(`[TileEngine] Download failed for ${fyLabel} tile ${idx}:`, err.message);
-        return null;
-      })
+      downloadAndStoreTile(villageName, fyLabel, tileBbox, idx)
     );
 
     const downloadResults = await runWithConcurrency(downloadTasks, MAX_CONCURRENT);
