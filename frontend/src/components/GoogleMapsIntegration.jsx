@@ -53,9 +53,13 @@ export function MapView({
   onMapClick,
   layerUrls = [],
   activeLayerNames = [],
+  interactive = true,
+  maskOutside = false,
 }) {
   const mapRef = useRef(null);
   const mapInstance = useRef(null);
+  const polygonRef = useRef(null);
+  const [isMapReady, setIsMapReady] = useState(false);
 
   const markerRef = useRef(null);
   const overlaysRef = useRef({});
@@ -76,7 +80,10 @@ export function MapView({
         mapTypeControl: false,
         streetViewControl: false,
         fullscreenControl: false,
-        zoomControl: false,
+        zoomControl: true,
+        gestureHandling: interactive ? 'auto' : 'cooperative',
+        keyboardShortcuts: interactive,
+        disableDefaultUI: false,
       });
 
       // Click handler for placing markers
@@ -86,6 +93,8 @@ export function MapView({
           onMapClick(latLng);
         });
       }
+
+      setIsMapReady(true);
     });
 
     return () => {
@@ -93,42 +102,93 @@ export function MapView({
     };
   }, []);
 
-  // Draw polygon when geojson changes — using native GeoJSON Data Layer
+  // Draw polygon when geojson changes
   useEffect(() => {
     if (!mapInstance.current || !window.google?.maps) return;
-    const map = mapInstance.current;
 
-    // Clear previous GeoJSON features
-    map.data.forEach((feature) => map.data.remove(feature));
+    // Clear previous polygon(s)
+    if (polygonRef.current) {
+      if (Array.isArray(polygonRef.current)) {
+        polygonRef.current.forEach((p) => p.setMap(null));
+      } else {
+        polygonRef.current.setMap(null);
+      }
+      polygonRef.current = null;
+    }
 
     if (!geojson?.coordinates?.[0]) return;
 
-    // Wrap raw geometry in a GeoJSON Feature for map.data.addGeoJson
-    const featureCollection = {
-      type: 'FeatureCollection',
-      features: [{ type: 'Feature', geometry: geojson, properties: {} }],
-    };
+    // Collect rings: MultiPolygon has [ [ ring1, ... ], [ ring2, ... ] ], Polygon has [ ring1, ... ]
+    const rings =
+      geojson.type === "MultiPolygon"
+        ? geojson.coordinates.map((poly) => poly[0]) // outer ring of each polygon
+        : [geojson.coordinates[0]]; // single outer ring
 
-    map.data.addGeoJson(featureCollection);
-
-    // Style the rendered polygon
-    map.data.setStyle({
-      strokeColor: '#22c55e',
-      strokeOpacity: 0.9,
-      strokeWeight: 3,
-      fillColor: '#22c55e',
-      fillOpacity: 0.15,
-    });
-
-    // Fit bounds to the rendered geometry
     const bounds = new window.google.maps.LatLngBounds();
-    map.data.forEach((feature) => {
-      feature.getGeometry().forEachLatLng((latLng) => {
-        bounds.extend(latLng);
+    
+    if (maskOutside) {
+      // Outer path: world rectangle wound CLOCKWISE (NW→NE→SE→SW)
+      // GeoJSON boundaries wind counter-clockwise, so opposite winding = hole
+      const worldCoords = [
+        { lat: 85, lng: -180 },
+        { lat: 85, lng: 180 },
+        { lat: -85, lng: 180 },
+        { lat: -85, lng: -180 },
+        { lat: 85, lng: 0 } // Prime meridian anchor for date-line safety
+      ];
+      
+      // Inner paths: the selected region boundaries (reverse to cut hole)
+      const holePaths = rings.map((ring) => {
+        const path = ring.map(([lng, lat]) => {
+          bounds.extend({ lat, lng });
+          return { lat, lng };
+        });
+        return path.reverse();
       });
-    });
-    map.fitBounds(bounds, 60);
-  }, [geojson]);
+
+      // Dark overlay covering everything EXCEPT the selected region, 100% opaque
+      const maskPolygon = new window.google.maps.Polygon({
+        paths: [worldCoords, ...holePaths],
+        strokeWeight: 0,
+        fillColor: "#111827", // Perfect match for app dark theme
+        fillOpacity: 1.0, 
+        map: mapInstance.current,
+      });
+
+      // Green boundary outline on the region itself
+      const outlinePolygons = holePaths.map((path) => new window.google.maps.Polygon({
+        paths: path,
+        strokeColor: "#22c55e",
+        strokeOpacity: 1,
+        strokeWeight: 3,
+        fillOpacity: 0, 
+        map: mapInstance.current,
+      }));
+
+      polygonRef.current = [maskPolygon, ...outlinePolygons];
+    } else {
+      // Standard highlighting behavior (fill inside)
+      const polygons = rings.map((ring) => {
+        const coords = ring.map(([lng, lat]) => {
+          bounds.extend({ lat, lng });
+          return { lat, lng };
+        });
+        return new window.google.maps.Polygon({
+          paths: coords,
+          strokeColor: "#22c55e",
+          strokeOpacity: 0.9,
+          strokeWeight: 3,
+          fillColor: "#22c55e",
+          fillOpacity: 0.15,
+          map: mapInstance.current,
+        });
+      });
+      polygonRef.current = polygons;
+    }
+
+    // Fit bounds to all polygons
+    mapInstance.current.fitBounds(bounds, maskOutside ? 10 : 60);
+  }, [geojson, isMapReady]);
 
   // Update center when it changes
   useEffect(() => {
@@ -153,7 +213,7 @@ export function MapView({
         },
       });
     }
-  }, [center, zoom]);
+  }, [center, zoom, isMapReady]);
 
   // ─── Layer Overlay Management ───
   useEffect(() => {
@@ -208,7 +268,7 @@ export function MapView({
         delete overlaysRef.current[layerName];
       }
     });
-  }, [activeLayerNames, layerUrls]);
+  }, [activeLayerNames, layerUrls, isMapReady]);
 
   const isFullScreen = height === '100%';
 
