@@ -53,12 +53,15 @@ export function MapView({
   onMapClick,
   layerUrls = [],
   activeLayerNames = [],
+  interactive = true,
+  maskOutside = false,
 }) {
   const mapRef = useRef(null);
   const mapInstance = useRef(null);
   const polygonRef = useRef(null);
   const markerRef = useRef(null);
   const overlaysRef = useRef({});
+  const [isMapReady, setIsMapReady] = useState(false);
 
   // Initialize map
   useEffect(() => {
@@ -76,7 +79,10 @@ export function MapView({
         mapTypeControl: false,
         streetViewControl: false,
         fullscreenControl: false,
-        zoomControl: false,
+        zoomControl: true,
+        gestureHandling: interactive ? 'auto' : 'cooperative',
+        keyboardShortcuts: interactive,
+        disableDefaultUI: false,
       });
 
       // Click handler for placing markers
@@ -86,6 +92,8 @@ export function MapView({
           onMapClick(latLng);
         });
       }
+
+      setIsMapReady(true);
     });
 
     return () => {
@@ -116,25 +124,67 @@ export function MapView({
         : [geojson.coordinates[0]]; // single outer ring
 
     const bounds = new window.google.maps.LatLngBounds();
-    const polygons = rings.map((ring) => {
-      const coords = ring.map(([lng, lat]) => ({ lat, lng }));
-      coords.forEach((c) => bounds.extend(c));
-      return new window.google.maps.Polygon({
-        paths: coords,
-        strokeColor: "#22c55e",
-        strokeOpacity: 0.9,
-        strokeWeight: 3,
-        fillColor: "#22c55e",
-        fillOpacity: 0.15,
+    
+    if (maskOutside) {
+      // Outer path: A safe way to cover the entire Earth in Google Maps without Date Line collapsing
+      const worldCoords = [
+        { lat: -85, lng: -180 },
+        { lat: 85, lng: -180 },
+        { lat: 85, lng: 180 },
+        { lat: -85, lng: 180 },
+        { lat: -85, lng: 0 } // Anchor at Prime Meridian to prevent shortest-path collapse!
+      ];
+      
+      // Inner paths: the selected region boundaries (reverse to cut hole)
+      const holePaths = rings.map((ring) => {
+        const path = ring.map(([lng, lat]) => {
+          bounds.extend({ lat, lng });
+          return { lat, lng };
+        });
+        return path.reverse();
+      });
+
+      // Dark overlay covering everything EXCEPT the selected region, 100% opaque
+      const maskPolygon = new window.google.maps.Polygon({
+        paths: [worldCoords, ...holePaths],
+        strokeWeight: 0,
+        fillColor: "#111827", // Exact match of .story-split-map CSS background
+        fillOpacity: 1.0, 
         map: mapInstance.current,
       });
-    });
 
-    polygonRef.current = polygons;
+      // Green boundary outline on the region itself
+      const outlinePolygons = holePaths.map((path) => new window.google.maps.Polygon({
+        paths: path,
+        strokeColor: "#22c55e",
+        strokeOpacity: 1,
+        strokeWeight: 3,
+        fillOpacity: 0, 
+        map: mapInstance.current,
+      }));
+
+      polygonRef.current = [maskPolygon, ...outlinePolygons];
+    } else {
+      // Standard highlighting behavior (fill inside)
+      const polygons = rings.map((ring) => {
+        const coords = ring.map(([lng, lat]) => ({ lat, lng }));
+        coords.forEach((c) => bounds.extend(c));
+        return new window.google.maps.Polygon({
+          paths: coords,
+          strokeColor: "#22c55e",
+          strokeOpacity: 0.9,
+          strokeWeight: 3,
+          fillColor: "#22c55e",
+          fillOpacity: 0.15,
+          map: mapInstance.current,
+        });
+      });
+      polygonRef.current = polygons;
+    }
 
     // Fit bounds to all polygons
-    mapInstance.current.fitBounds(bounds, 60);
-  }, [geojson]);
+    mapInstance.current.fitBounds(bounds, maskOutside ? 10 : 60);
+  }, [geojson, isMapReady]);
 
   // Update center when it changes
   useEffect(() => {
@@ -159,7 +209,7 @@ export function MapView({
         },
       });
     }
-  }, [center, zoom]);
+  }, [center, zoom, isMapReady]);
 
   // ─── Layer Overlay Management ───
   useEffect(() => {
@@ -208,7 +258,7 @@ export function MapView({
         delete overlaysRef.current[layerName];
       }
     });
-  }, [activeLayerNames, layerUrls]);
+  }, [activeLayerNames, layerUrls, isMapReady]);
 
   const isFullScreen = height === "100%";
 
