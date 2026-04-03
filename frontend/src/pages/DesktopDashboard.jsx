@@ -6,8 +6,7 @@
  */
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import BoundarySelector from '../components/BoundarySelector';
-import ReportViewer from '../components/ReportViewer';
-import ExportManager from '../components/ExportManager';
+import StoryMapView from '../components/StoryMapView';
 import { MapView } from '../components/GoogleMapsIntegration';
 import {
   runAnalyticsPipeline,
@@ -373,52 +372,15 @@ export default function DesktopDashboard() {
           </div>
         )}
 
-        {/* Results Overlay */}
+        {/* Story Map Results View */}
         {results && (
-          <div className="report-overlay">
-            <div className="report-overlay-inner">
-              <div className="report-overlay-header">
-                <h2 style={{ fontSize: '1.3rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                   Analytics Results — {results.data_source || 'Computed'}
-                  {results.compute_mode === 'server' && ' (Server Mode)'}
-                  {results.compute_mode === 'client_raster' && ' (Client Raster)'}
-                </h2>
-                <button className="report-close-btn" onClick={handleReset} title="Close & New Analysis">
-                  ✕
-                </button>
-              </div>
-
-              {/* Data Warning Banner */}
-              {results.data_warning && (
-                <div style={{
-                  background: 'rgba(245, 158, 11, 0.08)',
-                  border: '1px solid rgba(245, 158, 11, 0.2)',
-                  borderRadius: '10px', padding: '0.75rem 1rem',
-                  marginBottom: '1.25rem',
-                  display: 'flex', alignItems: 'flex-start', gap: '0.5rem',
-                }}>
-                  <span style={{ fontSize: '1rem', flexShrink: 0 }}>⚠️</span>
-                  <div>
-                    <div style={{ fontWeight: 600, color: '#f59e0b', marginBottom: '0.15rem', fontSize: '0.85rem' }}>
-                      Lower Resolution Data
-                    </div>
-                    <div style={{ color: 'var(--text-secondary)', fontSize: '0.8rem', lineHeight: 1.5 }}>
-                      {results.data_warning}
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              <ReportViewer results={results} />
-              <ExportManager results={results} />
-
-              <div style={{ textAlign: 'center', marginTop: '1.5rem', paddingBottom: '1.5rem' }}>
-                <button className="btn btn-primary" onClick={handleReset} id="new-analysis-btn">
-                  🔄 New Analysis
-                </button>
-              </div>
-            </div>
-          </div>
+          <StoryMapView
+            results={results}
+            boundary={boundary}
+            onReset={handleReset}
+            layerUrls={availableLayers}
+            activeLayerNames={selectedLayers}
+          />
         )}
       </div>
 
