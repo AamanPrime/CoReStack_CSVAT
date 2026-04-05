@@ -623,6 +623,28 @@ export async function runAnalyticsPipeline(boundaryInfo, selectedLayers, selecte
         boundary,
       );
     }
+  } else if (computePath === 'raster_tiled') {
+    // ─── TILED RASTER PATH (100% Client-Side — no server TIFF storage) ───
+    const { runTiledRasterAnalytics } = await import('./rasterEngine');
+
+    onProgress?.('Starting 100% client-side tiled TIFF pipeline…');
+
+    try {
+      const tiledResults = await runTiledRasterAnalytics(
+        boundary, selectedLayers, sortedYears, onProgress
+      );
+      tiledResults.area_hectares = boundary.area_hectares || 0;
+      tiledResults.compute_mode = 'client_raster_tiled';
+      onProgress?.('Tiled raster analytics complete!');
+      return tiledResults;
+    } catch (err) {
+      if (err instanceof MWSUnavailableError) throw err;
+      console.error('[CSVAT] Tiled raster pipeline error:', err);
+      throw new MWSUnavailableError(
+        `Client-side tiled processing failed: ${err.message}. Would you like to use GEE instead?`,
+        boundary,
+      );
+    }
   } else {
     // ─── MWS PATH (Vector) ───
     onProgress?.('Checking CoRE Stack MWS data availability…');

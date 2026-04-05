@@ -23,8 +23,9 @@ export default function Methodology() {
             <li><strong>GEE Assets:</strong> <code>projects/corestack-datasets/assets/datasets/LULC_v3_river_basin/</code></li>
             <li><strong>Coverage:</strong> Any Indian village — requires a boundary GeoJSON polygon (from CoRE Stack registry or user upload).</li>
             <li><strong>Classes:</strong> 13 land cover classes (0–12): Built-up, Water (Kharif/Rabi/Zaid), Crops (Single/Double/Triple), Trees, Barren, Scrub, etc.</li>
-            <li><strong>CRS:</strong> Downloaded in the image's <strong>native CRS</strong> (no reprojection/resampling).</li>
-            <li><strong>Processing:</strong> Village geometry reprojected to raster CRS via <code>rasterio.warp.transform_geom</code>, then clipped with <code>geometry_mask</code>.</li>
+            <li><strong>CRS:</strong> Downloaded in <strong>EPSG:4326</strong> at 10m scale — same coordinate system as the village boundary GeoJSON, eliminating any CRS reprojection.</li>
+            <li><strong>Processing:</strong> 100% client-side. Village boundary is split into ~1 km² spatial tiles. Each tile's GeoTIFF is downloaded via a signed GEE URL, parsed with <code>geotiff.js</code>, and masked using <code>turf.booleanPointInPolygon</code> — mathematically equivalent to server-side <code>rasterio.geometry_mask</code>.</li>
+            <li><strong>Storage:</strong> Raw TIFF tiles are cached in browser <strong>IndexedDB</strong> for instant re-analysis. Auto-cleanup purges tiles from the 6th oldest village onward.</li>
             <li><strong>Temporal Range:</strong> Fiscal years 2017-18 through 2024-25.</li>
           </ul>
         </SubSection>
@@ -245,20 +246,23 @@ export default function Methodology() {
 
       {/* ─── 6. Execution Modes ─── */}
       <Section num="6" title="Execution Modes" color="var(--accent-purple, #8b5cf6)">
-        <p style={pStyle}>CSVAT supports three execution paths. Uploaded GeoJSON boundaries are restricted to the Raster path (pan-India). CoRE Stack boundaries support all three:</p>
+        <p style={pStyle}>CSVAT supports three execution paths. Uploaded GeoJSON boundaries are restricted to the High Accuracy Raster path (pan-India). CoRE Stack boundaries support all three:</p>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.75rem', margin: '1rem 0' }}>
           <div style={{ ...formulaCardStyle, borderColor: '#10b981' }}>
-            <div style={{ fontWeight: 700, color: '#10b981', marginBottom: '0.5rem', fontSize: '0.9rem' }}>⚡ Raster (High Accuracy)</div>
+            <div style={{ fontWeight: 700, color: '#10b981', marginBottom: '0.5rem', fontSize: '0.9rem' }}>⚡ High Accuracy Analysis (Raster)</div>
             <ul style={{ ...ulStyle, fontSize: '0.78rem' }}>
-              <li>Backend downloads GeoTIFFs from GEE IndiaSAT LULC v3 assets</li>
-              <li>Native CRS — zero reprojection, zero resampling</li>
-              <li>Clipped to village boundary via rasterio geometry_mask (10m)</li>
-              <li>All analytics computed client-side in Pyodide (Python WASM)</li>
-              <li>Non-blocking: runs in asyncio thread pool</li>
+              <li><strong>100% browser-side</strong> — server never stores or processes TIFF data</li>
+              <li>Village bbox split into ~1 km² spatial tiles</li>
+              <li>Backend signs GEE download URLs (auth only, zero storage)</li>
+              <li>Browser downloads GeoTIFFs in EPSG:4326 at 10m scale</li>
+              <li>Parsed with <code>geotiff.js</code>, masked with <code>turf.booleanPointInPolygon</code></li>
+              <li>Raw tiles cached in IndexedDB (instant re-analysis)</li>
+              <li>Analytics computed in Pyodide (Python WASM)</li>
               <li><strong>Cropping, vegetation, and surface water</strong> all derived from LULC pixel classes</li>
               <li>Water fallback to MWS vector if raster has no water pixels</li>
               <li><strong>Pan-India</strong> — works for any boundary (upload or CoRE Stack)</li>
+              <li><strong>Privacy:</strong> all geospatial data stays in your browser</li>
             </ul>
           </div>
           <div style={formulaCardStyle}>
@@ -281,11 +285,24 @@ export default function Methodology() {
             </ul>
           </div>
         </div>
+
+        <SubSection title="High Accuracy Tiled Pipeline — How It Works">
+          <ol style={{ ...ulStyle, fontSize: '0.82rem' }}>
+            <li><strong>Tile Grid:</strong> The village bounding box is split into a grid of ~1 km² tiles using <code>@turf/turf</code>. Small villages (&lt;1 km²) get a single tile.</li>
+            <li><strong>URL Signing:</strong> For each tile × fiscal year, the backend calls <code>image.getDownloadURL()</code> with the tile's bbox, <code>EPSG:4326</code>, and <code>scale=10</code>. It returns a signed GEE URL — no TIFF data touches the server.</li>
+            <li><strong>Download:</strong> The browser downloads up to 4 tiles concurrently. Raw <code>ArrayBuffer</code>s are stored in IndexedDB for caching.</li>
+            <li><strong>Parse:</strong> Each tile is parsed with <code>geotiff.js</code>. The affine transform is computed from the known tile bbox + image dimensions (not from TIFF metadata), guaranteeing correctness.</li>
+            <li><strong>Mask:</strong> For every pixel, the center coordinate (lng, lat) is computed and tested against the village polygon using <code>turf.booleanPointInPolygon</code>. Only pixels inside the boundary are counted.</li>
+            <li><strong>Merge:</strong> Histograms and pixel arrays from all tiles are combined into a single year result.</li>
+            <li><strong>Analytics:</strong> The merged data feeds into the existing Pyodide analytics engine — identical formulas for cropping intensity, water, vegetation, and change detection.</li>
+          </ol>
+        </SubSection>
+
         <p style={{ ...pStyle, fontSize: '0.82rem', color: 'var(--text-muted)' }}>
           All modes use the same GCA/NSA intensity formula.
-          The Raster path provides the highest accuracy by counting individual 10m pixels.
+          The High Accuracy path provides the highest accuracy by counting individual 10m pixels entirely in the browser.
           Surface water in the Raster path comes from LULC classes 2/3/4 (with MWS vector fallback for small waterbodies).
-          The report's data source label (e.g., "IndiaSAT LULC v3 Raster" vs "CoRE Stack MWS Vector") indicates which source was used for each section.
+          The report's data source label (e.g., "IndiaSAT LULC v3" vs "CoRE Stack MWS Vector") indicates which source was used for each section.
         </p>
       </Section>
 

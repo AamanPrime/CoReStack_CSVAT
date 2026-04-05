@@ -63,7 +63,7 @@ export default function MobileDashboard() {
   };
 
   // ─── WASM Mode Submit ───
-  const handleWASMSubmit = async (computePath = 'raster') => {
+  const handleWASMSubmit = async (computePath = 'raster_tiled') => {
     setIsRunning(true);
     setError(null);
     setResults(null);
@@ -150,6 +150,10 @@ export default function MobileDashboard() {
 
   const handleSubmit = (path) => {
     if (!boundary) return;
+    if (boundary.source === 'upload') {
+      handleWASMSubmit('raster_tiled');
+      return;
+    }
     if (executionMode === 'SERVER') handleServerSubmit();
     else handleWASMSubmit(path);
   };
@@ -301,7 +305,7 @@ export default function MobileDashboard() {
 
 
           {/* Execution Mode & Run */}
-          {boundary && boundary.source === 'corestack' && (
+          {boundary && (boundary.source === 'corestack' || boundary.source === 'upload') && (
             <div className="analytics-section">
               <div style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '0.35rem' }}>
                 Execution Mode
@@ -332,14 +336,14 @@ export default function MobileDashboard() {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                   <button
                     className="btn btn-primary btn-lg"
-                    onClick={() => handleSubmit('raster')}
+                    onClick={() => handleSubmit('raster_tiled')}
                     disabled={isRunning}
-                    id="run-analytics-raster-btn"
+                    id="run-analytics-tiled-btn"
                     style={{ width: '100%', background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', borderColor: '#059669' }}
                   >
                     {isRunning ? (
                       <><span className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }}></span> Processing…</>
-                    ) : '⚡ Raster Path (High Accuracy)'}
+                    ) : '⚡ High Accuracy Analysis'}
                   </button>
                   <button
                     className="btn btn-secondary btn-lg"

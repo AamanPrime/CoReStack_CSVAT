@@ -203,6 +203,70 @@ async def check_raster_availability(
         return {"available": False, "status_code": 0}
 
 
+@router.post("/tile-url")
+async def get_tile_download_url(request_body: dict):
+    """Return a signed GEE download URL for a tile bbox + fiscal year.
+
+    The browser downloads and processes the TIFF itself (geotiff.js).
+    Backend only does GEE auth — zero TIFF storage.
+
+    Uses EPSG:4326 + scale=10 so the TIFF pixels are in the SAME coordinate
+    system as the village boundary GeoJSON → no CRS reprojection needed in browser.
+
+    Request:  { bbox: [minLng, minLat, maxLng, maxLat], start_year: int, end_year: int }
+    Response: { url, bbox, fiscal_year }
+    """
+    import asyncio
+
+    bbox = request_body.get("bbox")
+    start_year = request_body.get("start_year")
+    end_year = request_body.get("end_year")
+
+    if not bbox or len(bbox) != 4:
+        raise HTTPException(status_code=400, detail="bbox [minLng, minLat, maxLng, maxLat] required")
+    if not start_year or not end_year:
+        raise HTTPException(status_code=400, detail="start_year and end_year required")
+
+    def _get_url():
+        import ee
+        from app.services.gee_service import _init_ee, CORESTACK_LULC_ASSET
+
+        _init_ee()
+
+        asset_path = CORESTACK_LULC_ASSET.format(start=start_year, end=end_year)
+        image = ee.Image(asset_path).select("predicted_label")
+
+        min_lng, min_lat, max_lng, max_lat = bbox
+        region = ee.Geometry.Rectangle([min_lng, min_lat, max_lng, max_lat])
+
+        # ── EPSG:4326 + scale=10 ──
+        # Same CRS as village boundary GeoJSON → browser can do
+        # point-in-polygon directly without any CRS reprojection.
+        # scale=10 gives ~10m resolution (actual degree step depends on latitude).
+        url = image.getDownloadURL({
+            "region": region,
+            "format": "GEO_TIFF",
+            "crs": "EPSG:4326",
+            "scale": 10,
+        })
+
+        logger.info("Tile URL (EPSG:4326, 10m): bbox=%s", bbox)
+        return url
+
+    try:
+        url = await asyncio.to_thread(_get_url)
+        fy_label = f"20{str(start_year)[-2:]}-{str(end_year)[-2:]}"
+        return {
+            "status": "ok",
+            "url": url,
+            "fiscal_year": fy_label,
+            "bbox": bbox,  # Return bbox so client can compute affine transform
+        }
+    except Exception as e:
+        logger.warning("Tile URL generation failed: %s", e)
+        raise HTTPException(status_code=404, detail=f"Could not generate tile URL: {e}")
+
+
 @router.post("/extract")
 async def extract_raster_pixels(request_body: dict):
     """Extract raw pixel data from IndiaSAT LULC v3 rasters via GEE.
