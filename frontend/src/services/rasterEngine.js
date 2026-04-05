@@ -575,3 +575,214 @@ export async function checkRasterAvailability(state, district, tehsil) {
     return { available: false, layerCount: 0, matchedCategories: [] };
   }
 }
+
+/**
+ * Run raster analytics via 100% CLIENT-SIDE tiled TIFF pipeline.
+ *
+ * Instead of calling backend /extract (which uses rasterio on the server),
+ * this downloads GeoTIFFs directly in the browser, parses them with
+ * geotiff.js, masks with turf.js, stores in IndexedDB, and feeds the
+ * same pixel data into the existing Pyodide analytics pipeline.
+ *
+ * The backend only provides signed GEE download URLs — zero TIFF storage.
+ */
+export async function runTiledRasterAnalytics(boundary, selectedLayers, selectedYears, onProgress) {
+  const { state, district, tehsil, boundary_geojson: villageGeojson } = boundary;
+  const villageName = boundary.village_name || boundary.name || 'Village';
+
+  // Step 1: 100% client-side tiled TIFF extraction
+  onProgress?.('Starting client-side tiled TIFF extraction (geotiff.js)…');
+  const { runTiledExtraction } = await import('./tileEngine');
+
+  const extractResult = await runTiledExtraction(villageGeojson, villageName, onProgress);
+
+  if (extractResult.status !== 'ok' || !extractResult.data?.length) {
+    throw new Error('No pixel data could be extracted from tiles.');
+  }
+
+  const pixelAreaHa = extractResult.pixel_area_ha;
+  onProgress?.(`Extracted ${extractResult.years_extracted} years (client-side). Loading Python WASM…`);
+
+  // Step 2: Load Pyodide — same as server-extract path
+  const { loadPyodide, deepConvertPyodide } = await import('./pyodideEngine');
+  const pyodide = await loadPyodide(onProgress);
+
+  // Step 3: Run the EXACT SAME Pyodide analytics (identical Python code)
+  onProgress?.('Running raster analytics computation (Python WASM)…');
+  await pyodide.runPythonAsync(RASTER_ANALYTICS_PYTHON);
+
+  pyodide.globals.set('extracted_data', pyodide.toPy(extractResult.data));
+  pyodide.globals.set('pixel_area_ha', pixelAreaHa);
+
+  const rawResult = await pyodide.runPythonAsync(`
+compute_raster_analytics(extracted_data, pixel_area_ha)
+  `);
+
+  let pyResult = typeof deepConvertPyodide === 'function'
+    ? deepConvertPyodide(rawResult)
+    : (rawResult?.toJs?.({ dict_converter: Object.fromEntries }) ?? rawResult);
+  pyResult = JSON.parse(JSON.stringify(pyResult, (_k, v) =>
+    v instanceof Map ? Object.fromEntries(v) : v
+  ));
+
+  if (pyResult.status !== 'ok') {
+    throw new Error('Client-side raster computation failed');
+  }
+
+  // Step 4: Surface water via MWS intersection (same as server-extract path)
+  let waterData = null;
+  if (state && district && tehsil) {
+    try {
+      onProgress?.('Computing surface water via MWS intersection (Pyodide)…');
+      try {
+        await pyodide.runPythonAsync(`import micropip; await micropip.install('shapely')`);
+      } catch { try { await pyodide.loadPackage('shapely'); } catch {} }
+
+      await pyodide.runPythonAsync(WATER_MWS_PYTHON);
+
+      const [mwsResp, tehsilResp] = await Promise.all([
+        fetch(`${API_BASE}/api/v1/corestack/mws-geometries?state=${enc(state)}&district=${enc(district)}&tehsil=${enc(tehsil)}`),
+        fetch(`${API_BASE}/api/v1/corestack/tehsil-data?state=${enc(state)}&district=${enc(district)}&tehsil=${enc(tehsil)}`),
+      ]);
+
+      if (mwsResp.ok && tehsilResp.ok) {
+        const mwsJson = await mwsResp.json();
+        const tehsilJson = await tehsilResp.json();
+        let mwsFeatures = [];
+        const mwsData = mwsJson.data;
+        if (mwsData?.type === 'FeatureCollection') mwsFeatures = mwsData.features || [];
+        else if (Array.isArray(mwsData)) mwsFeatures = mwsData;
+
+        const waterRecords = tehsilJson.data?.surfaceWaterBodies_annual || [];
+
+        if (mwsFeatures.length > 0 && waterRecords.length > 0) {
+          pyodide.globals.set('w_village', pyodide.toPy(villageGeojson));
+          pyodide.globals.set('w_mws', pyodide.toPy(mwsFeatures));
+          pyodide.globals.set('w_records', pyodide.toPy(waterRecords));
+          pyodide.globals.set('w_years', pyodide.toPy(selectedYears));
+
+          const waterRaw = await pyodide.runPythonAsync(`
+aggregate_water_mws(w_village, w_mws, w_records, w_years)
+          `);
+
+          let waterResult = typeof deepConvertPyodide === 'function'
+            ? deepConvertPyodide(waterRaw)
+            : (waterRaw?.toJs?.({ dict_converter: Object.fromEntries }) ?? waterRaw);
+          waterResult = JSON.parse(JSON.stringify(waterResult, (_k, v) =>
+            v instanceof Map ? Object.fromEntries(v) : v
+          ));
+
+          if (Array.isArray(waterResult) && waterResult.length > 0) {
+            waterData = waterResult;
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[Tiled Raster] Water MWS aggregation failed:', e.message);
+    }
+  }
+
+  onProgress?.('Building report…');
+
+  // Step 5: Transform into standard CSVAT report schema (identical to server-extract)
+  const results = {
+    village_name: villageName,
+    state, district, tehsil,
+    data_source: 'IndiaSAT LULC v3 (10m, client-tiled)',
+    compute_mode: 'client_raster_tiled',
+    years: selectedYears,
+    area_hectares: boundary.area_hectares || 0,
+  };
+
+  if (pyResult.cropping_intensity?.length > 0) {
+    results.cropping_intensity = {
+      village_name: villageName,
+      data: pyResult.cropping_intensity.map(r => ({
+        year: r.fiscal_year, fiscal_year: r.fiscal_year,
+        single_crop_ha: r.single_crop_ha, double_crop_ha: r.double_crop_ha,
+        triple_crop_ha: r.triple_crop_ha, total_cropped_ha: r.total_cropped_ha,
+        cropping_intensity: r.intensity_index,
+      })),
+      source: 'IndiaSAT LULC v3 (10m, client-tiled)',
+      processing: '100% client-side (geotiff.js + Pyodide WASM)',
+    };
+  }
+
+  const rasterWaterHasData = pyResult.surface_water?.some(r => r.total_water_ha > 0);
+  if (rasterWaterHasData) {
+    results.surface_water = {
+      village_name: villageName,
+      data: pyResult.surface_water.map(r => ({
+        year: r.fiscal_year, fiscal_year: r.fiscal_year,
+        kharif_ha: r.kharif_ha, rabi_ha: r.rabi_ha,
+        zaid_ha: r.zaid_ha, total_water_ha: r.total_water_ha,
+      })),
+      source: 'IndiaSAT LULC v3 Raster (10m, client-tiled)',
+      processing: '100% client-side (geotiff.js + Pyodide WASM)',
+    };
+  } else if (waterData) {
+    results.surface_water = {
+      village_name: villageName,
+      data: waterData.map(r => ({
+        year: r.fiscal_year, fiscal_year: r.fiscal_year,
+        kharif_ha: r.kharif_ha, rabi_ha: r.rabi_ha,
+        zaid_ha: r.zaid_ha, total_water_ha: r.total_water_ha,
+      })),
+      source: 'CoRE Stack MWS Vector (surfaceWaterBodies_annual)',
+      processing: 'Client-side MWS intersection (Pyodide/Shapely)',
+    };
+  }
+
+  if (pyResult.vegetation?.length > 0) {
+    const vegData = pyResult.vegetation;
+    const first = vegData[0], last = vegData[vegData.length - 1];
+    results.vegetation = {
+      village_name: villageName,
+      start_year: first.fiscal_year, end_year: last.fiscal_year,
+      tree_cover_start_ha: first.tree_cover_ha,
+      tree_cover_end_ha: last.tree_cover_ha,
+      net_change_ha: +(last.tree_cover_ha - first.tree_cover_ha).toFixed(2),
+      yearly_data: vegData.map(v => ({ year: v.fiscal_year, tree_cover_ha: v.tree_cover_ha })),
+      source: 'IndiaSAT LULC v3 (10m, client-tiled)',
+    };
+  }
+
+  if (pyResult.vegetation_analysis && Object.keys(pyResult.vegetation_analysis).length > 0) {
+    const va = pyResult.vegetation_analysis;
+    results.vegetation = {
+      ...results.vegetation,
+      start_year: va.start_year, end_year: va.end_year,
+      tree_cover_start_ha: va.tree_cover_start_ha,
+      tree_cover_end_ha: va.tree_cover_end_ha,
+      net_change_ha: va.net_change_ha,
+      afforestation_ha: va.afforestation_ha,
+      deforestation_ha: va.deforestation_ha,
+      tree_cover_loss_ha: va.deforestation_ha,
+      tree_cover_gain_ha: va.afforestation_ha,
+      degraded_land_ha: va.degraded_land_ha,
+      transitions: va.transitions?.map(t => ({
+        from_class: t.from_class, to_label: t.to_label,
+        to_class: t.to_class, area_ha: t.area_ha,
+      })) || [],
+    };
+  }
+
+  if (pyResult.crop_intensity_change?.length > 0) {
+    results.crop_intensity_change = pyResult.crop_intensity_change;
+  }
+
+  if (pyResult.raw_histograms) {
+    results.raw_histograms = pyResult.raw_histograms;
+    console.log('[Tiled Raster] Raw histograms:', pyResult.raw_histograms);
+  }
+
+  const hasCropData = results.cropping_intensity?.data?.length > 0;
+  const hasWaterData = results.surface_water?.data?.length > 0;
+  if (!hasCropData && !hasWaterData) {
+    throw new Error('No raster data could be processed from tiles.');
+  }
+
+  onProgress?.('Tiled raster analytics complete! (100% client-side — zero server storage)');
+  return results;
+}
+

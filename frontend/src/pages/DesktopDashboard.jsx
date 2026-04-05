@@ -106,7 +106,7 @@ export default function DesktopDashboard() {
   };
 
   // ─── WASM Mode Submit ───
-  const handleWASMSubmit = async (computePath = 'raster') => {
+  const handleWASMSubmit = async (computePath = 'raster_tiled') => {
     setIsRunning(true);
     setError(null);
     setResults(null);
@@ -251,7 +251,7 @@ export default function DesktopDashboard() {
     if (!boundary) return;
     // Uploaded boundaries always use WASM raster path (no tehsil data for server mode)
     if (boundary.source === 'upload') {
-      handleWASMSubmit('raster');
+      handleWASMSubmit('raster_tiled');
       return;
     }
     if (executionMode === 'SERVER') handleServerSubmit();
@@ -430,17 +430,17 @@ export default function DesktopDashboard() {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                   <button
                     className="btn btn-primary btn-lg"
-                    onClick={() => handleSubmit('raster')}
+                    onClick={() => handleSubmit('raster_tiled')}
                     disabled={isRunning}
-                    id="run-analytics-raster-btn"
+                    id="run-analytics-tiled-btn"
                     style={{ width: '100%', background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', borderColor: '#059669' }}
                   >
                     {isRunning ? (
                       <><span className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }}></span> Processing…</>
-                    ) : '⚡ Raster Path (High Accuracy)'}
+                    ) : '⚡ High Accuracy Analysis'}
                   </button>
                   <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
-                    Uploaded boundary — pixel-level analytics via GEE IndiaSAT LULC v3
+                    100% browser-side: downloads TIFF tiles → parses → computes (zero server storage)
                   </div>
                 </div>
               ) : (
@@ -472,14 +472,14 @@ export default function DesktopDashboard() {
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                       <button
                         className="btn btn-primary btn-lg"
-                        onClick={() => handleSubmit('raster')}
+                        onClick={() => handleSubmit('raster_tiled')}
                         disabled={isRunning}
-                        id="run-analytics-raster-btn"
+                        id="run-analytics-tiled-btn"
                         style={{ width: '100%', background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', borderColor: '#059669' }}
                       >
                         {isRunning ? (
                           <><span className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }}></span> Processing…</>
-                        ) : '⚡ Raster Path (High Accuracy)'}
+                        ) : '⚡ High Accuracy Analysis'}
                       </button>
                       <button
                         className="btn btn-secondary btn-lg"
