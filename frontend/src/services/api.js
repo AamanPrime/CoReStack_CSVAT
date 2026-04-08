@@ -132,4 +132,22 @@ export async function getAdminDetails(latitude, longitude) {
   return data.data || data;
 }
 
+// ─── Village Stories ───
+export async function getVillageStory(villageName, state, district, tehsil) {
+  const { data } = await api.get('/village-stories/by-name', {
+    params: { village: villageName, state, district, tehsil },
+  });
+  return data;
+}
+
+export async function getVillageStoryById(villageId) {
+  const { data } = await api.get(`/village-stories/${villageId}`);
+  return data;
+}
+
+export async function getRegionContext(state, district) {
+  const { data } = await api.get(`/village-stories/region-context/${state}/${district}`);
+  return data;
+}
+
 export default api;

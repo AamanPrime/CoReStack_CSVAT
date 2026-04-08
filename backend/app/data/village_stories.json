@@ -1,0 +1,526 @@
+{
+  "version": "1.0",
+  "generated_at": "2026-04-06",
+  "region_context": {
+    "Andhra Pradesh": {
+      "Ananthapur": {
+        "climate": "Semi-arid, rain-shadow of Western Ghats",
+        "avg_rainfall_mm": 550,
+        "major_crops": ["Groundnut", "Sunflower", "Pigeonpea", "Maize", "Castor"],
+        "soil_type": "Red sandy loam, shallow with low moisture retention",
+        "challenges": ["Frequent droughts", "Erratic monsoon", "Groundwater depletion", "Farmer distress"],
+        "key_rivers": ["Chitravati", "Papagni", "Pennar (Dakshina Pinakini)"],
+        "historical_context": "Part of the  Rayalaseema region, flourished under the Vijayanagara Empire (14th-17th centuries). Agricultural systems built around 'cheruvus' (tanks) for irrigation. District formed in 1882.",
+        "notable_programs": ["Ananta Neeru Sanrakshanam (water conservation)", "ICRISAT watershed management", "ARS Kadiri groundnut research"],
+        "cultural_notes": "Telugu-speaking, Rayalaseema traditions, Kalamkari art, agrarian festivals tied to seasonal monsoon"
+      }
+    }
+  },
+  "villages": {
+    "595503": {
+      "name": "Amadagur",
+      "village_id": 595503,
+      "state": "Andhra Pradesh",
+      "district": "Ananthapur",
+      "tehsil": "Amadagur",
+      "population_2011": 6818,
+      "households_2011": 1700,
+      "males_2011": 3418,
+      "females_2011": 3400,
+      "mandal_population": 29520,
+      "elevation_m": 615,
+      "languages": ["Telugu", "Urdu"],
+      "religion_majority": "Hindu (~90%)",
+      "economy": "Agricultural — groundnut, sunflower, and dryland crops",
+      "temples": ["Sri Chowdeshwari Temple", "Sri Anjaneya Swamy Temple (Peramvandla Palli)", "Pitchela Konda Sri Anjaneya Temple (Mohammadabad)", "Sathyamma Temple (Vaddivari Palli)"],
+      "story_chapters": [
+        {
+          "title": "The Heart of Amadagur Mandal",
+          "narrative": "Perched at 615 meters above sea level in the arid heart of Rayalaseema, Amadagur is the administrative headquarters of a mandal home to nearly 30,000 people. This small town bears the legacy of the Vijayanagara Empire, whose rulers built the 'cheruvu' tank systems that still define the region's relationship with water.",
+          "map_action": "zoom_to_village"
+        },
+        {
+          "title": "A Land of Faith and Tradition",
+          "narrative": "The Sri Chowdeshwari Temple stands as the spiritual anchor of the community, drawing devotees from across the mandal. The Sathyamma Temple in nearby Vaddivari Palli and the ancient Anjaneya temples dotting the landscape reflect a culture deeply rooted in devotion, where festivals follow the rhythm of the monsoon and the harvest.",
+          "map_action": "show_overview"
+        },
+        {
+          "title": "Farming in the Rain Shadow",
+          "narrative": "Amadagur sits in one of India's driest corridors — the rain shadow of the Western Ghats. With barely 550mm of annual rainfall, farmers here are some of the most resilient in the country. Groundnut has been the lifeline crop, but erratic monsoons and depleting borewells have pushed many to explore sunflower, maize, and drought-resistant varieties developed at the nearby ARS Kadiri research station.",
+          "map_action": "show_lulc_latest"
+        },
+        {
+          "title": "The Water Challenge",
+          "narrative": "Every summer, the red sandy loam soil dries up, and borewells run deeper. The ancient cheruvu tanks that once sustained the region are silting up. Conservation efforts through the Ananta Neeru Sanrakshanam project aim to revive these water bodies, desilting tanks and planting native trees along their banks.",
+          "map_action": "show_water"
+        }
+      ]
+    },
+    "595276": {
+      "name": "Pulagampalle",
+      "village_id": 595276,
+      "state": "Andhra Pradesh",
+      "district": "Ananthapur",
+      "tehsil": "Amadagur",
+      "population_2011": 1921,
+      "households_2011": 494,
+      "economy": "Agriculture-dominant, small and marginal farmers",
+      "historical_context": "Part of the Nallamada mandal area, with deep roots in Vijayanagara-era agricultural systems. The village name reflects Telugu agrarian heritage.",
+      "story_chapters": [
+        {
+          "title": "A Village of 494 Families",
+          "narrative": "Pulagampalle is home to 1,921 people living in 494 households, nestled in the Rayalaseema countryside about 15 km from the town of Kadiri. Life here revolves around the seasons — planting with the first monsoon rains, and praying they don't stop too soon.",
+          "map_action": "zoom_to_village"
+        },
+        {
+          "title": "Farming Against the Odds",
+          "narrative": "In a region classified as 'scarce rainfall zone,' the farmers of Pulagampalle practice dryland agriculture on red soils with low moisture retention. Groundnut is the primary crop, but the risks are high — a single failed monsoon can mean a lost year. Despite this, satellite data reveals a story of quiet resilience: cropland area and intensity have been gradually increasing.",
+          "map_action": "show_lulc_oldest"
+        },
+        {
+          "title": "Changing Landscape",
+          "narrative": "Over the years, the satellite view tells a story that the eye on the ground might miss. Fields have expanded, some scrubland has been cleared for cultivation, and cropping patterns have diversified. These changes reflect both the pressures on land and the ingenuity of farmers adapting to an uncertain climate.",
+          "map_action": "show_lulc_latest"
+        }
+      ]
+    },
+    "595500": {
+      "name": "Mohammadabad",
+      "village_id": 595500,
+      "state": "Andhra Pradesh",
+      "district": "Ananthapur",
+      "tehsil": "Amadagur",
+      "population_2011": 4123,
+      "households_2011": 1040,
+      "males_2011": 2028,
+      "females_2011": 2095,
+      "temples": ["Pitchela Konda Sri Anjaneya Temple"],
+      "cultural_notes": "Named reflecting Mughal-era influence on the Deccan, the village has both Hindu and Muslim communities living together. The Pitchela Konda Anjaneya Temple on a nearby hillock is a pilgrimage site.",
+      "story_chapters": [
+        {
+          "title": "Where Histories Meet",
+          "narrative": "Mohammadabad's name tells a story of the Deccan's layered history — a village that carries Mughal nomenclature while being home to the ancient Pitchela Konda Sri Anjaneya Temple perched on a hillock nearby. With 4,123 residents across 1,040 households, it's one of the larger villages in Amadagur mandal.",
+          "map_action": "zoom_to_village"
+        },
+        {
+          "title": "A Community of Coexistence",
+          "narrative": "Telugu and Urdu echo through the streets, Hindu and Muslim festivals mark the calendar. The village reflects the syncretic culture of Rayalaseema — where temple bells and azaan calls are part of the same daily rhythm, and neighbors share the anxieties of a delayed monsoon regardless of faith.",
+          "map_action": "show_overview"
+        }
+      ]
+    },
+    "595502": {
+      "name": "Thummala",
+      "village_id": 595502,
+      "state": "Andhra Pradesh",
+      "district": "Ananthapur",
+      "tehsil": "Amadagur",
+      "population_2011": 5771,
+      "households_2011": 1487,
+      "males_2011": 2923,
+      "females_2011": 2848,
+      "economy": "Agriculture — largest village in the mandal by population",
+      "story_chapters": [
+        {
+          "title": "The Largest Village",
+          "narrative": "With nearly 5,800 residents and 1,487 families, Thummala is the largest village in Amadagur mandal. Its size speaks to a long agricultural history — larger villages in Rayalaseema typically grew around reliable water sources like cheruvus (tanks) and fertile pockets in the otherwise arid landscape.",
+          "map_action": "zoom_to_village"
+        },
+        {
+          "title": "The Groundnut Economy",
+          "narrative": "Like most of Ananthapur district, Thummala's economy rises and falls with the groundnut harvest. The village's larger population means more cultivators, more agricultural laborers, and more at stake when the monsoon falters. The ARS Kadiri station, not far away, has developed drought-tolerant groundnut varieties — Kadiri Lepakshi and Kadiri Harithandra — that are slowly changing the odds for villages like this.",
+          "map_action": "show_lulc_latest"
+        }
+      ]
+    },
+    "595501": {
+      "name": "Kassamudram",
+      "village_id": 595501,
+      "state": "Andhra Pradesh",
+      "district": "Ananthapur",
+      "tehsil": "Amadagur",
+      "population_2011": 1686,
+      "households_2011": 421,
+      "males_2011": 822,
+      "females_2011": 864,
+      "story_chapters": [
+        {
+          "title": "A Small Village, A Big Story",
+          "narrative": "Kassamudram is a compact village of 421 families. In the 2011 census, women slightly outnumbered men — 864 to 822 — a quiet demographic indicator that, in Rayalaseema, often tells stories of male out-migration to nearby towns for construction and daily-wage work when farm work stalls.",
+          "map_action": "zoom_to_village"
+        }
+      ]
+    },
+    "595262": {
+      "name": "Yeguvapalle",
+      "village_id": 595262,
+      "state": "Andhra Pradesh",
+      "district": "Ananthapur",
+      "tehsil": "Amadagur",
+      "population_2011": 1348,
+      "households_2011": 333,
+      "males_2011": 686,
+      "females_2011": 662,
+      "story_chapters": [
+        {
+          "title": "On the Edge of Kadiri",
+          "narrative": "Yeguvapalle sits near the Kadiri revenue circle — a small village of 1,348 people and 333 households. Its proximity to the Kadiri Agricultural Research Station means farmers here are often among the first to try new groundnut varieties and dryland farming techniques.",
+          "map_action": "zoom_to_village"
+        }
+      ]
+    },
+    "595263": {
+      "name": "Kadiri Brahmanapalle",
+      "village_id": 595263,
+      "state": "Andhra Pradesh",
+      "district": "Ananthapur",
+      "tehsil": "Amadagur",
+      "population_2011": 3557,
+      "households_2011": 916,
+      "males_2011": 1786,
+      "females_2011": 1771,
+      "story_chapters": [
+        {
+          "title": "A Heritage in the Name",
+          "narrative": "The name 'Brahmanapalle' hints at a settlement originally established by Brahmin families — common across Rayalaseema where villages often bear the names of their founding communities. With 3,557 residents, it's among the mid-sized villages, its economy anchored in dryland agriculture and seasonal labor.",
+          "map_action": "zoom_to_village"
+        }
+      ]
+    },
+    "595456": {
+      "name": "Inagalur",
+      "village_id": 595456,
+      "state": "Andhra Pradesh",
+      "district": "Ananthapur",
+      "tehsil": "Amadagur",
+      "population_2011": 5715,
+      "households_2011": 1477,
+      "story_chapters": [
+        {
+          "title": "A Market Village",
+          "narrative": "Inagalur, with over 5,700 residents, functions as a local hub in the area — about 18 km from the town of Kadiri. Its relatively large population supports small markets where farmers trade groundnut, sunflower, and red gram. The village falls under the Kadiri revenue division and shares the semi-arid climate challenges of the broader Obuladevaracheruvu mandal.",
+          "map_action": "zoom_to_village"
+        }
+      ]
+    },
+    "595462": {
+      "name": "Obuladevaracheruvu",
+      "village_id": 595462,
+      "state": "Andhra Pradesh",
+      "district": "Ananthapur",
+      "tehsil": "Amadagur",
+      "population_2011": 3500,
+      "households_2011": 880,
+      "languages": ["Telugu (90%)", "Urdu (9%)", "Kannada"],
+      "historical_context": "Elevated to mandal HQ in 1985 as part of decentralization. The 'cheruvu' in its name means 'tank' — indicating the village grew around a water tank, a classic Rayalaseema settlement pattern.",
+      "story_chapters": [
+        {
+          "title": "A Village Named After Water",
+          "narrative": "The 'cheruvu' in Obuladevaracheruvu means 'tank' in Telugu — this village literally carries water in its name. In Rayalaseema, villages that grew around water tanks were the lucky ones. Obuladevarachervu was elevated to mandal headquarters in 1985, becoming an administrative hub for 14 surrounding villages across 262 sq km.",
+          "map_action": "zoom_to_village"
+        },
+        {
+          "title": "Three Languages, One Community",
+          "narrative": "Walk through the village and you'll hear Telugu, Urdu, and Kannada — a linguistic tapestry reflecting the border region's proximity to Karnataka and the historic Muslim communities of the Deccan. Nearly 90% Hindu and 9% Muslim, the village celebrates festivals from both traditions.",
+          "map_action": "show_overview"
+        }
+      ]
+    },
+    "595464": {
+      "name": "Sunnampalle",
+      "village_id": 595464,
+      "state": "Andhra Pradesh",
+      "district": "Ananthapur",
+      "tehsil": "Amadagur",
+      "population_2011": 4109,
+      "households_2011": 1003,
+      "males_2011": 2031,
+      "females_2011": 2078,
+      "story_chapters": [
+        {
+          "title": "The Limestone Village",
+          "narrative": "'Sunnam' means limestone in Telugu — Sunnampalle likely got its name from limestone deposits in the area. With over 4,100 people and 1,003 households, it's a sizable settlement where agriculture and lime-related quarrying have historically provided livelihoods.",
+          "map_action": "zoom_to_village"
+        }
+      ]
+    },
+    "595465": {
+      "name": "Thummalakuntla Palle",
+      "village_id": 595465,
+      "state": "Andhra Pradesh",
+      "district": "Ananthapur",
+      "tehsil": "Amadagur",
+      "population_2011": 800,
+      "story_chapters": [
+        {
+          "title": "By the Thumma Trees",
+          "narrative": "'Thummala' refers to Acacia trees (Thumma in Telugu) and 'Kuntla' means a small pond — this village was named for the Acacia-lined pond that likely served as its water source. In the dryland landscape of Rayalaseema, even a small pond could sustain a settlement.",
+          "map_action": "zoom_to_village"
+        }
+      ]
+    },
+    "595466": {
+      "name": "Veeraobanapalle",
+      "village_id": 595466,
+      "state": "Andhra Pradesh",
+      "district": "Ananthapur",
+      "tehsil": "Amadagur",
+      "population_2011": 950,
+      "story_chapters": [
+        {
+          "title": "Named for a Warrior",
+          "narrative": "'Veera' means brave and 'Obana' is likely a local chieftain's name — Veeraobanapalle carries the memory of a warrior or landowner from the Palegars era (17th-18th century), when local chieftains governed small territories across Rayalaseema after the fall of Vijayanagara.",
+          "map_action": "zoom_to_village"
+        }
+      ]
+    },
+    "595472": {
+      "name": "Tavalamarri",
+      "village_id": 595472,
+      "state": "Andhra Pradesh",
+      "district": "Ananthapur",
+      "tehsil": "Amadagur",
+      "population_2011": 1439,
+      "households_2011": 380,
+      "literacy_rate": 50.7,
+      "story_chapters": [
+        {
+          "title": "Under the Banyan",
+          "narrative": "'Marri' in Telugu means Banyan tree — Tavalamarri was likely named for a great Banyan that once stood at its center, serving as the village meeting ground. With 1,439 people and a literacy rate of about 51%, the village reflects the educational challenges facing remote Rayalaseema settlements.",
+          "map_action": "zoom_to_village"
+        }
+      ]
+    },
+    "595473": {
+      "name": "Ubicherla",
+      "village_id": 595473,
+      "state": "Andhra Pradesh",
+      "district": "Ananthapur",
+      "tehsil": "Amadagur",
+      "population_2011": 2200,
+      "economy": "Highly agrarian — cultivators and agricultural laborers",
+      "story_chapters": [
+        {
+          "title": "Cultivators and Laborers",
+          "narrative": "Ubicherla's economy is almost entirely agricultural — a significant portion of its ~2,200 residents work either as cultivators on their own small plots or as agricultural laborers on others' land. The distinction between the two tells a story of land ownership and inequality that runs deep in Rayalaseema villages.",
+          "map_action": "zoom_to_village"
+        }
+      ]
+    },
+    "595474": {
+      "name": "Kadiripulakunta",
+      "village_id": 595474,
+      "state": "Andhra Pradesh",
+      "district": "Ananthapur",
+      "tehsil": "Amadagur",
+      "population_2011": 2100,
+      "literacy_rate": 51,
+      "story_chapters": [
+        {
+          "title": "The Tiger's Pond",
+          "narrative": "'Kadiri' can refer to both the nearby town and 'tiger' in local dialect, while 'Pulakunta' means a pond or pit. Whether named for the town's pond or a legendary tiger's watering hole, the village of about 2,100 people carries nature in its identity — a reminder that these lands were once wilder, before cultivation pushed the forest edge back.",
+          "map_action": "zoom_to_village"
+        }
+      ]
+    },
+    "595476": {
+      "name": "Talamarlavandla Palle",
+      "village_id": 595476,
+      "state": "Andhra Pradesh",
+      "district": "Ananthapur",
+      "tehsil": "Amadagur",
+      "population_2011": 600,
+      "story_chapters": [
+        {
+          "title": "A Hamlet in the Fields",
+          "narrative": "With roughly 600 people, Talamarlavandla Palle is one of the smaller hamlets in the area. 'Palle' means a small settlement in Telugu — and indeed, this is a place where everyone knows everyone, where the harvest is a communal affair, and where a delayed monsoon affects every single family.",
+          "map_action": "zoom_to_village"
+        }
+      ]
+    },
+    "595478": {
+      "name": "Chinnaramannagaripalle",
+      "village_id": 595478,
+      "state": "Andhra Pradesh",
+      "district": "Ananthapur",
+      "tehsil": "Amadagur",
+      "population_2011": 1100,
+      "story_chapters": [
+        {
+          "title": "The Smaller Settlement of Raman's Family",
+          "narrative": "'Chinna' means small in Telugu, 'Ramannagari' refers to the family or community of Ramanna — this village is literally 'the smaller settlement of Ramanna's people.' Such names are common in Rayalaseema, where villages split as families grew, creating 'Pedda' (big) and 'Chinna' (small) versions of the same settlement.",
+          "map_action": "zoom_to_village"
+        }
+      ]
+    },
+    "595490": {
+      "name": "Ethodu",
+      "village_id": 595490,
+      "state": "Andhra Pradesh",
+      "district": "Ananthapur",
+      "tehsil": "Amadagur",
+      "population_2011": 2533,
+      "literacy_rate": 61.4,
+      "sc_population_pct": 25.9,
+      "cultivators_2011": 750,
+      "agri_laborers_2011": 357,
+      "story_chapters": [
+        {
+          "title": "A Village of Farmers",
+          "narrative": "Ethodu has one of the higher literacy rates in the area at 61.4%, and a significant Scheduled Caste population (25.9%) who have historically worked as agricultural laborers. The 2011 census recorded 750 cultivators and 357 agricultural laborers — numbers that paint a picture of a village where land is both livelihood and identity.",
+          "map_action": "zoom_to_village"
+        }
+      ]
+    },
+    "595491": {
+      "name": "Kotapalle",
+      "village_id": 595491,
+      "state": "Andhra Pradesh",
+      "district": "Ananthapur",
+      "tehsil": "Amadagur",
+      "population_2011": 900,
+      "story_chapters": [
+        {
+          "title": "The Fort Village",
+          "narrative": "'Kota' means fort in Telugu — suggesting Kotapalle may have once had a small fortification, perhaps from the Palegarpeats era when local chieftains built defensive structures across Rayalaseema. Today, the ~900 residents live a quieter life centered on agriculture.",
+          "map_action": "zoom_to_village"
+        }
+      ]
+    },
+    "595499": {
+      "name": "Jowkalakothapalle",
+      "village_id": 595499,
+      "state": "Andhra Pradesh",
+      "district": "Ananthapur",
+      "tehsil": "Amadagur",
+      "population_2011": 1200,
+      "story_chapters": [
+        {
+          "title": "Complex Name, Simple Life",
+          "narrative": "Jowkalakothapalle — a name that rolls off the tongue in Telugu but challenges outsiders — is a typical Amadagur mandal village where life follows the ancient rhythm: plough when the rains come, hope they last, harvest what the land gives, and wait for the next season.",
+          "map_action": "zoom_to_village"
+        }
+      ]
+    },
+    "595504": {
+      "name": "Chinaganipalle",
+      "village_id": 595504,
+      "state": "Andhra Pradesh",
+      "district": "Ananthapur",
+      "tehsil": "Amadagur",
+      "population_2011": 2739,
+      "story_chapters": [
+        {
+          "title": "A Mid-Sized Settlement",
+          "narrative": "With 2,739 people, Chinaganipalle is a mid-sized village that serves as a microcosm of Rayalaseema's agricultural economy — families tied to the land, dependent on monsoon rains, and increasingly looking toward bore wells and micro-irrigation as the climate becomes more unpredictable.",
+          "map_action": "zoom_to_village"
+        }
+      ]
+    },
+    "595505": {
+      "name": "Ramanathapuram",
+      "village_id": 595505,
+      "state": "Andhra Pradesh",
+      "district": "Ananthapur",
+      "tehsil": "Amadagur",
+      "population_2011": 142,
+      "story_chapters": [
+        {
+          "title": "The Tiniest Settlement",
+          "narrative": "With just 142 people, Ramanathapuram is the smallest village in Amadagur mandal — barely a hamlet. Named in the style of Tamil settlements (suggesting historical migration), its tiny population means every family's story IS the village's story. In satellite imagery, it appears as a small cluster of rooftops amid vast stretches of red soil and scrubland.",
+          "map_action": "zoom_to_village"
+        }
+      ]
+    },
+    "595507": {
+      "name": "Edigavaripalle",
+      "village_id": 595507,
+      "state": "Andhra Pradesh",
+      "district": "Ananthapur",
+      "tehsil": "Amadagur",
+      "population_2011": 700,
+      "story_chapters": [
+        {
+          "title": "The Edigavari Family's Land",
+          "narrative": "'Edigavari' refers to a family or clan name, and 'Palle' is a small settlement — this village was likely founded by or named after the Edigavari family. In rural Rayalaseema, villages are living genealogies, their names preserving the memory of founders long after the original families may have dispersed.",
+          "map_action": "zoom_to_village"
+        }
+      ]
+    },
+    "595508": {
+      "name": "Cheekirevulapalle",
+      "village_id": 595508,
+      "state": "Andhra Pradesh",
+      "district": "Ananthapur",
+      "tehsil": "Amadagur",
+      "population_2011": 775,
+      "story_chapters": [
+        {
+          "title": "By the Dark Pond",
+          "narrative": "'Cheekire' could derive from 'cheekati' (dark) and 'vula' (pond/lake) — the village of the dark pond. In dryland Rayalaseema, bodies of water — however small or murky — were reasons enough to settle. The ~775 residents likely still depend on seasonal tanks for irrigation.",
+          "map_action": "zoom_to_village"
+        }
+      ]
+    },
+    "595509": {
+      "name": "Karinireddipalle",
+      "village_id": 595509,
+      "state": "Andhra Pradesh",
+      "district": "Ananthapur",
+      "tehsil": "Amadagur",
+      "population_2011": 500,
+      "story_chapters": [
+        {
+          "title": "The Reddy Settlement",
+          "narrative": "'Nireddi' or 'Reddy' in the name points to the dominant agricultural caste community that likely founded this hamlet. The Reddy community has historically been associated with landholding and farming across Rayalaseema — and their village names are scattered across the landscape like chapters of a social history.",
+          "map_action": "zoom_to_village"
+        }
+      ]
+    },
+    "595510": {
+      "name": "Pulikuntlapalle",
+      "village_id": 595510,
+      "state": "Andhra Pradesh",
+      "district": "Ananthapur",
+      "tehsil": "Amadagur",
+      "population_2011": 1269,
+      "story_chapters": [
+        {
+          "title": "The Tiger's Pond Settlement",
+          "narrative": "'Puli' means tiger and 'Kuntla' is a pond — Pulikuntlapalle was the settlement near the tiger's watering hole. While tigers are long gone from this landscape, the name preserves an ecological memory: these scrublands once supported bigger wildlife, before cultivation and human settlement transformed the terrain.",
+          "map_action": "zoom_to_village"
+        }
+      ]
+    },
+    "595511": {
+      "name": "Dademvaripalle",
+      "village_id": 595511,
+      "state": "Andhra Pradesh",
+      "district": "Ananthapur",
+      "tehsil": "Amadagur",
+      "population_2011": 550,
+      "story_chapters": [
+        {
+          "title": "The Dademvari Homestead",
+          "narrative": "Another village carrying a family name — the Dademvari clan's settlement. With roughly 550 people, it's a close-knit hamlet where communal farming practices and shared water resources bind the community together through the harsh dry seasons.",
+          "map_action": "zoom_to_village"
+        }
+      ]
+    },
+    "595512": {
+      "name": "Lokojipalle",
+      "village_id": 595512,
+      "state": "Andhra Pradesh",
+      "district": "Ananthapur",
+      "tehsil": "Amadagur",
+      "population_2011": 450,
+      "story_chapters": [
+        {
+          "title": "At the Edge of the Mandal",
+          "narrative": "Lokojipalle, with about 450 residents, sits at the quieter edges of the mandal — a hamlet where the boundary between cultivated land and scrub forest blurs. In such small settlements, every monsoon is personal, every failed crop is a family crisis, and every good harvest is a celebration that the entire village shares.",
+          "map_action": "zoom_to_village"
+        }
+      ]
+    }
+  }
+}
