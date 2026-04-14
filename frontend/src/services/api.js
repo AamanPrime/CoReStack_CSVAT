@@ -150,4 +150,25 @@ export async function getRegionContext(state, district) {
   return data;
 }
 
+// ─── Custom Slides ───
+export async function getCustomSlides(villageName) {
+  const { data } = await api.get('/custom-slides', { params: { village: villageName } });
+  return data;
+}
+
+export async function createCustomSlide(slide) {
+  const { data } = await api.post('/custom-slides', slide);
+  return data;
+}
+
+export async function updateCustomSlide(slideId, updates) {
+  const { data } = await api.put(`/custom-slides/${slideId}`, updates);
+  return data;
+}
+
+export async function deleteCustomSlide(slideId) {
+  const { data } = await api.delete(`/custom-slides/${slideId}`);
+  return data;
+}
+
 export default api;

@@ -183,8 +183,8 @@ def _run_pipeline(job_params: dict) -> dict:
         "state": state,
         "district": district,
         "tehsil": tehsil,
+        "area_hectares": boundary.get("area_hectares", 0),
     }
-
     # 3. Strategy A: Try Local Raster Processing (Raw Pixels 10m)
     raster_succeeded = False
     if has_raster_data():

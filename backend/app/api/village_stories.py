@@ -12,7 +12,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select, func
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.village_story import VillageStory
@@ -26,11 +26,11 @@ STORIES_JSON = Path(__file__).resolve().parent.parent / "data" / "village_storie
 
 
 @router.get("/")
-async def list_village_stories(
+def list_village_stories(
     state: Optional[str] = Query(None),
     district: Optional[str] = Query(None),
     tehsil: Optional[str] = Query(None),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """List available village stories, optionally filtered by location."""
     query = select(VillageStory)
@@ -42,7 +42,7 @@ async def list_village_stories(
         query = query.where(VillageStory.tehsil == tehsil)
 
     query = query.order_by(VillageStory.name)
-    result = await db.execute(query)
+    result = db.execute(query)
     stories = result.scalars().all()
 
     return [
@@ -60,12 +60,12 @@ async def list_village_stories(
 
 
 @router.get("/by-name")
-async def get_story_by_name(
+def get_story_by_name(
     village: str = Query(..., description="Village name"),
     state: Optional[str] = Query(None),
     district: Optional[str] = Query(None),
     tehsil: Optional[str] = Query(None),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """Get a village story by name (case-insensitive)."""
     query = select(VillageStory).where(
@@ -78,7 +78,7 @@ async def get_story_by_name(
     if tehsil:
         query = query.where(VillageStory.tehsil == tehsil)
 
-    result = await db.execute(query)
+    result = db.execute(query)
     story = result.scalar_one_or_none()
 
     if not story:
@@ -87,10 +87,25 @@ async def get_story_by_name(
     return _serialize_story(story)
 
 
+@router.get("/stats")
+def story_stats(db: Session = Depends(get_db)):
+    """Get stats about how many village stories are in the DB."""
+    total = db.execute(select(func.count(VillageStory.id)))
+    by_state = db.execute(
+        select(VillageStory.state, func.count(VillageStory.id))
+        .group_by(VillageStory.state)
+        .order_by(func.count(VillageStory.id).desc())
+    )
+    return {
+        "total_stories": total.scalar(),
+        "by_state": [{"state": r[0], "count": r[1]} for r in by_state.all()],
+    }
+
+
 @router.get("/{village_id}")
-async def get_story(village_id: int, db: AsyncSession = Depends(get_db)):
+def get_story(village_id: int, db: Session = Depends(get_db)):
     """Get the full story for a village by its CoRE Stack village ID."""
-    result = await db.execute(
+    result = db.execute(
         select(VillageStory).where(VillageStory.village_id == village_id)
     )
     story = result.scalar_one_or_none()
@@ -102,7 +117,7 @@ async def get_story(village_id: int, db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/region-context/{state}/{district}")
-async def get_region_context(state: str, district: str):
+def get_region_context(state: str, district: str):
     """Get the regional context (climate, crops, rivers) for a state/district."""
     if not STORIES_JSON.exists():
         raise HTTPException(status_code=404, detail="Stories data file not found")
@@ -121,7 +136,7 @@ async def get_region_context(state: str, district: str):
 
 
 @router.post("/seed")
-async def seed_stories(db: AsyncSession = Depends(get_db)):
+def seed_stories(db: Session = Depends(get_db)):
     """Seed the database from the village_stories.json file."""
     if not STORIES_JSON.exists():
         raise HTTPException(status_code=404, detail="village_stories.json not found")
@@ -136,14 +151,12 @@ async def seed_stories(db: AsyncSession = Depends(get_db)):
     for vid_str, vdata in villages_data.items():
         vid = int(vid_str)
 
-        # Check if already exists
-        result = await db.execute(
+        result = db.execute(
             select(VillageStory).where(VillageStory.village_id == vid)
         )
         existing = result.scalar_one_or_none()
 
         if existing:
-            # Update existing
             existing.name = vdata.get("name", existing.name)
             existing.population_2011 = vdata.get("population_2011", existing.population_2011)
             existing.households_2011 = vdata.get("households_2011", existing.households_2011)
@@ -158,7 +171,6 @@ async def seed_stories(db: AsyncSession = Depends(get_db)):
             existing.story_chapters = vdata.get("story_chapters", existing.story_chapters)
             updated += 1
         else:
-            # Create new
             story = VillageStory(
                 village_id=vid,
                 name=vdata.get("name", ""),
@@ -180,8 +192,83 @@ async def seed_stories(db: AsyncSession = Depends(get_db)):
             db.add(story)
             created += 1
 
-    await db.commit()
+    db.commit()
     return {"created": created, "updated": updated, "total": created + updated}
+
+
+@router.post("/bulk")
+def bulk_upsert_stories(
+    stories: list[dict],
+    db: Session = Depends(get_db),
+):
+    """Bulk insert/update village stories from a JSON array.
+
+    Accepts the exact format output by the Ollama batch script.
+    Upserts by village_id — existing records are updated, new ones created.
+    """
+    created = 0
+    updated = 0
+    errors = []
+
+    for i, vdata in enumerate(stories):
+        vid = vdata.get("village_id")
+        if vid is None:
+            errors.append(f"Item {i}: missing village_id")
+            continue
+
+        try:
+            result = db.execute(
+                select(VillageStory).where(VillageStory.village_id == vid)
+            )
+            existing = result.scalar_one_or_none()
+
+            if existing:
+                existing.name = vdata.get("name", existing.name)
+                existing.state = vdata.get("state", existing.state)
+                existing.district = vdata.get("district", existing.district)
+                existing.tehsil = vdata.get("tehsil", existing.tehsil)
+                existing.population_2011 = vdata.get("population_2011", existing.population_2011)
+                existing.households_2011 = vdata.get("households_2011", existing.households_2011)
+                existing.males_2011 = vdata.get("males_2011", existing.males_2011)
+                existing.females_2011 = vdata.get("females_2011", existing.females_2011)
+                existing.literacy_rate = vdata.get("literacy_rate", existing.literacy_rate)
+                existing.languages = vdata.get("languages", existing.languages)
+                existing.temples = vdata.get("temples", existing.temples)
+                existing.economy = vdata.get("economy", existing.economy)
+                existing.historical_context = vdata.get("historical_context", existing.historical_context)
+                existing.cultural_notes = vdata.get("cultural_notes", existing.cultural_notes)
+                existing.story_chapters = vdata.get("story_chapters", existing.story_chapters)
+                updated += 1
+            else:
+                story = VillageStory(
+                    village_id=vid,
+                    name=vdata.get("name", ""),
+                    state=vdata.get("state", ""),
+                    district=vdata.get("district", ""),
+                    tehsil=vdata.get("tehsil", ""),
+                    population_2011=vdata.get("population_2011"),
+                    households_2011=vdata.get("households_2011"),
+                    males_2011=vdata.get("males_2011"),
+                    females_2011=vdata.get("females_2011"),
+                    literacy_rate=vdata.get("literacy_rate"),
+                    languages=vdata.get("languages"),
+                    temples=vdata.get("temples"),
+                    economy=vdata.get("economy"),
+                    historical_context=vdata.get("historical_context"),
+                    cultural_notes=vdata.get("cultural_notes"),
+                    story_chapters=vdata.get("story_chapters", []),
+                )
+                db.add(story)
+                created += 1
+        except Exception as e:
+            errors.append(f"Item {i} (village_id={vid}): {str(e)}")
+            continue
+
+    db.commit()
+    return {
+        "created": created, "updated": updated,
+        "total": created + updated, "errors": errors[:20],
+    }
 
 
 def _serialize_story(story: VillageStory) -> dict:

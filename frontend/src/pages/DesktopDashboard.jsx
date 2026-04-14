@@ -6,7 +6,7 @@
  */
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import BoundarySelector from '../components/BoundarySelector';
-import StoryMapView from '../components/StoryMapView';
+import ReportViewer from '../components/ReportViewer';
 import { MapView } from '../components/GoogleMapsIntegration';
 import {
   runAnalyticsPipeline,
@@ -89,7 +89,6 @@ export default function DesktopDashboard() {
 
   // Handle boundary selection (from sidebar)
   const handleBoundarySelect = (b) => {
-    setBoundary(b);
     if (b?.boundary_geojson) {
       setMapGeojson(b.boundary_geojson);
       // Compute center
@@ -100,9 +99,13 @@ export default function DesktopDashboard() {
           : geojson.coordinates[0];
         const avgLat = coords.reduce((s, c) => s + c[1], 0) / coords.length;
         const avgLng = coords.reduce((s, c) => s + c[0], 0) / coords.length;
-        setMapCenter({ lat: avgLat, lng: avgLng });
+        const center = { lat: avgLat, lng: avgLng };
+        setMapCenter(center);
+        // Attach center to boundary so ReportViewer can use it for satellite maps
+        b.center = center;
       } catch { /* ignore */ }
     }
+    setBoundary(b);
   };
 
   // ─── WASM Mode Submit ───
@@ -374,7 +377,7 @@ export default function DesktopDashboard() {
 
         {/* Story Map Results View */}
         {results && (
-          <StoryMapView
+          <ReportViewer
             results={results}
             boundary={boundary}
             onReset={handleReset}

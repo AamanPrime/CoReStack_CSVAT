@@ -815,6 +815,13 @@ textarea:focus {
   background: var(--bg-primary);
   border-radius: var(--radius-md);
   border: 1px solid var(--border-light);
+  overflow: hidden;
+  max-width: 100%;
+}
+
+.chart-wrapper canvas {
+  max-width: 100% !important;
+  width: 100% !important;
 }
 
 /* ─── Table ─── */

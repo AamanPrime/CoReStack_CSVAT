@@ -6,7 +6,7 @@
  */
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import BoundarySelector from '../components/BoundarySelector';
-import StoryMapView from '../components/StoryMapView';
+import ReportViewer from '../components/ReportViewer';
 import { MapView } from '../components/GoogleMapsIntegration';
 import {
   runAnalyticsPipeline,
@@ -267,7 +267,7 @@ export default function MobileDashboard() {
 
         {/* Story Map Results View */}
         {results && (
-          <StoryMapView
+          <ReportViewer
             results={results}
             boundary={boundary}
             onReset={handleReset}

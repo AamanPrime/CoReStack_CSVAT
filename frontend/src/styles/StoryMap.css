@@ -4,6 +4,336 @@
 
 @import url("https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700;800;900&family=Inter:wght@300;400;500;600;700&display=swap");
 
+/* ─── Report Viewer Overlay (full-page fixed container) ─── */
+.report-viewer-overlay {
+  position: fixed;
+  top: var(--navbar-height, 48px);
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 200;
+  background: #f8fafc;
+  display: flex;
+  flex-direction: column;
+}
+
+.report-viewer-overlay * {
+  box-sizing: border-box;
+}
+
+.report-viewer-scroll {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scroll-behavior: smooth;
+}
+
+.report-viewer-content {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 3rem 1.5rem 2rem;
+}
+
+/* Light-themed close button for report viewer */
+.report-viewer-overlay .story-close-btn {
+  background: rgba(0, 0, 0, 0.06);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  color: #334155;
+  backdrop-filter: blur(12px);
+}
+
+.report-viewer-overlay .story-close-btn:hover {
+  background: rgba(0, 0, 0, 0.12);
+  color: #0f172a;
+}
+
+/* Card spacing inside the report viewer */
+.report-viewer-content .card {
+  margin-bottom: 1.5rem;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   TERRASO STORYBOARD — One Card At A Time
+   ═══════════════════════════════════════════════════════════ */
+
+/* The entire storyboard component */
+.ts-storyboard {
+  position: relative;
+  width: 80%;
+  max-width: 1200px;
+  height: 80vh;
+  margin: 2rem auto;
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow:
+    0 4px 24px rgba(0, 0, 0, 0.3),
+    0 0 0 1px rgba(255, 255, 255, 0.05);
+}
+
+/* ─── Per-chapter background layers (stacked, cross-fade) ─── */
+.ts-bg-layer {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  z-index: 0;
+  opacity: 0;
+  transition: opacity 0.8s ease-in-out;
+}
+
+.ts-bg-layer--active {
+  opacity: 1;
+}
+
+/* Dark overlay so text is readable */
+.ts-map-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: linear-gradient(
+    to right,
+    rgba(0, 0, 0, 0.7) 0%,
+    rgba(0, 0, 0, 0.4) 45%,
+    rgba(0, 0, 0, 0.15) 100%
+  );
+  pointer-events: none;
+}
+
+/* ─── Scroll-snap panel: covers entire storyboard ─── */
+.ts-scroll-panel {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  z-index: 2;
+  scroll-snap-type: y mandatory;
+  scroll-behavior: smooth;
+  /* Hide scrollbar */
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.ts-scroll-panel::-webkit-scrollbar {
+  display: none;
+}
+
+/* Each snap-page fills the entire panel height */
+.ts-snap-page {
+  height: 100%;
+  min-height: 100%;
+  scroll-snap-align: center;
+  display: flex;
+  align-items: center;
+  padding: 2rem 52% 2rem 1.5rem;
+  box-sizing: border-box;
+}
+
+/* ─── Story Card ─── */
+.ts-card {
+  background: rgba(0, 0, 0, 0.78);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 2rem;
+  color: #ffffff;
+  width: 100%;
+  /* Animation: starts hidden */
+  opacity: 0;
+  transform: translateY(30px) scale(0.97);
+  transition: opacity 0.5s cubic-bezier(0.16, 1, 0.3, 1),
+              transform 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.ts-card--visible {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+/* Chapter label */
+.ts-card-chapter {
+  font-family: 'Inter', sans-serif;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: rgba(255, 255, 255, 0.4);
+  margin-bottom: 0.6rem;
+  opacity: 0;
+  transform: translateY(10px);
+  transition: opacity 0.35s ease-out 0.1s, transform 0.35s ease-out 0.1s;
+}
+
+.ts-card--visible .ts-card-chapter {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Card title */
+.ts-card-title {
+  font-family: 'Playfair Display', serif;
+  font-size: 1.35rem;
+  font-weight: 700;
+  line-height: 1.3;
+  color: #ffffff;
+  margin: 0 0 1rem 0;
+  opacity: 0;
+  transform: translateY(14px);
+  transition: opacity 0.4s ease-out 0.2s, transform 0.4s ease-out 0.2s;
+}
+
+.ts-card--visible .ts-card-title {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.ts-card-icon {
+  font-size: 1.2rem;
+  margin-right: 0.2rem;
+}
+
+/* Card image */
+.ts-card-image {
+  width: 100%;
+  height: auto;
+  max-height: 180px;
+  object-fit: cover;
+  border-radius: 8px;
+  margin-bottom: 1rem;
+  opacity: 0;
+  transform: translateY(10px);
+  transition: opacity 0.4s ease-out 0.25s, transform 0.4s ease-out 0.25s;
+}
+
+.ts-card--visible .ts-card-image {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Card narrative text */
+.ts-card-narrative {
+  font-family: 'Inter', sans-serif;
+  font-size: 0.9rem;
+  font-weight: 400;
+  line-height: 1.75;
+  color: rgba(255, 255, 255, 0.82);
+  margin: 0;
+  opacity: 0;
+  transform: translateY(18px);
+  transition: opacity 0.45s ease-out 0.3s, transform 0.45s ease-out 0.3s;
+}
+
+.ts-card--visible .ts-card-narrative {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* ─── Chapter navigation dots (right side) ─── */
+.ts-dots {
+  position: absolute;
+  right: 1.5rem;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ts-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.4);
+  background: transparent;
+  cursor: pointer;
+  padding: 0;
+  transition: all 0.3s ease;
+}
+
+.ts-dot--active {
+  background: #ffffff;
+  border-color: #ffffff;
+  transform: scale(1.3);
+  box-shadow: 0 0 8px rgba(255, 255, 255, 0.4);
+}
+
+.ts-dot:hover:not(.ts-dot--active) {
+  border-color: rgba(255, 255, 255, 0.7);
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* Village info badge — top right corner */
+.ts-village-badge {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  z-index: 3;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 0.5rem 1rem;
+}
+
+.ts-village-badge-label {
+  font-family: 'Inter', sans-serif;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #ffffff;
+}
+
+/* ─── Responsive: mobile ─── */
+@media (max-width: 768px) {
+  .ts-storyboard {
+    width: 95%;
+    height: 70vh;
+    border-radius: 12px;
+  }
+
+  .ts-scroll-panel {
+    width: 100%;
+  }
+
+  .ts-snap-page {
+    padding: 1.5rem 1rem;
+  }
+
+  .ts-card {
+    padding: 1.25rem;
+  }
+
+  .ts-card-title {
+    font-size: 1.15rem;
+  }
+
+  .ts-card-narrative {
+    font-size: 0.85rem;
+  }
+
+  .ts-dots {
+    right: 0.75rem;
+    gap: 8px;
+  }
+
+  .ts-dot {
+    width: 8px;
+    height: 8px;
+  }
+
+  .ts-village-badge {
+    top: 0.5rem;
+    right: 0.5rem;
+    padding: 0.35rem 0.75rem;
+  }
+}
+
+
+
 /* ─── Story Map Container ─── */
 .story-map {
   position: fixed;
@@ -25,7 +355,7 @@
 /* ─── Close Button ─── */
 .story-close-btn {
   position: fixed;
-  top: 1.25rem;
+  top: calc(var(--navbar-height, 48px) + 0.75rem);
   right: 1.25rem;
   z-index: 300;
   width: 44px;
@@ -1345,3 +1675,915 @@
   }
 }
 
+/* ════════════════════════════════════════════════════════════════ */
+/* ─── TERRASO-STYLE STORYBOARD (below analytics) ───             */
+/* ════════════════════════════════════════════════════════════════ */
+
+.storyboard-transition {
+  position: relative;
+  width: 100%;
+  padding: 3rem 0 2rem;
+  text-align: center;
+}
+
+.storyboard-transition::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 80px;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, rgba(139, 92, 246, 0.6), transparent);
+}
+
+.storyboard-transition-title {
+  font-family: 'Playfair Display', serif;
+  font-size: 1.6rem;
+  font-weight: 800;
+  color: #f1f5f9;
+  margin-bottom: 0.5rem;
+}
+
+.storyboard-transition-subtitle {
+  font-family: 'Inter', sans-serif;
+  font-size: 0.82rem;
+  color: rgba(255, 255, 255, 0.4);
+  line-height: 1.6;
+}
+
+.terraso-storyboard {
+  position: relative;
+  min-height: 100vh;
+}
+
+.terraso-storyboard-map {
+  position: sticky;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100vh;
+  z-index: 0;
+  background: #111827;
+  overflow: hidden;
+}
+
+.terraso-storyboard-chapters {
+  position: relative;
+  z-index: 10;
+  width: 100%;
+  max-width: 440px;
+  margin-top: -100vh;
+  min-height: 100vh;
+  padding: 8vh 1.5rem 4rem 2rem;
+  pointer-events: none;
+}
+
+.terraso-storyboard-chapters > * {
+  pointer-events: auto;
+}
+
+/* ─── Sticky Chapter TOC ─── */
+.terraso-chapter-toc {
+  position: fixed;
+  right: 1.25rem;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 260;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  align-items: flex-end;
+  pointer-events: auto;
+  transition: opacity 0.4s ease;
+}
+
+.terraso-chapter-toc.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.terraso-toc-dot {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.terraso-toc-label {
+  font-family: 'Inter', sans-serif;
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+  transition: color 0.3s ease;
+  text-align: right;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.terraso-toc-dot:hover .terraso-toc-label,
+.terraso-toc-dot.active .terraso-toc-label {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.terraso-toc-circle {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.2);
+  border: 1.5px solid rgba(255, 255, 255, 0.3);
+  transition: all 0.4s ease;
+  flex-shrink: 0;
+}
+
+.terraso-toc-dot.active .terraso-toc-circle {
+  background: #a78bfa;
+  border-color: #a78bfa;
+  box-shadow: 0 0 12px rgba(139, 92, 246, 0.5);
+  transform: scale(1.4);
+}
+
+/* ─── Chapter Panel ─── */
+.terraso-chapter-panel {
+  background: rgba(15, 23, 42, 0.82);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  padding: 1.75rem 2rem;
+  margin-bottom: 80vh;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+  border-left: 3px solid rgba(139, 92, 246, 0.4);
+  opacity: 0;
+  transform: translateY(40px);
+  transition: all 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.terraso-chapter-panel.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.terraso-chapter-panel:last-child {
+  margin-bottom: 6rem;
+}
+
+.terraso-chapter-number {
+  font-family: 'Inter', sans-serif;
+  font-size: 0.58rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: #a78bfa;
+  margin-bottom: 0.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.terraso-chapter-number::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: rgba(139, 92, 246, 0.2);
+}
+
+.terraso-chapter-title {
+  font-family: 'Playfair Display', serif;
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #f1f5f9;
+  margin: 0 0 0.85rem;
+  line-height: 1.3;
+}
+
+.terraso-chapter-narrative {
+  font-family: 'Inter', sans-serif;
+  font-size: 0.88rem;
+  color: rgba(255, 255, 255, 0.72);
+  line-height: 1.85;
+  margin: 0;
+  letter-spacing: 0.01em;
+}
+
+.terraso-chapter-narrative strong {
+  color: rgba(255, 255, 255, 0.95);
+  font-weight: 700;
+}
+
+.terraso-chapter-image {
+  width: 100%;
+  border-radius: 10px;
+  margin-top: 1rem;
+  object-fit: cover;
+  max-height: 280px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.terraso-chapter-image-caption {
+  font-family: 'Inter', sans-serif;
+  font-size: 0.68rem;
+  color: rgba(255, 255, 255, 0.35);
+  margin-top: 0.4rem;
+  font-style: italic;
+  text-align: center;
+}
+
+.terraso-map-action-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: 0.85rem;
+  padding: 0.3rem 0.7rem;
+  background: rgba(139, 92, 246, 0.1);
+  border: 1px solid rgba(139, 92, 246, 0.2);
+  border-radius: 8px;
+  font-family: 'Inter', sans-serif;
+  font-size: 0.62rem;
+  font-weight: 600;
+  color: #a78bfa;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+/* ─── Intro Panel ─── */
+.terraso-intro-panel {
+  background: rgba(15, 23, 42, 0.88);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  padding: 2rem;
+  margin-bottom: 80vh;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+  border-left: 3px solid #a78bfa;
+  opacity: 0;
+  transform: translateY(40px);
+  transition: all 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.terraso-intro-panel.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.terraso-intro-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.8rem;
+  background: rgba(139, 92, 246, 0.15);
+  color: #a78bfa;
+  border-radius: 100px;
+  font-family: 'Inter', sans-serif;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  margin-bottom: 0.75rem;
+}
+
+.terraso-intro-title {
+  font-family: 'Playfair Display', serif;
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: #f1f5f9;
+  margin: 0 0 0.5rem;
+  line-height: 1.3;
+}
+
+.terraso-intro-location {
+  font-family: 'Inter', sans-serif;
+  font-size: 0.78rem;
+  color: rgba(255, 255, 255, 0.4);
+  margin-bottom: 1rem;
+}
+
+.terraso-intro-demographics {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.75rem;
+  margin: 1rem 0;
+  padding: 1rem;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.terraso-demo-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2rem;
+}
+
+.terraso-demo-value {
+  font-family: 'Inter', sans-serif;
+  font-size: 1.2rem;
+  font-weight: 800;
+  color: #e2e8f0;
+}
+
+.terraso-demo-label {
+  font-family: 'Inter', sans-serif;
+  font-size: 0.58rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.4);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  text-align: center;
+}
+
+.terraso-intro-detail {
+  font-family: 'Inter', sans-serif;
+  font-size: 0.82rem;
+  color: rgba(255, 255, 255, 0.6);
+  line-height: 1.7;
+  margin: 0.5rem 0;
+  padding: 0.6rem 0.85rem;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 8px;
+}
+
+.terraso-intro-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.75rem;
+}
+
+.terraso-intro-tag {
+  font-family: 'Inter', sans-serif;
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.6);
+  padding: 0.25rem 0.6rem;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* ─── Map Overlay Info ─── */
+.terraso-map-info {
+  position: absolute;
+  bottom: 1.5rem;
+  left: 1.5rem;
+  z-index: 10;
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 0.85rem 1.1rem;
+}
+
+.terraso-map-village-name {
+  font-family: 'Inter', sans-serif;
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: #ffffff;
+  margin-bottom: 0.2rem;
+}
+
+.terraso-map-location {
+  font-family: 'Inter', sans-serif;
+  font-size: 0.7rem;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.terraso-map-chapter-hud {
+  position: absolute;
+  top: 1.25rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
+  background: rgba(15, 23, 42, 0.75);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(139, 92, 246, 0.3);
+  border-radius: 100px;
+  padding: 0.5rem 1.25rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  animation: mapHudFadeIn 0.5s ease forwards;
+  pointer-events: none;
+}
+
+.terraso-map-chapter-hud-icon {
+  font-size: 0.9rem;
+}
+
+.terraso-map-chapter-hud-label {
+  font-family: 'Inter', sans-serif;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #a78bfa;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+/* ═══ Storyboard Responsive ═══ */
+@media (max-width: 1024px) {
+  .terraso-storyboard-chapters {
+    max-width: 100%;
+    padding: 6vh 1.25rem 4rem;
+  }
+
+  .terraso-chapter-toc {
+    display: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .terraso-storyboard-chapters {
+    padding: 4vh 0.75rem 3rem;
+  }
+
+  .terraso-chapter-panel {
+    padding: 1.25rem 1.25rem;
+    margin-bottom: 70vh;
+    border-radius: 14px;
+  }
+
+  .terraso-chapter-title {
+    font-size: 1.1rem;
+  }
+
+  .terraso-chapter-narrative {
+    font-size: 0.82rem;
+    line-height: 1.75;
+  }
+
+  .terraso-intro-demographics {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .terraso-intro-panel {
+    padding: 1.25rem;
+    margin-bottom: 70vh;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   SLIDE EDITOR MODAL
+   ═══════════════════════════════════════════════════════════ */
+
+.se-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.se-modal {
+  background: #1e1e2e;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  width: 95%;
+  max-width: 1100px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.5);
+}
+
+/* Header */
+.se-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem 1.5rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.se-header h2 {
+  font-family: 'Playfair Display', serif;
+  font-size: 1.2rem;
+  color: #ffffff;
+  margin: 0;
+}
+
+.se-header-village {
+  font-family: 'Inter', sans-serif;
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.4);
+  flex: 1;
+}
+
+.se-close-btn {
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 1.2rem;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: all 0.2s;
+}
+
+.se-close-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+/* Body — sidebar + form */
+.se-body {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+  min-height: 0;
+}
+
+/* Sidebar */
+.se-sidebar {
+  width: 200px;
+  min-width: 200px;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 0.75rem;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.se-sidebar-label {
+  font-family: 'Inter', sans-serif;
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: rgba(255, 255, 255, 0.3);
+  margin-bottom: 0.5rem;
+  padding: 0 4px;
+}
+
+.se-slide-thumb {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.2s;
+  position: relative;
+}
+
+.se-slide-thumb:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.se-slide-thumb--active {
+  background: rgba(99, 102, 241, 0.2);
+  border: 1px solid rgba(99, 102, 241, 0.3);
+}
+
+.se-slide-num {
+  font-family: 'Inter', sans-serif;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.3);
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.se-slide-thumb--active .se-slide-num {
+  background: #6366f1;
+  border-color: #6366f1;
+  color: #fff;
+}
+
+.se-slide-title {
+  font-family: 'Inter', sans-serif;
+  font-size: 0.78rem;
+  color: rgba(255, 255, 255, 0.7);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.se-slide-delete {
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.2);
+  font-size: 0.7rem;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 4px;
+  opacity: 0;
+  transition: all 0.2s;
+}
+
+.se-slide-thumb:hover .se-slide-delete {
+  opacity: 1;
+}
+
+.se-slide-delete:hover {
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.1);
+}
+
+.se-add-btn {
+  margin-top: 0.5rem;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px dashed rgba(255, 255, 255, 0.15);
+  background: none;
+  color: rgba(255, 255, 255, 0.5);
+  font-family: 'Inter', sans-serif;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.se-add-btn:hover {
+  border-color: #6366f1;
+  color: #6366f1;
+  background: rgba(99, 102, 241, 0.05);
+}
+
+.se-loading {
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 0.85rem;
+  padding: 1rem;
+  text-align: center;
+}
+
+/* Form panel */
+.se-form {
+  flex: 1;
+  padding: 1.25rem;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.se-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.se-label {
+  font-family: 'Inter', sans-serif;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.6);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.se-optional {
+  font-weight: 400;
+  text-transform: none;
+  color: rgba(255, 255, 255, 0.3);
+}
+
+.se-input {
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  color: #fff;
+  font-family: 'Inter', sans-serif;
+  font-size: 0.9rem;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.se-input:focus {
+  border-color: #6366f1;
+}
+
+.se-textarea {
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  color: #fff;
+  font-family: 'Inter', sans-serif;
+  font-size: 0.88rem;
+  line-height: 1.6;
+  outline: none;
+  resize: vertical;
+  min-height: 100px;
+  transition: border-color 0.2s;
+}
+
+.se-textarea:focus {
+  border-color: #6366f1;
+}
+
+.se-hint {
+  font-family: 'Inter', sans-serif;
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.35);
+  margin: 0;
+}
+
+.se-image-preview {
+  width: 100%;
+  max-height: 120px;
+  object-fit: cover;
+  border-radius: 8px;
+  margin-top: 4px;
+}
+
+/* Map picker */
+.se-map-picker {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.se-map-search {
+  width: 100%;
+  padding: 10px 12px;
+  border: none;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.06);
+  color: #fff;
+  font-family: 'Inter', sans-serif;
+  font-size: 0.85rem;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.se-map-search::placeholder {
+  color: rgba(255, 255, 255, 0.3);
+}
+
+.se-map-canvas {
+  width: 100%;
+  height: 250px;
+}
+
+/* Map preview */
+.se-map-preview {
+  margin-top: 8px;
+}
+
+.se-map-preview-label {
+  font-family: 'Inter', sans-serif;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: rgba(255, 255, 255, 0.3);
+  margin-bottom: 4px;
+}
+
+.se-map-preview-img {
+  width: 100%;
+  height: auto;
+  max-height: 160px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.se-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: rgba(255, 255, 255, 0.4);
+  font-family: 'Inter', sans-serif;
+  font-size: 0.9rem;
+  text-align: center;
+  padding: 2rem;
+}
+
+/* Footer / actions */
+.se-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 1rem 1.5rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.se-btn {
+  padding: 10px 20px;
+  border-radius: 8px;
+  border: none;
+  font-family: 'Inter', sans-serif;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.se-btn-cancel {
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.se-btn-cancel:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+.se-btn-save {
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  color: #fff;
+}
+
+.se-btn-save:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}
+
+.se-btn-save:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* ─── Edit Story floating button ─── */
+.ts-edit-btn {
+  position: absolute;
+  bottom: 1rem;
+  left: 1rem;
+  z-index: 5;
+  padding: 8px 16px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(8px);
+  color: #fff;
+  font-family: 'Inter', sans-serif;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.ts-edit-btn:hover {
+  background: rgba(99, 102, 241, 0.3);
+  border-color: #6366f1;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .se-modal {
+    width: 100%;
+    max-height: 95vh;
+    border-radius: 12px;
+  }
+
+  .se-body {
+    flex-direction: column;
+  }
+
+  .se-sidebar {
+    width: 100%;
+    min-width: 100%;
+    border-right: none;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    flex-direction: row;
+    overflow-x: auto;
+    gap: 6px;
+    padding: 0.5rem;
+    max-height: 60px;
+  }
+
+  .se-slide-thumb {
+    min-width: max-content;
+    padding: 6px 10px;
+  }
+
+  .se-sidebar-label {
+    display: none;
+  }
+
+  .se-add-btn {
+    min-width: max-content;
+    margin-top: 0;
+  }
+
+  .se-map-canvas {
+    height: 200px;
+  }
+}
