@@ -3,14 +3,18 @@
  *
  * Three-phase scroll-driven analytics presentation:
  *   Phase 1: Hero title page with India map silhouette background
- *   Phase 2: Map zoom transition — shows selected region with boundary
- *   Phase 3: Split view — sticky map left, scrollable analytics right
+ *   Phase 2: Split view — sticky map left, scrollable analytics right
+ *
+ * MAP SYNC: As the user scrolls through per-year cards in each analytics
+ * section, the sticky map on the left switches its LULC raster overlay
+ * to show the corresponding fiscal year's land use classification.
  *
  * All analytics content from ReportViewer is preserved in story format.
  */
-import React, { useEffect, useRef, useState, useMemo } from 'react';
+import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import { MapView } from './GoogleMapsIntegration';
 import ExportManager from './ExportManager';
+import { getVillageStory } from '../services/api';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -31,6 +35,78 @@ ChartJS.register(
   CategoryScale, LinearScale, BarElement, LineElement,
   PointElement, ArcElement, Title, Tooltip, Legend, Filler,
 );
+
+// ─── LULC Class Legend for Map Overlay ───
+const LULC_CLASSES = [
+  { id: 1, label: 'Built Up', color: '#9ca3af' },
+  { id: 6, label: 'Forest', color: '#166534' },
+  { id: 8, label: 'Single Crop (K)', color: '#86efac' },
+  { id: 9, label: 'Single Crop (NK)', color: '#bbf7d0' },
+  { id: 10, label: 'Double Crop', color: '#22c55e' },
+  { id: 11, label: 'Triple Crop', color: '#eab308' },
+  { id: 7, label: 'Barren', color: '#a16207' },
+  { id: 12, label: 'Scrub Land', color: '#d4a76a' },
+  { id: 2, label: 'Water (Kharif)', color: '#7dd3fc' },
+  { id: 4, label: 'Water (Perennial)', color: '#2563eb' },
+];
+
+// Section theme colors for the map HUD
+const SECTION_THEMES = {
+  cropping: { color: '#22c55e', icon: '🌱', label: 'Cropping Intensity' },
+  water: { color: '#14b8a6', icon: '💧', label: 'Surface Water' },
+  vegetation: { color: '#16a34a', icon: '🌳', label: 'Vegetation' },
+  overview: { color: '#8b5cf6', icon: '📊', label: 'Overview' },
+};
+
+// ─── MAP ACTION LABELS ───
+const MAP_ACTION_LABELS = {
+  zoom_to_village: { icon: '📍', label: 'Viewing Village' },
+  show_overview: { icon: '🗺️', label: 'Regional Overview' },
+  show_lulc_latest: { icon: '🛰️', label: 'Latest Land Use' },
+  show_lulc_oldest: { icon: '🛰️', label: 'Historical Land Use' },
+  show_water: { icon: '💧', label: 'Water Bodies' },
+};
+
+// ─── HARDCODED VILLAGE STORY (used for all villages until DB is populated) ───
+const HARDCODED_STORY = {
+  name: 'Amadagur',
+  population_2011: 6818,
+  households_2011: 1700,
+  literacy_rate: 72.4,
+  languages: ['Telugu', 'Urdu'],
+  economy: 'Agricultural — groundnut, sunflower, and dryland crops',
+  temples: ['Sri Chowdeshwari Temple', 'Sri Anjaneya Swamy Temple'],
+  story_chapters: [
+    {
+      title: 'The Heart of the Village',
+      narrative: 'Perched in the arid heart of Rayalaseema, this village bears the legacy of the Vijayanagara Empire, whose rulers built the \'cheruvu\' tank systems that still define the region\'s relationship with water. The mandal is home to nearly 30,000 people, their lives woven into the fabric of this ancient landscape.',
+      map_action: 'zoom_to_village',
+      image_url: 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/a8/Indian_village_scene.jpg/1280px-Indian_village_scene.jpg',
+      image_caption: 'A typical village in rural India',
+    },
+    {
+      title: 'A Land of Faith and Tradition',
+      narrative: 'Temples stand as the spiritual anchors of the community, drawing devotees from across the mandal. The ancient temples dotting the landscape reflect a culture deeply rooted in devotion, where festivals follow the rhythm of the monsoon and the harvest. Telugu and Urdu echo through the streets — a syncretic culture where temple bells and azaan calls are part of the same daily rhythm.',
+      map_action: 'show_overview',
+      image_url: 'https://upload.wikimedia.org/wikipedia/commons/thumb/8/8e/Hindu_temple_in_Andhra_Pradesh.jpg/1280px-Hindu_temple_in_Andhra_Pradesh.jpg',
+      image_caption: 'Temple architecture in Andhra Pradesh',
+    },
+    {
+      title: 'Farming in the Rain Shadow',
+      narrative: 'The village sits in one of India\'s driest corridors — the rain shadow of the Western Ghats. With barely 550mm of annual rainfall, farmers here are some of the most resilient in the country. Groundnut has been the lifeline crop, but erratic monsoons and depleting borewells have pushed many to explore sunflower, maize, and drought-resistant varieties. Satellite imagery reveals how the agricultural landscape has shifted over the past decade.',
+      map_action: 'show_lulc_latest',
+      image_url: 'https://upload.wikimedia.org/wikipedia/commons/thumb/e/ef/Groundnut_plantation.jpg/1280px-Groundnut_plantation.jpg',
+      image_caption: 'Groundnut fields in the Deccan plateau',
+    },
+    {
+      title: 'The Water Challenge',
+      narrative: 'Every summer, the red sandy loam soil dries up, and borewells run deeper. The ancient cheruvu tanks that once sustained the region are silting up. Conservation efforts aim to revive these water bodies — desilting tanks and planting native trees along their banks. The surface water data shows the seasonal ebb and flow of this precious resource.',
+      map_action: 'show_water',
+      image_url: 'https://upload.wikimedia.org/wikipedia/commons/thumb/5/59/Water_tank_in_Indian_village.jpg/1280px-Water_tank_in_Indian_village.jpg',
+      image_caption: 'Traditional water tank (cheruvu)',
+    },
+  ],
+};
 
 // ─── India SVG Outline (simplified path for hero background) ───
 const IndiaSVG = ({ className }) => (
@@ -55,14 +131,12 @@ const IndiaSVG = ({ className }) => (
       stroke="rgba(255,255,255,0.15)"
       strokeWidth="1.5"
     />
-    {/* Kashmir region */}
     <path
       d="M280 60 L300 50 L320 45 L340 50 L325 75 L315 95 L300 85 L285 75 L280 60Z"
       fill="rgba(255,255,255,0.4)"
       stroke="rgba(255,255,255,0.1)"
       strokeWidth="1"
     />
-    {/* Northeast region */}
     <path
       d="M660 75 L680 80 L700 95 L720 110 L730 130 L725 150 L715 165
          L700 170 L695 165 L700 190 L690 180 L675 165 L665 145 L660 120 L660 95 L660 75Z"
@@ -73,13 +147,51 @@ const IndiaSVG = ({ className }) => (
   </svg>
 );
 
-// ─── Progress Indicator ───
-function ScrollProgress({ activePhase, totalSections, activeSectionIdx }) {
+// ─── Year Card Component (per-year scroll trigger) ───
+function YearCard({ year, data, fields, isActive, sectionType, refCallback, onClick }) {
+  const theme = SECTION_THEMES[sectionType] || SECTION_THEMES.overview;
   return (
-    <div className="story-progress">
-      <div className={`story-progress-dot ${activePhase >= 1 ? 'active' : ''}`} />
-      <div className={`story-progress-dot ${activePhase >= 2 ? 'active' : ''}`} />
-      <div className={`story-progress-dot ${activePhase >= 3 ? 'active' : ''}`} />
+    <div
+      className={`story-year-card ${isActive ? 'active' : ''}`}
+      ref={refCallback}
+      data-fiscal-year={year}
+      data-section-type={sectionType}
+      onClick={() => onClick && onClick(year, sectionType)}
+      style={{
+        '--theme-color': theme.color,
+        borderColor: isActive ? theme.color : 'rgba(255,255,255,0.08)',
+        cursor: 'pointer',
+      }}
+    >
+      <div className="year-card-header">
+        <span className="year-card-icon">{theme.icon}</span>
+        <span className="year-card-year">{year}</span>
+        {isActive && <span className="year-card-live-dot" />}
+      </div>
+      <div className="year-card-stats">
+        {fields.map(({ label, value, unit }) => (
+          <div className="year-card-stat" key={label}>
+            <span className="year-card-stat-val">{value}</span>
+            <span className="year-card-stat-label">{label}{unit ? ` (${unit})` : ''}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── LULC Legend Component ───
+function LulcLegend({ visible }) {
+  if (!visible) return null;
+  return (
+    <div className="lulc-legend">
+      <div className="lulc-legend-title">LULC Legend</div>
+      {LULC_CLASSES.map(cls => (
+        <div className="lulc-legend-item" key={cls.id}>
+          <span className="lulc-legend-swatch" style={{ background: cls.color }} />
+          <span className="lulc-legend-label">{cls.label}</span>
+        </div>
+      ))}
     </div>
   );
 }
@@ -97,6 +209,16 @@ export default function StoryMapView({
   const [heroScrolled, setHeroScrolled] = useState(false);
   const [visibleSections, setVisibleSections] = useState(new Set());
   const [activePhase, setActivePhase] = useState(1);
+  const [activeFiscalYear, setActiveFiscalYear] = useState(null);
+  const [activeSection, setActiveSection] = useState('overview');
+  const [villageStory, setVillageStory] = useState(null);
+
+  // Terraso storyboard state
+  const [activeChapterIdx, setActiveChapterIdx] = useState(-1);
+  const [storyboardVisible, setStoryboardVisible] = useState(false);
+  const [visibleChapters, setVisibleChapters] = useState(new Set());
+  const chapterPanelRefs = useRef(new Map());
+  const storyboardRef = useRef(null);
 
   // ─── Extract results data ───
   const {
@@ -107,6 +229,34 @@ export default function StoryMapView({
   } = results || {};
 
   const totalAreaHa = area_hectares || terrain?.total_area_ha || 0;
+
+  // ─── Fetch village story from backend (fall back to hardcoded) ───
+  useEffect(() => {
+    if (!village_name) return;
+    let cancelled = false;
+    getVillageStory(village_name, state, district, tehsil)
+      .then((data) => { if (!cancelled) setVillageStory(data); })
+      .catch(() => {
+        // Fallback: use hardcoded story with the actual village name
+        if (!cancelled) {
+          setVillageStory({
+            ...HARDCODED_STORY,
+            name: village_name,
+          });
+        }
+      });
+    return () => { cancelled = true; };
+  }, [village_name, state, district, tehsil]);
+
+  // ─── Story chapters for Terraso storyboard ───
+  const storyChapters = useMemo(() => {
+    if (villageStory?.story_chapters?.length > 0) return villageStory.story_chapters;
+    return HARDCODED_STORY.story_chapters;
+  }, [villageStory]);
+
+  const storyData = useMemo(() => {
+    return villageStory || { ...HARDCODED_STORY, name: village_name };
+  }, [villageStory, village_name]);
 
   const ciData = useMemo(() => {
     if (Array.isArray(cropping_intensity?.data)) return cropping_intensity.data;
@@ -121,6 +271,109 @@ export default function StoryMapView({
   }, [surface_water]);
 
   const narrative = useMemo(() => generateNarrative(results, ciData, swData), [results, ciData, swData]);
+
+  // ─── WMS config for the MapView ───
+  const wmsConfig = useMemo(() => {
+    const apiHost = (import.meta.env.VITE_API_BASE || 'https://csvat-backend.onrender.com').replace(/\/$/, '');
+    const b = boundary || {};
+    const d = b.district || district || '';
+    const t = b.tehsil || tehsil || '';
+    if (!d || !t || d === '-' || t === '-') return null;
+    if (b.source === 'upload') return null;
+    return { apiBase: `${apiHost}/api/v1`, district: d, tehsil: t };
+  }, [boundary, district, tehsil]);
+
+  // ─── Terraso chapter IntersectionObserver ───
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container || !storyChapters.length) return;
+
+    const chapterObserver = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          const idx = parseInt(entry.target.dataset.chapterIdx, 10);
+          if (entry.isIntersecting) {
+            setVisibleChapters((prev) => new Set([...prev, idx]));
+            if (entry.intersectionRatio > 0.3) {
+              setActiveChapterIdx(idx);
+              setStoryboardVisible(true);
+            }
+          }
+        });
+      },
+      { root: container, threshold: [0.1, 0.3, 0.5], rootMargin: '-5% 0px -30% 0px' }
+    );
+
+    const timer = setTimeout(() => {
+      chapterPanelRefs.current.forEach((node) => {
+        chapterObserver.observe(node);
+      });
+    }, 500);
+
+    return () => {
+      clearTimeout(timer);
+      chapterObserver.disconnect();
+    };
+  }, [storyChapters, results]);
+
+  // ─── Map action handler (Terraso chapter → map transitions) ───
+  const handleMapAction = useCallback((action) => {
+    // These map actions currently signal the UI; GoogleMapsIntegration
+    // handles zoom/layer state through the wmsConfig + activeFiscalYear props.
+    // For now, we update the active section to change the Year HUD theme.
+    switch (action) {
+      case 'zoom_to_village':
+        setActiveSection('overview');
+        break;
+      case 'show_overview':
+        setActiveSection('overview');
+        break;
+      case 'show_lulc_latest':
+      case 'show_lulc_oldest':
+        setActiveSection('cropping');
+        if (ciData?.length > 0) {
+          setActiveFiscalYear(action === 'show_lulc_latest'
+            ? ciData[ciData.length - 1].year
+            : ciData[0].year
+          );
+        }
+        break;
+      case 'show_water':
+        setActiveSection('water');
+        break;
+    }
+  }, [ciData]);
+
+  // Trigger map action when active chapter changes
+  useEffect(() => {
+    if (activeChapterIdx >= 0 && storyChapters[activeChapterIdx]) {
+      handleMapAction(storyChapters[activeChapterIdx].map_action);
+    }
+  }, [activeChapterIdx, storyChapters, handleMapAction]);
+
+  const chapterRefCallback = useCallback((node) => {
+    if (node) {
+      const idx = node.dataset.chapterIdx;
+      if (idx != null) chapterPanelRefs.current.set(idx, node);
+    }
+  }, []);
+
+  // Scroll to chapter (sticky TOC click)
+  const scrollToChapter = useCallback((idx) => {
+    const node = chapterPanelRefs.current.get(String(idx));
+    if (node && containerRef.current) {
+      node.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, []);
+
+  // (ciData, swData, narrative, wmsConfig moved above handleMapAction)
+
+  // Set initial fiscal year
+  useEffect(() => {
+    if (ciData && ciData.length > 0 && !activeFiscalYear) {
+      setActiveFiscalYear(ciData[ciData.length - 1].year);
+    }
+  }, [ciData]);
 
   // ─── Map data ───
   const mapGeojson = boundary?.boundary_geojson || boundary?.geojson || null;
@@ -179,10 +432,57 @@ export default function StoryMapView({
     };
   }, [results]);
 
+  // ─── IntersectionObserver for year cards (map sync) ───
+  const yearCardRefsMap = useRef(new Map());
+  
+  const yearCardRefCallback = useCallback((node) => {
+    if (node) {
+      const fy = node.dataset.fiscalYear;
+      if (fy) yearCardRefsMap.current.set(fy, node);
+    }
+  }, []);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const yearObserver = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting && entry.intersectionRatio > 0.3) {
+            const fy = entry.target.dataset.fiscalYear;
+            const section = entry.target.dataset.sectionType;
+            if (fy) setActiveFiscalYear(fy);
+            if (section) setActiveSection(section);
+          }
+        });
+      },
+      { root: container, threshold: [0.3, 0.5, 0.8], rootMargin: '-15% 0px -35% 0px' }
+    );
+
+    // Observe after a tick to ensure DOM is populated
+    const timer = setTimeout(() => {
+      yearCardRefsMap.current.forEach((node) => {
+        yearObserver.observe(node);
+      });
+    }, 800);
+
+    return () => {
+      clearTimeout(timer);
+      yearObserver.disconnect();
+    };
+  }, [results, ciData, swData, vegetation]);
+
   // Assign section ref
   const setSectionRef = (idx) => (el) => {
     sectionRefs.current[idx] = el;
   };
+
+  // Click handler for year cards (fallback for scroll sync)
+  const handleYearCardClick = useCallback((year, section) => {
+    setActiveFiscalYear(year);
+    setActiveSection(section);
+  }, []);
 
   const sectionClass = (id) =>
     `story-section ${visibleSections.has(id) ? 'visible' : ''}`;
@@ -193,6 +493,17 @@ export default function StoryMapView({
   const yearRange = ciData && ciData.length > 0
     ? `${ciData[0].year} — ${ciData[ciData.length - 1].year}`
     : '';
+
+  // ─── Active section theme ───
+  const activeTheme = SECTION_THEMES[activeSection] || SECTION_THEMES.overview;
+
+  // ─── Get mini stats for current year (shown on map HUD) ───
+  const currentYearStats = useMemo(() => {
+    if (!activeFiscalYear) return null;
+    const ci = ciData?.find(d => d.year === activeFiscalYear);
+    const sw = swData?.find(d => d.year === activeFiscalYear);
+    return { ci, sw };
+  }, [activeFiscalYear, ciData, swData]);
 
   return (
     <div className="story-map" ref={containerRef}>
@@ -273,7 +584,36 @@ export default function StoryMapView({
             maskOutside={true}
             layerUrls={layerUrls}
             activeLayerNames={activeLayerNames}
+            activeFiscalYear={wmsConfig ? activeFiscalYear : null}
+            wmsConfig={wmsConfig}
           />
+
+          {/* Year HUD on map */}
+          {activeFiscalYear && (
+            <div className="map-year-hud keyframe-fade-in" style={{ '--theme-color': activeTheme.color }}>
+              <div className="hud-header">
+                <span>{activeTheme.icon}</span>
+                <span>{activeTheme.label}</span>
+              </div>
+              <div className="hud-year-pill">{activeFiscalYear}</div>
+              {currentYearStats?.ci && (
+                <div className="hud-mini-stats">
+                  <div className="hud-stat">
+                    <span className="hud-stat-val">{currentYearStats.ci.total_cropped_ha?.toFixed(1)}</span>
+                    <span className="hud-stat-label">Crop ha</span>
+                  </div>
+                  <div className="hud-stat">
+                    <span className="hud-stat-val">{currentYearStats.ci.cropping_intensity?.toFixed(2) ?? '—'}</span>
+                    <span className="hud-stat-label">Intensity</span>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* LULC Legend */}
+          <LulcLegend visible={!!wmsConfig && !!activeFiscalYear} />
+
           <div className="map-overlay-info">
             <div className="village-label">
               {village_name || 'Selected Region'}
@@ -294,16 +634,7 @@ export default function StoryMapView({
 
           {/* Data Warning Banner */}
           {data_warning && (
-            <div 
-              className="story-warning-banner story-section visible" 
-              style={{ 
-                background: 'rgba(255, 255, 255, 0.95)', 
-                backdropFilter: 'blur(12px)',
-                borderLeft: '4px solid #f59e0b',
-                boxShadow: '0 10px 40px rgba(0, 0, 0, 0.1)',
-                marginBottom: '2rem'
-              }}
-            >
+            <div className="story-warning-banner story-section visible">
               <span className="warning-icon">⚠️</span>
               <div>
                 <div className="warning-title">Lower Resolution Data</div>
@@ -311,6 +642,8 @@ export default function StoryMapView({
               </div>
             </div>
           )}
+
+          {/* Old inline narrative chapters removed — now in Terraso storyboard below */}
 
           {/* ── Section 0: Summary Stats ── */}
           <div
@@ -372,7 +705,7 @@ export default function StoryMapView({
                 <h2 className="story-section-title">Cropping Intensity Trends</h2>
                 <p className="story-section-desc">
                   How agricultural land use patterns have evolved within the village boundary
-                  across {ciData.length} fiscal years.
+                  across {ciData.length} fiscal years. {wmsConfig ? 'Scroll through individual years to see the LULC map change.' : ''}
                 </p>
 
                 <div className="story-chart-card">
@@ -416,32 +749,56 @@ export default function StoryMapView({
                       }}
                     />
                   </div>
-
-                  <table className="story-table">
-                    <thead>
-                      <tr>
-                        <th>Year</th>
-                        <th>Single (ha)</th>
-                        <th>Double (ha)</th>
-                        <th>Triple (ha)</th>
-                        <th>Total (ha)</th>
-                        <th>Intensity</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {ciData.map(d => (
-                        <tr key={d.year}>
-                          <td>{d.year}</td>
-                          <td>{d.single_crop_ha?.toFixed(2)}</td>
-                          <td>{d.double_crop_ha?.toFixed(2)}</td>
-                          <td>{d.triple_crop_ha?.toFixed(2)}</td>
-                          <td>{d.total_cropped_ha?.toFixed(2)}</td>
-                          <td>{d.cropping_intensity?.toFixed(3) ?? '—'}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
                 </div>
+
+                {/* Per-Year Scroll Cards — CROPPING */}
+                <div className="year-cards-label">
+                  🗓 Scroll through years to see map changes
+                </div>
+                <div className="year-cards-container">
+                  {ciData.map((d) => (
+                    <YearCard
+                      key={`ci-${d.year}`}
+                      year={d.year}
+                      data={d}
+                      isActive={activeFiscalYear === d.year}
+                      sectionType="cropping"
+                      refCallback={yearCardRefCallback}
+                      onClick={handleYearCardClick}
+                      fields={[
+                        { label: 'Single', value: d.single_crop_ha?.toFixed(1), unit: 'ha' },
+                        { label: 'Double', value: d.double_crop_ha?.toFixed(1), unit: 'ha' },
+                        { label: 'Triple', value: d.triple_crop_ha?.toFixed(1), unit: 'ha' },
+                        { label: 'Intensity', value: d.cropping_intensity?.toFixed(3) ?? '—' },
+                      ]}
+                    />
+                  ))}
+                </div>
+
+                <table className="story-table">
+                  <thead>
+                    <tr>
+                      <th>Year</th>
+                      <th>Single (ha)</th>
+                      <th>Double (ha)</th>
+                      <th>Triple (ha)</th>
+                      <th>Total (ha)</th>
+                      <th>Intensity</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {ciData.map(d => (
+                      <tr key={d.year} className={activeFiscalYear === d.year ? 'active-year-row' : ''}>
+                        <td>{d.year}</td>
+                        <td>{d.single_crop_ha?.toFixed(2)}</td>
+                        <td>{d.double_crop_ha?.toFixed(2)}</td>
+                        <td>{d.triple_crop_ha?.toFixed(2)}</td>
+                        <td>{d.total_cropped_ha?.toFixed(2)}</td>
+                        <td>{d.cropping_intensity?.toFixed(3) ?? '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
 
                 <div className="story-insight">
                   <strong>Insight:</strong> Cropping intensity analysis shows how agricultural land use patterns
@@ -511,30 +868,54 @@ export default function StoryMapView({
                       }}
                     />
                   </div>
-
-                  <table className="story-table">
-                    <thead>
-                      <tr>
-                        <th>Year</th>
-                        <th>Kharif (ha)</th>
-                        <th>Rabi (ha)</th>
-                        <th>Zaid (ha)</th>
-                        <th>Total (ha)</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {swData.map(d => (
-                        <tr key={d.year}>
-                          <td>{d.year}</td>
-                          <td>{(d.kharif_ha ?? d.seasonal_monsoon_ha ?? 0).toFixed(2)}</td>
-                          <td>{(d.rabi_ha ?? d.seasonal_winter_ha ?? 0).toFixed(2)}</td>
-                          <td>{(d.zaid_ha ?? d.perennial_ha ?? 0).toFixed(2)}</td>
-                          <td>{(d.total_water_ha ?? 0).toFixed(2)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
                 </div>
+
+                {/* Per-Year Scroll Cards — WATER */}
+                <div className="year-cards-label">
+                  🗓 Scroll through years to see map changes
+                </div>
+                <div className="year-cards-container">
+                  {swData.map((d) => (
+                    <YearCard
+                      key={`sw-${d.year}`}
+                      year={d.year}
+                      data={d}
+                      isActive={activeFiscalYear === d.year}
+                      sectionType="water"
+                      refCallback={yearCardRefCallback}
+                      onClick={handleYearCardClick}
+                      fields={[
+                        { label: 'Kharif', value: (d.kharif_ha ?? d.seasonal_monsoon_ha ?? 0).toFixed(1), unit: 'ha' },
+                        { label: 'Rabi', value: (d.rabi_ha ?? d.seasonal_winter_ha ?? 0).toFixed(1), unit: 'ha' },
+                        { label: 'Zaid', value: (d.zaid_ha ?? d.perennial_ha ?? 0).toFixed(1), unit: 'ha' },
+                        { label: 'Total', value: (d.total_water_ha ?? 0).toFixed(1), unit: 'ha' },
+                      ]}
+                    />
+                  ))}
+                </div>
+
+                <table className="story-table">
+                  <thead>
+                    <tr>
+                      <th>Year</th>
+                      <th>Kharif (ha)</th>
+                      <th>Rabi (ha)</th>
+                      <th>Zaid (ha)</th>
+                      <th>Total (ha)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {swData.map(d => (
+                      <tr key={d.year} className={activeFiscalYear === d.year ? 'active-year-row' : ''}>
+                        <td>{d.year}</td>
+                        <td>{(d.kharif_ha ?? d.seasonal_monsoon_ha ?? 0).toFixed(2)}</td>
+                        <td>{(d.rabi_ha ?? d.seasonal_winter_ha ?? 0).toFixed(2)}</td>
+                        <td>{(d.zaid_ha ?? d.perennial_ha ?? 0).toFixed(2)}</td>
+                        <td>{(d.total_water_ha ?? 0).toFixed(2)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
 
                 <div className="story-insight">
                   <strong>Insight:</strong> Surface water analysis tracks waterbody availability across
@@ -590,6 +971,31 @@ export default function StoryMapView({
                     <div className="stat-label">Degraded Land (ha)</div>
                   </div>
                 </div>
+
+                {/* Per-Year Scroll Cards — VEGETATION */}
+                {vegetation.yearly_data && vegetation.yearly_data.length > 0 && (
+                  <>
+                    <div className="year-cards-label">
+                      🗓 Scroll through years to see tree cover on map
+                    </div>
+                    <div className="year-cards-container">
+                      {vegetation.yearly_data.map((d) => (
+                        <YearCard
+                          key={`veg-${d.year}`}
+                          year={d.year}
+                          data={d}
+                          isActive={activeFiscalYear === d.year}
+                          sectionType="vegetation"
+                          refCallback={yearCardRefCallback}
+                          onClick={handleYearCardClick}
+                          fields={[
+                            { label: 'Tree Cover', value: d.tree_cover_ha?.toFixed(1), unit: 'ha' },
+                          ]}
+                        />
+                      ))}
+                    </div>
+                  </>
+                )}
 
                 {/* Vegetation Transitions Chart */}
                 {vegetation.transitions && vegetation.transitions.length > 0 && (
@@ -965,27 +1371,7 @@ export default function StoryMapView({
             </>
           )}
 
-          {/* ── Section 7: Data Story Narrative ── */}
-          {narrative && (
-            <div
-              className={sectionClass('narrative')}
-              data-section-id="narrative"
-              ref={setSectionRef(7)}
-            >
-              <div className="story-section-label summary">
-                <span>📖</span> Summary
-              </div>
-              <h2 className="story-section-title">The Data Story</h2>
-              <p className="story-section-desc">
-                A comprehensive narrative summarizing all analytical findings.
-              </p>
-
-              <div className="story-summary-card">
-                <h4>📖 {village_name || 'Village'} — Data Story</h4>
-                <p>{narrative}</p>
-              </div>
-            </div>
-          )}
+          {/* Section 7 removed — replaced by Terraso storyboard below */}
 
           {/* ── Export Section ── */}
           <div
@@ -1008,75 +1394,217 @@ export default function StoryMapView({
 
         </div>
       </section>
+
+      {/* ═══ TERRASO STORYBOARD (below analytics) ═══ */}
+      {storyChapters.length > 0 && (
+        <>
+          {/* Transition divider */}
+          <div className="storyboard-transition">
+            <h2 className="storyboard-transition-title">
+              📖 The Story of {village_name || 'This Village'}
+            </h2>
+            <p className="storyboard-transition-subtitle">
+              Scroll through the narrative chapters below — the map will guide you through the village's story
+            </p>
+          </div>
+
+          {/* Sticky Chapter TOC */}
+          <nav className={`terraso-chapter-toc ${storyboardVisible ? '' : 'hidden'}`}>
+            {/* Intro dot */}
+            <div
+              className={`terraso-toc-dot ${activeChapterIdx === -1 ? 'active' : ''}`}
+              onClick={() => scrollToChapter('intro')}
+            >
+              <span className="terraso-toc-label">Intro</span>
+              <span className="terraso-toc-circle" />
+            </div>
+            {storyChapters.map((ch, idx) => (
+              <div
+                key={idx}
+                className={`terraso-toc-dot ${activeChapterIdx === idx ? 'active' : ''}`}
+                onClick={() => scrollToChapter(idx)}
+              >
+                <span className="terraso-toc-label">{ch.title}</span>
+                <span className="terraso-toc-circle" />
+              </div>
+            ))}
+          </nav>
+
+          {/* Storyboard: Fixed Map + Scrolling Panels */}
+          <section className="terraso-storyboard" ref={storyboardRef}>
+            {/* Sticky Map Background */}
+            <div className="terraso-storyboard-map">
+              <MapView
+                geojson={mapGeojson}
+                center={mapCenter}
+                zoom={13}
+                height="100%"
+                interactive={true}
+                maskOutside={true}
+                layerUrls={layerUrls}
+                activeLayerNames={activeLayerNames}
+                activeFiscalYear={wmsConfig ? activeFiscalYear : null}
+                wmsConfig={wmsConfig}
+              />
+
+              {/* Chapter HUD on Map */}
+              {activeChapterIdx >= 0 && storyChapters[activeChapterIdx] && (
+                <div className="terraso-map-chapter-hud">
+                  <span className="terraso-map-chapter-hud-icon">
+                    {MAP_ACTION_LABELS[storyChapters[activeChapterIdx].map_action]?.icon || '📍'}
+                  </span>
+                  <span className="terraso-map-chapter-hud-label">
+                    {MAP_ACTION_LABELS[storyChapters[activeChapterIdx].map_action]?.label || 'Viewing'}
+                  </span>
+                </div>
+              )}
+
+              {/* Map Info Overlay */}
+              <div className="terraso-map-info">
+                <div className="terraso-map-village-name">
+                  {village_name || 'Selected Region'}
+                </div>
+                <div className="terraso-map-location">
+                  {[tehsil, district, state].filter(Boolean).join(', ')}
+                </div>
+              </div>
+
+              {/* LULC Legend */}
+              <LulcLegend visible={!!wmsConfig && !!activeFiscalYear} />
+            </div>
+
+            {/* Scrolling Chapter Panels */}
+            <div className="terraso-storyboard-chapters">
+              {/* Intro Panel */}
+              <div
+                className={`terraso-intro-panel ${visibleChapters.has(-1) || activeChapterIdx === -1 ? 'visible' : ''}`}
+                ref={(node) => {
+                  if (node) chapterPanelRefs.current.set('intro', node);
+                  // Also set as chapter -1 for observer
+                  if (node) {
+                    node.dataset.chapterIdx = '-1';
+                    // Observe it
+                  }
+                }}
+              >
+                <div className="terraso-intro-label">
+                  <span>📖</span> Village Story
+                </div>
+                <h2 className="terraso-intro-title">
+                  The Story of {storyData.name || village_name}
+                </h2>
+                <div className="terraso-intro-location">
+                  {[tehsil, district, state].filter(Boolean).join(', ')}
+                </div>
+
+                <div className="terraso-intro-demographics">
+                  <div className="terraso-demo-item">
+                    <span className="terraso-demo-value">
+                      {(storyData.population_2011 || 0).toLocaleString()}
+                    </span>
+                    <span className="terraso-demo-label">Population</span>
+                  </div>
+                  <div className="terraso-demo-item">
+                    <span className="terraso-demo-value">
+                      {(storyData.households_2011 || 0).toLocaleString()}
+                    </span>
+                    <span className="terraso-demo-label">Households</span>
+                  </div>
+                  <div className="terraso-demo-item">
+                    <span className="terraso-demo-value">
+                      {storyData.literacy_rate || '—'}%
+                    </span>
+                    <span className="terraso-demo-label">Literacy</span>
+                  </div>
+                </div>
+
+                {storyData.economy && (
+                  <div className="terraso-intro-detail">💼 {storyData.economy}</div>
+                )}
+
+                {storyData.temples?.length > 0 && (
+                  <div className="terraso-intro-detail">
+                    🛕 {storyData.temples.join(' • ')}
+                  </div>
+                )}
+
+                {storyData.languages?.length > 0 && (
+                  <div className="terraso-intro-tags">
+                    {storyData.languages.map((lang, i) => (
+                      <span key={i} className="terraso-intro-tag">🗣️ {lang}</span>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Story Chapter Panels */}
+              {storyChapters.map((chapter, idx) => (
+                <div
+                  key={idx}
+                  className={`terraso-chapter-panel ${visibleChapters.has(idx) ? 'visible' : ''}`}
+                  data-chapter-idx={idx}
+                  ref={chapterRefCallback}
+                >
+                  <div className="terraso-chapter-number">
+                    Chapter {idx + 1}
+                  </div>
+                  <h3 className="terraso-chapter-title">{chapter.title}</h3>
+                  <p className="terraso-chapter-narrative">{chapter.narrative}</p>
+
+                  {chapter.image_url && (
+                    <>
+                      <img
+                        className="terraso-chapter-image"
+                        src={chapter.image_url}
+                        alt={chapter.image_caption || chapter.title}
+                        loading="lazy"
+                        onError={(e) => { e.target.style.display = 'none'; }}
+                      />
+                      {chapter.image_caption && (
+                        <div className="terraso-chapter-image-caption">
+                          {chapter.image_caption}
+                        </div>
+                      )}
+                    </>
+                  )}
+
+                  {chapter.map_action && (
+                    <div className="terraso-map-action-badge">
+                      {MAP_ACTION_LABELS[chapter.map_action]?.icon || '🗺️'}{' '}
+                      {MAP_ACTION_LABELS[chapter.map_action]?.label || chapter.map_action}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </section>
+        </>
+      )}
     </div>
   );
 }
 
-/**
- * Generate a comprehensive data story narrative from analytics results.
- */
+// generateNarrative kept for internal use but no longer displayed as a standalone section
 function generateNarrative(results, ciData, swData) {
   if (!results) return '';
   const parts = [];
   const { vegetation, terrain, crop_intensity_change, village_name } = results;
-
   parts.push(`${village_name || 'The village'} analytics report provides a comprehensive assessment of land use, water resources, and vegetation cover.`);
-
   if (ciData && ciData.length > 0) {
     const latest = ciData[ciData.length - 1];
     const earliest = ciData[0];
-    parts.push(
-      `Over ${ciData.length} fiscal years (${earliest.year} to ${latest.year}), ` +
-      `the total cropped area has ${latest.total_cropped_ha > earliest.total_cropped_ha ? 'increased' : 'decreased'} ` +
-      `from ${earliest.total_cropped_ha?.toFixed(2)} ha to ${latest.total_cropped_ha?.toFixed(2)} ha.`
-    );
+    parts.push(`Over ${ciData.length} fiscal years (${earliest.year} to ${latest.year}), the total cropped area has ${latest.total_cropped_ha > earliest.total_cropped_ha ? 'increased' : 'decreased'} from ${earliest.total_cropped_ha?.toFixed(2)} ha to ${latest.total_cropped_ha?.toFixed(2)} ha.`);
   }
-
   if (swData && swData.length > 0) {
     const latest = swData[swData.length - 1];
-    parts.push(
-      `In the most recent year (${latest.year}), total surface water coverage was ${(latest.total_water_ha ?? 0).toFixed(2)} ha.`
-    );
+    parts.push(`In the most recent year (${latest.year}), total surface water coverage was ${(latest.total_water_ha ?? 0).toFixed(2)} ha.`);
   }
-
   if (vegetation) {
     if (vegetation.net_change_ha < 0) {
-      parts.push(
-        `The area experienced a net deforestation of ${Math.abs(vegetation.net_change_ha).toFixed(2)} ha, ` +
-        `with ${vegetation.tree_cover_loss_ha?.toFixed(2)} ha of forest loss and ${vegetation.tree_cover_gain_ha?.toFixed(2)} ha of afforestation.`
-      );
+      parts.push(`The area experienced a net deforestation of ${Math.abs(vegetation.net_change_ha).toFixed(2)} ha.`);
     } else if (vegetation.net_change_ha > 0) {
-      parts.push(
-        `The area shows positive reforestation with a net gain of ${vegetation.net_change_ha?.toFixed(2)} ha of forest cover.`
-      );
+      parts.push(`The area shows positive reforestation with a net gain of ${vegetation.net_change_ha?.toFixed(2)} ha of forest cover.`);
     }
   }
-
-  if (terrain && terrain.total_area_ha > 0) {
-    const dominant = Object.entries(terrain)
-      .filter(([k]) => k !== 'total_area_ha')
-      .sort(([, a], [, b]) => b - a)[0];
-    if (dominant) {
-      const pct = ((dominant[1] / terrain.total_area_ha) * 100).toFixed(1);
-      parts.push(
-        `The terrain is predominantly ${dominant[0].replace(/_/g, ' ')} (${pct}% of ${terrain.total_area_ha.toFixed(2)} ha total area).`
-      );
-    }
-  }
-
-  if (crop_intensity_change && crop_intensity_change.length > 0) {
-    const improvements = crop_intensity_change.filter(t => {
-      const lbl = t.category || t.label || '';
-      return lbl.includes('Single To Double') || lbl.includes('Double To Triple') || lbl.includes('Single To Triple');
-    });
-    const totalImprovement = improvements.reduce((sum, t) => sum + (t.area_ha || 0), 0);
-    if (totalImprovement > 0) {
-      parts.push(
-        `Cropping intensity improvements (single→double, double→triple, etc.) cover ${totalImprovement.toFixed(2)} ha, ` +
-        `indicating agricultural intensification in the region.`
-      );
-    }
-  }
-
   return parts.join(' ');
 }

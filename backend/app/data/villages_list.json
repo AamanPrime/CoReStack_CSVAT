@@ -1,0 +1,43 @@
+{
+  "version": "1.0",
+  "generated_at": "2026-04-06",
+  "total_villages": 28,
+  "total_tehsils": 1,
+  "locations": [
+    {
+      "state": "Andhra Pradesh",
+      "district": "Ananthapur",
+      "tehsil": "Amadagur",
+      "villages": [
+        {"id": 595262, "name": "Yeguvapalle"},
+        {"id": 595263, "name": "Kadiri Brahmanapalle"},
+        {"id": 595276, "name": "Pulagampalle"},
+        {"id": 595456, "name": "Inagalur"},
+        {"id": 595462, "name": "Obuladevaracheruvu"},
+        {"id": 595464, "name": "Sunnampalle"},
+        {"id": 595465, "name": "Thummalakuntla Palle"},
+        {"id": 595466, "name": "Veeraobanapalle"},
+        {"id": 595472, "name": "Tavalamarri"},
+        {"id": 595473, "name": "Ubicherla"},
+        {"id": 595474, "name": "Kadiripulakunta"},
+        {"id": 595476, "name": "Talamarlavandla Palle"},
+        {"id": 595478, "name": "Chinnaramannagaripalle"},
+        {"id": 595490, "name": "Ethodu"},
+        {"id": 595491, "name": "Kotapalle"},
+        {"id": 595499, "name": "Jowkalakothapalle"},
+        {"id": 595500, "name": "Mohammadabad"},
+        {"id": 595501, "name": "Kassamudram"},
+        {"id": 595502, "name": "Thummala"},
+        {"id": 595503, "name": "Amadagur"},
+        {"id": 595504, "name": "Chinaganipalle"},
+        {"id": 595505, "name": "Ramanathapuram"},
+        {"id": 595507, "name": "Edigavaripalle"},
+        {"id": 595508, "name": "Cheekirevulapalle"},
+        {"id": 595509, "name": "Karinireddipalle"},
+        {"id": 595510, "name": "Pulikuntlapalle"},
+        {"id": 595511, "name": "Dademvaripalle"},
+        {"id": 595512, "name": "Lokojipalle"}
+      ]
+    }
+  ]
+}

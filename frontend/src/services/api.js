@@ -132,4 +132,43 @@ export async function getAdminDetails(latitude, longitude) {
   return data.data || data;
 }
 
+// ─── Village Stories ───
+export async function getVillageStory(villageName, state, district, tehsil) {
+  const { data } = await api.get('/village-stories/by-name', {
+    params: { village: villageName, state, district, tehsil },
+  });
+  return data;
+}
+
+export async function getVillageStoryById(villageId) {
+  const { data } = await api.get(`/village-stories/${villageId}`);
+  return data;
+}
+
+export async function getRegionContext(state, district) {
+  const { data } = await api.get(`/village-stories/region-context/${state}/${district}`);
+  return data;
+}
+
+// ─── Custom Slides ───
+export async function getCustomSlides(villageName) {
+  const { data } = await api.get('/custom-slides', { params: { village: villageName } });
+  return data;
+}
+
+export async function createCustomSlide(slide) {
+  const { data } = await api.post('/custom-slides', slide);
+  return data;
+}
+
+export async function updateCustomSlide(slideId, updates) {
+  const { data } = await api.put(`/custom-slides/${slideId}`, updates);
+  return data;
+}
+
+export async function deleteCustomSlide(slideId) {
+  const { data } = await api.delete(`/custom-slides/${slideId}`);
+  return data;
+}
+
 export default api;

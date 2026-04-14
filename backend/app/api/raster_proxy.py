@@ -20,11 +20,12 @@ Surface water data comes from the CoRE Stack tehsil vector API
 """
 
 import logging
+from functools import lru_cache
 from urllib.parse import unquote
 
 import httpx
 from fastapi import APIRouter, Query, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 
 from app.config import get_settings
 
@@ -715,3 +716,122 @@ async def analyze_raster(request_body: dict):
             "failed_downloads": failed_downloads,
         },
     }
+
+
+# ═══════════════════════════════════════════════════════════════════
+# WMS Tile Proxy — for fiscal year-synced map overlays in storyboard
+# ═══════════════════════════════════════════════════════════════════
+
+@router.get("/wms-layers")
+async def get_wms_layers(
+    district: str = Query(...),
+    tehsil: str = Query(...),
+):
+    """Return available WMS tile layer info for each fiscal year.
+
+    The frontend uses this to know which years have renderable map overlays.
+    Each entry includes the fiscal year label and the WMS layer name on GeoServer.
+    """
+    norm_district = normalize_name(district)
+    norm_tehsil = normalize_name(tehsil)
+
+    layers = []
+    for yy_start, yy_end in FISCAL_YEARS:
+        layer_name = f"LULC_level_3:LULC_{yy_start}_{yy_end}_{norm_district}_{norm_tehsil}_level_3"
+        fiscal_label = f"20{yy_start}-{yy_end}"
+        layers.append({
+            "fiscal_year": fiscal_label,
+            "layer_name": layer_name,
+            "workspace": "LULC_level_3",
+            "yy_range": f"{yy_start}_{yy_end}",
+        })
+
+    return {"status": "ok", "data": layers, "count": len(layers)}
+
+
+@router.get("/wms-tile")
+async def wms_tile_proxy(
+    district: str = Query(...),
+    tehsil: str = Query(...),
+    fy: str = Query(..., description="Fiscal year range, e.g. '20_21'"),
+    bbox: str = Query(..., description="Bounding box: minLng,minLat,maxLng,maxLat"),
+    width: int = Query(256),
+    height: int = Query(256),
+):
+    """Proxy a WMS GetMap tile request from CoRE Stack GeoServer.
+
+    Constructs the WMS URL internally (so the API key never leaks to the browser),
+    fetches the PNG tile, and returns it with proper CORS headers.
+    """
+    settings = get_settings()
+    norm_district = normalize_name(district)
+    norm_tehsil = normalize_name(tehsil)
+
+    layer_name = f"LULC_level_3:LULC_{fy}_{norm_district}_{norm_tehsil}_level_3"
+
+    wms_url = (
+        f"{GEOSERVER_BASE}/LULC_level_3/wms"
+        f"?SERVICE=WMS&VERSION=1.1.0&REQUEST=GetMap"
+        f"&LAYERS={layer_name}"
+        f"&STYLES="
+        f"&FORMAT=image/png&TRANSPARENT=true"
+        f"&SRS=EPSG:4326"
+        f"&BBOX={bbox}"
+        f"&WIDTH={width}&HEIGHT={height}"
+    )
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as http:
+            resp = await http.get(
+                wms_url,
+                headers={"X-API-Key": settings.CORESTACK_API_KEY},
+                follow_redirects=True,
+            )
+
+            content_type = resp.headers.get("content-type", "")
+
+            # GeoServer returns XML for errors/missing layers
+            if "xml" in content_type.lower() or resp.status_code >= 400:
+                # Return a transparent 1x1 PNG for missing tiles (graceful fallback)
+                TRANSPARENT_PNG = (
+                    b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01"
+                    b"\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89"
+                    b"\x00\x00\x00\nIDATx\x9cc\x00\x01\x00\x00\x05\x00\x01"
+                    b"\r\n\xb4\x00\x00\x00\x00IEND\xaeB`\x82"
+                )
+                return Response(
+                    content=TRANSPARENT_PNG,
+                    media_type="image/png",
+                    headers={
+                        "Access-Control-Allow-Origin": "*",
+                        "Cache-Control": "public, max-age=86400",
+                    },
+                )
+
+            return Response(
+                content=resp.content,
+                media_type="image/png",
+                headers={
+                    "Access-Control-Allow-Origin": "*",
+                    "Cache-Control": "public, max-age=3600",
+                },
+            )
+
+    except Exception as e:
+        logger.warning("WMS tile proxy error: %s", e)
+        # Return transparent PNG on any error — don't break the map
+        TRANSPARENT_PNG = (
+            b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01"
+            b"\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89"
+            b"\x00\x00\x00\nIDATx\x9cc\x00\x01\x00\x00\x05\x00\x01"
+            b"\r\n\xb4\x00\x00\x00\x00IEND\xaeB`\x82"
+        )
+        return Response(
+            content=TRANSPARENT_PNG,
+            media_type="image/png",
+            headers={
+                "Access-Control-Allow-Origin": "*",
+                "Cache-Control": "public, max-age=60",
+            },
+        )
+
