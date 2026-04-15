@@ -58,6 +58,9 @@ export function MapView({
   outlineColor = "#22c55e",
   activeFiscalYear = null,
   wmsConfig = null,
+  editable = false,
+  drawMode = false,
+  onGeojsonEdit = null,
 }) {
   const mapRef = useRef(null);
   const mapInstance = useRef(null);
@@ -68,6 +71,7 @@ export function MapView({
   const overlaysRef = useRef({});
   const wmsOverlayRef = useRef(null);
   const prevFiscalYearRef = useRef(null);
+  const drawingRef = useRef({ polygon: null, clickListener: null, markers: [] });
 
   // Initialize map
   useEffect(() => {
@@ -129,21 +133,17 @@ export function MapView({
 
     if (maskOutside) {
       // ── Mask mode: manual Polygons (world-rect with hole) ──
-      // Required for StoryMapView's "black out everything outside" effect
       const rings =
         geojson.type === "MultiPolygon"
           ? geojson.coordinates.map((poly) => poly[0])
           : [geojson.coordinates[0]];
 
-      // Outer path covering the entire globe.
-      // Winds SW→NW→NE→SE with a 5th anchor at the Prime Meridian
-      // to prevent Google Maps from collapsing the polygon across the Date Line.
       const worldCoords = [
         { lat: -85, lng: -180 },
         { lat: 85, lng: -180 },
         { lat: 85, lng: 180 },
         { lat: -85, lng: 180 },
-        { lat: -85, lng: 0 },  // Prime Meridian anchor — critical!
+        { lat: -85, lng: 0 },
       ];
 
       const holePaths = rings.map((ring) => {
@@ -173,9 +173,47 @@ export function MapView({
 
       polygonRef.current = [maskPolygon, ...outlinePolygons];
       map.fitBounds(bounds, 10);
+    } else if (editable && onGeojsonEdit) {
+      // ── Editable mode: manual Polygon with draggable vertices ──
+      const rings =
+        geojson.type === "MultiPolygon"
+          ? geojson.coordinates.map((poly) => poly[0])
+          : [geojson.coordinates[0]];
+
+      const paths = rings.map((ring) =>
+        ring.map(([lng, lat]) => {
+          bounds.extend({ lat, lng });
+          return { lat, lng };
+        })
+      );
+
+      const editablePoly = new window.google.maps.Polygon({
+        paths: paths[0], // Use first ring for editable
+        strokeColor: '#f59e0b',
+        strokeOpacity: 1,
+        strokeWeight: 2.5,
+        fillColor: '#f59e0b',
+        fillOpacity: 0.12,
+        editable: true,
+        draggable: true,
+        map,
+      });
+
+      // Listen for vertex changes
+      const emitEdit = () => {
+        const updatedGeojson = _extractGeojsonFromPolygon(editablePoly);
+        if (updatedGeojson) onGeojsonEdit(updatedGeojson);
+      };
+      const path = editablePoly.getPath();
+      window.google.maps.event.addListener(path, 'set_at', emitEdit);
+      window.google.maps.event.addListener(path, 'insert_at', emitEdit);
+      window.google.maps.event.addListener(path, 'remove_at', emitEdit);
+      window.google.maps.event.addListener(editablePoly, 'dragend', emitEdit);
+
+      polygonRef.current = editablePoly;
+      map.fitBounds(bounds, 60);
     } else {
       // ── Standard mode: native GeoJSON Data Layer ──
-      // Cleaner, handles holes & MultiPolygons automatically
       const featureCollection = {
         type: "FeatureCollection",
         features: [{ type: "Feature", geometry: geojson, properties: {} }],
@@ -198,7 +236,107 @@ export function MapView({
       });
       map.fitBounds(bounds, 60);
     }
-  }, [geojson, isMapReady]);
+  }, [geojson, isMapReady, editable]);
+
+  // ── Draw Polygon Mode ──
+  useEffect(() => {
+    if (!mapInstance.current || !window.google?.maps || !isMapReady) return;
+    const map = mapInstance.current;
+    const dr = drawingRef.current;
+
+    // Clean up previous drawing state
+    if (dr.clickListener) {
+      window.google.maps.event.removeListener(dr.clickListener);
+      dr.clickListener = null;
+    }
+    if (dr.polygon) {
+      dr.polygon.setMap(null);
+      dr.polygon = null;
+    }
+    dr.markers.forEach(m => m.setMap(null));
+    dr.markers = [];
+
+    if (!drawMode || !onGeojsonEdit) return;
+
+    // Clear any existing geojson rendering
+    if (polygonRef.current) {
+      if (Array.isArray(polygonRef.current)) {
+        polygonRef.current.forEach((p) => p.setMap(null));
+      } else {
+        polygonRef.current.setMap(null);
+      }
+      polygonRef.current = null;
+    }
+    map.data.forEach((feature) => map.data.remove(feature));
+
+    // Change cursor to crosshair
+    map.setOptions({ draggableCursor: 'crosshair' });
+
+    const vertices = [];
+    let previewPoly = null;
+
+    const updatePreview = () => {
+      if (previewPoly) previewPoly.setMap(null);
+      if (vertices.length < 2) return;
+
+      previewPoly = new window.google.maps.Polygon({
+        paths: vertices,
+        strokeColor: '#f59e0b',
+        strokeOpacity: 0.9,
+        strokeWeight: 2,
+        strokeDashArray: [8, 4],
+        fillColor: '#f59e0b',
+        fillOpacity: 0.08,
+        editable: false,
+        map,
+      });
+    };
+
+    dr.clickListener = map.addListener('click', (e) => {
+      const latLng = e.latLng;
+      vertices.push({ lat: latLng.lat(), lng: latLng.lng() });
+
+      // Add vertex marker
+      const marker = new window.google.maps.Marker({
+        position: latLng,
+        map,
+        icon: {
+          path: window.google.maps.SymbolPath.CIRCLE,
+          scale: 6,
+          fillColor: '#f59e0b',
+          fillOpacity: 1,
+          strokeColor: '#ffffff',
+          strokeWeight: 2,
+        },
+        clickable: false,
+      });
+      dr.markers.push(marker);
+
+      updatePreview();
+
+      // Emit partial GeoJSON (at least 3 points to make a polygon)
+      if (vertices.length >= 3) {
+        const coords = vertices.map(v => [v.lng, v.lat]);
+        coords.push(coords[0]); // Close ring
+        onGeojsonEdit({
+          type: 'Polygon',
+          coordinates: [coords],
+        });
+      }
+    });
+
+    dr.polygon = previewPoly;
+
+    return () => {
+      map.setOptions({ draggableCursor: null });
+      if (dr.clickListener) {
+        window.google.maps.event.removeListener(dr.clickListener);
+        dr.clickListener = null;
+      }
+      if (previewPoly) previewPoly.setMap(null);
+      // Don't clear markers on cleanup — they stay until drawMode changes
+    };
+  }, [drawMode, isMapReady]);
 
   // Update stroke and fill color dynamically when outlineColor changes
   useEffect(() => {
@@ -600,6 +738,20 @@ export function usePlacesAutocomplete() {
   const clearPredictions = useCallback(() => setPredictions([]), []);
 
   return { predictions, isLoading, search, getPlaceDetails, clearPredictions };
+}
+
+// ─── Polygon → GeoJSON Helper ───
+
+function _extractGeojsonFromPolygon(polygon) {
+  const path = polygon.getPath();
+  if (!path || path.getLength() < 3) return null;
+  const coords = [];
+  for (let i = 0; i < path.getLength(); i++) {
+    const pt = path.getAt(i);
+    coords.push([pt.lng(), pt.lat()]);
+  }
+  coords.push(coords[0]); // Close ring
+  return { type: 'Polygon', coordinates: [coords] };
 }
 
 // ─── Geometry Helpers ───

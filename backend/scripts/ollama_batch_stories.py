@@ -402,7 +402,7 @@ def process_batch(batch_file, start_from=0, output_dir="checkpoints"):
             for v in chunk_results:
                 chapters = len(v.get("story_chapters", []))
                 pop = v.get("population_2011") or "?"
-                log.info(f"    ✅ {v['name']} ({v['district']}, {v['state']}) — pop:{pop}, chapters:{chapters}")
+                log.info(f"     {v['name']} ({v['district']}, {v['state']}) — pop:{pop}, chapters:{chapters}")
         else:
             # Complete failure for this chunk — create fallbacks
             log.error(f"  ✗ Chunk {chunk_idx + 1} FAILED after {MAX_RETRIES} retries")

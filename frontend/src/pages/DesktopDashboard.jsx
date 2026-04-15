@@ -68,6 +68,7 @@ export default function DesktopDashboard() {
   const [boundary, setBoundary] = useState(null);
   const [mapCenter, setMapCenter] = useState(null);
   const [mapGeojson, setMapGeojson] = useState(null);
+  const [mapEditState, setMapEditState] = useState({ editable: false, drawMode: false, onGeojsonEdit: null });
 
   // Layer & analytics state
   const availableLayers = [];
@@ -118,7 +119,7 @@ export default function DesktopDashboard() {
     try {
       // ── FR-BA-03: Pre-validate boundary intersects active tehsil ──
       // Skip for uploaded boundaries — they use GEE directly, no tehsil needed
-      if (boundary.source !== 'upload') {
+      if (boundary.source !== 'upload' && boundary.source !== 'places') {
         setProgress('Validating boundary against active tehsils…');
         try {
           const bState = (boundary.state || '').trim();
@@ -253,7 +254,7 @@ export default function DesktopDashboard() {
   const handleSubmit = (path) => {
     if (!boundary) return;
     // Uploaded boundaries always use WASM raster path (no tehsil data for server mode)
-    if (boundary.source === 'upload') {
+    if (boundary.source === 'upload' || boundary.source === 'places') {
       handleWASMSubmit('raster_tiled');
       return;
     }
@@ -327,6 +328,9 @@ export default function DesktopDashboard() {
           height="100%"
           layerUrls={availableLayers}
           activeLayerNames={selectedLayers}
+          editable={mapEditState.editable}
+          drawMode={mapEditState.drawMode}
+          onGeojsonEdit={mapEditState.onGeojsonEdit}
         />
 
 
@@ -413,23 +417,25 @@ export default function DesktopDashboard() {
           {/* Location Selectors */}
           <BoundarySelector
             onBoundarySelect={handleBoundarySelect}
-            onMapUpdate={(center, geojson) => {
+            onMapUpdate={(center, geojson, editProps) => {
               if (center) setMapCenter(center);
               if (geojson) setMapGeojson(geojson);
+              if (editProps) setMapEditState(editProps);
+              else setMapEditState({ editable: false, drawMode: false, onGeojsonEdit: null });
             }}
           />
 
 
 
           {/* Execution Mode & Run */}
-          {boundary && (boundary.source === 'corestack' || boundary.source === 'upload') && (
+          {boundary && (boundary.source === 'corestack' || boundary.source === 'upload' || boundary.source === 'places') && (
             <div className="analytics-section">
               <div style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '0.35rem' }}>
                 Execution Mode
               </div>
 
               {/* Uploaded GeoJSON: only Raster path (no tehsil data for MWS/Server) */}
-              {boundary.source === 'upload' ? (
+              {(boundary.source === 'upload' || boundary.source === 'places') ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                   <button
                     className="btn btn-primary btn-lg"
@@ -440,7 +446,7 @@ export default function DesktopDashboard() {
                   >
                     {isRunning ? (
                       <><span className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }}></span> Processing…</>
-                    ) : '⚡ High Accuracy Analysis'}
+                    ) : ' High Accuracy Analysis'}
                   </button>
                   <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
                     100% browser-side: downloads TIFF tiles → parses → computes (zero server storage)
@@ -455,7 +461,7 @@ export default function DesktopDashboard() {
                       onClick={() => setExecutionMode('WASM')}
                       id="mode-wasm-btn"
                     >
-                      ⚡ Client (WASM)
+                       Client (WASM)
                     </button>
                     <button
                       className={`execution-mode-btn ${executionMode === 'SERVER' ? 'active' : ''}`}
@@ -482,7 +488,7 @@ export default function DesktopDashboard() {
                       >
                         {isRunning ? (
                           <><span className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }}></span> Processing…</>
-                        ) : '⚡ High Accuracy Analysis'}
+                        ) : ' High Accuracy Analysis'}
                       </button>
                       <button
                         className="btn btn-secondary btn-lg"
@@ -493,7 +499,7 @@ export default function DesktopDashboard() {
                       >
                         {isRunning ? (
                           <><span className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }}></span> Processing…</>
-                        ) : '⚡ MWS Path (Vector)'}
+                        ) : ' MWS Path (Vector)'}
                       </button>
                     </div>
                   ) : (

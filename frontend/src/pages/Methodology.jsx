@@ -58,7 +58,7 @@ export default function Methodology() {
         <p style={pStyle}>Villages are identified through two methods:</p>
         <ul style={ulStyle}>
           <li><strong>CoRE Stack Registry:</strong> State → District → Tehsil → Village hierarchy. Village polygons are fetched as GeoJSON from the CoRE Stack API with verified administrative boundaries. Supports all three execution modes (Raster, MWS, Server).</li>
-          <li><strong>GeoJSON Upload (Pan-India):</strong> Users can upload any village boundary GeoJSON file. This mode bypasses CoRE Stack location selection and routes directly to the ⚡ Raster path, enabling analysis for <em>any</em> Indian village — no tehsil registration required.</li>
+          <li><strong>GeoJSON Upload (Pan-India):</strong> Users can upload any village boundary GeoJSON file. This mode bypasses CoRE Stack location selection and routes directly to the  Raster path, enabling analysis for <em>any</em> Indian village — no tehsil registration required.</li>
         </ul>
         <p style={pStyle}>
           For CoRE Stack boundaries, the system identifies overlapping Micro-Watersheds (MWS) for vector analytics.
@@ -250,7 +250,7 @@ export default function Methodology() {
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.75rem', margin: '1rem 0' }}>
           <div style={{ ...formulaCardStyle, borderColor: '#10b981' }}>
-            <div style={{ fontWeight: 700, color: '#10b981', marginBottom: '0.5rem', fontSize: '0.9rem' }}>⚡ High Accuracy Analysis (Raster)</div>
+            <div style={{ fontWeight: 700, color: '#10b981', marginBottom: '0.5rem', fontSize: '0.9rem' }}> High Accuracy Analysis (Raster)</div>
             <ul style={{ ...ulStyle, fontSize: '0.78rem' }}>
               <li><strong>100% browser-side</strong> — server never stores or processes TIFF data</li>
               <li>Village bbox split into ~1 km² spatial tiles</li>
@@ -266,7 +266,7 @@ export default function Methodology() {
             </ul>
           </div>
           <div style={formulaCardStyle}>
-            <div style={{ fontWeight: 700, color: '#8b5cf6', marginBottom: '0.5rem', fontSize: '0.9rem' }}>⚡ MWS Vector</div>
+            <div style={{ fontWeight: 700, color: '#8b5cf6', marginBottom: '0.5rem', fontSize: '0.9rem' }}> MWS Vector</div>
             <ul style={{ ...ulStyle, fontSize: '0.78rem' }}>
               <li>Pre-aggregated MWS-level data from CoRE Stack API</li>
               <li>Village-MWS polygon intersection + weighted aggregation</li>
@@ -416,8 +416,8 @@ function ComparisonTable() {
         <thead>
           <tr>
             <th style={headerStyle}>Attribute</th>
-            <th style={{ ...headerStyle, color: '#10b981' }}>⚡ Raster Path</th>
-            <th style={{ ...headerStyle, color: '#8b5cf6' }}>⚡ MWS Vector Path</th>
+            <th style={{ ...headerStyle, color: '#10b981' }}> Raster Path</th>
+            <th style={{ ...headerStyle, color: '#8b5cf6' }}> MWS Vector Path</th>
           </tr>
         </thead>
         <tbody>

@@ -60,7 +60,7 @@ const SECTION_THEMES = {
 
 // ─── MAP ACTION LABELS ───
 const MAP_ACTION_LABELS = {
-  zoom_to_village: { icon: '📍', label: 'Viewing Village' },
+  zoom_to_village: { icon: '', label: 'Viewing Village' },
   show_overview: { icon: '🗺️', label: 'Regional Overview' },
   show_lulc_latest: { icon: '🛰️', label: 'Latest Land Use' },
   show_lulc_oldest: { icon: '🛰️', label: 'Historical Land Use' },
@@ -1451,7 +1451,7 @@ export default function StoryMapView({
               {activeChapterIdx >= 0 && storyChapters[activeChapterIdx] && (
                 <div className="terraso-map-chapter-hud">
                   <span className="terraso-map-chapter-hud-icon">
-                    {MAP_ACTION_LABELS[storyChapters[activeChapterIdx].map_action]?.icon || '📍'}
+                    {MAP_ACTION_LABELS[storyChapters[activeChapterIdx].map_action]?.icon || ''}
                   </span>
                   <span className="terraso-map-chapter-hud-label">
                     {MAP_ACTION_LABELS[storyChapters[activeChapterIdx].map_action]?.label || 'Viewing'}
