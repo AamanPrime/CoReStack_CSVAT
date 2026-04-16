@@ -560,7 +560,7 @@ export async function resolveBoundary(boundaryInfo) {
 
 // ─── Full Analytics Pipeline ───
 
-export async function runAnalyticsPipeline(boundaryInfo, selectedLayers, selectedYears, onProgress, computePath = 'raster') {
+export async function runAnalyticsPipeline(boundaryInfo, selectedLayers, selectedYears, onProgress, computePath = 'raster_tiled') {
   // Step 1: Resolve boundary
   onProgress?.('Resolving village boundary…');
   const boundary = await resolveBoundary(boundaryInfo);
@@ -574,56 +574,7 @@ export async function runAnalyticsPipeline(boundaryInfo, selectedLayers, selecte
   boundary.boundary_geojson = geojson;
   const sortedYears = [...selectedYears].sort((a, b) => a - b);
 
-  if (computePath === 'raster') {
-    // ─── RASTER PATH (High Accuracy) ───
-    const { runRasterAnalytics, checkRasterAvailability } = await import('./rasterEngine');
-
-    // Uploaded boundaries: skip CoRE Stack layer check — /extract goes directly to GEE
-    const isUpload = boundaryInfo.source === 'upload';
-
-    if (!isUpload) {
-      onProgress?.('Checking CoRE Stack raster layer availability…');
-      try {
-        const rasterCheck = await checkRasterAvailability(
-          boundary.state, boundary.district, boundary.tehsil
-        );
-        if (!rasterCheck.available) {
-          console.log('[CSVAT] No raster layers available, falling back to GEE prompt.');
-          throw new MWSUnavailableError(
-            'No CoRE Stack raster layers found for this area. Would you like to use Google Earth Engine instead?',
-            boundary,
-          );
-        }
-        onProgress?.(`Found ${rasterCheck.layerCount} raster layers. Starting client-side raster processing (High Accuracy)…`);
-      } catch (err) {
-        if (err instanceof MWSUnavailableError) throw err;
-        console.error('[CSVAT] Raster availability check error:', err);
-        throw new MWSUnavailableError(
-          `CoRE Stack raster processing failed: ${err.message}. Would you like to use GEE instead?`,
-          boundary,
-        );
-      }
-    } else {
-      onProgress?.('Starting GEE IndiaSAT raster extraction…');
-    }
-
-    try {
-      const rasterResults = await runRasterAnalytics(
-        boundary, selectedLayers, sortedYears, onProgress
-      );
-      rasterResults.area_hectares = boundary.area_hectares || 0;
-      rasterResults.compute_mode = 'client_raster';
-      onProgress?.('Raster analytics complete!');
-      return rasterResults;
-    } catch (err) {
-      if (err instanceof MWSUnavailableError) throw err;
-      console.error('[CSVAT] Raster pipeline error:', err);
-      throw new MWSUnavailableError(
-        `Raster processing failed: ${err.message}. Would you like to use GEE instead?`,
-        boundary,
-      );
-    }
-  } else if (computePath === 'raster_tiled') {
+  if (computePath === 'raster_tiled') {
     // ─── TILED RASTER PATH (100% Client-Side — no server TIFF storage) ───
     const { runTiledRasterAnalytics } = await import('./rasterEngine');
 
@@ -843,7 +794,7 @@ th:first-child,td:first-child{text-align:left}
 </style></head><body><div class="c">
 <div class="hdr"><h1>🌾 Village Analytics Report</h1>
 <p style="color:var(--muted);margin-top:.5rem">${results.village_name} — Socio-Ecological Analysis</p>
-<div class="src">📡 Data: ${source}</div>
+<div class="src"> Data: ${source}</div>
 <div class="meta">
 <div class="mi"><label>State</label><span>${results.state}</span></div>
 <div class="mi"><label>District</label><span>${results.district}</span></div>
