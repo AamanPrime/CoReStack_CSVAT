@@ -25,6 +25,7 @@ export default function MobileDashboard() {
   const [boundary, setBoundary] = useState(null);
   const [mapCenter, setMapCenter] = useState(null);
   const [mapGeojson, setMapGeojson] = useState(null);
+  const [mapEditState, setMapEditState] = useState({ editable: false, drawMode: false, onGeojsonEdit: null });
 
   // Layer & analytics state
   const availableLayers = [];
@@ -150,7 +151,7 @@ export default function MobileDashboard() {
 
   const handleSubmit = (path) => {
     if (!boundary) return;
-    if (boundary.source === 'upload') {
+    if (boundary.source === 'upload' || boundary.source === 'places') {
       handleWASMSubmit('raster_tiled');
       return;
     }
@@ -224,6 +225,9 @@ export default function MobileDashboard() {
           height="100%"
           layerUrls={availableLayers}
           activeLayerNames={selectedLayers}
+          editable={mapEditState.editable}
+          drawMode={mapEditState.drawMode}
+          onGeojsonEdit={mapEditState.onGeojsonEdit}
         />
 
 
@@ -296,16 +300,18 @@ export default function MobileDashboard() {
           {/* Location Selectors */}
           <BoundarySelector
             onBoundarySelect={handleBoundarySelect}
-            onMapUpdate={(center, geojson) => {
+            onMapUpdate={(center, geojson, editProps) => {
               if (center) setMapCenter(center);
               if (geojson) setMapGeojson(geojson);
+              if (editProps) setMapEditState(editProps);
+              else setMapEditState({ editable: false, drawMode: false, onGeojsonEdit: null });
             }}
           />
 
 
 
           {/* Execution Mode & Run */}
-          {boundary && (boundary.source === 'corestack' || boundary.source === 'upload') && (
+          {boundary && (boundary.source === 'corestack' || boundary.source === 'upload' || boundary.source === 'places') && (
             <div className="analytics-section">
               <div style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '0.35rem' }}>
                 Execution Mode
@@ -316,7 +322,7 @@ export default function MobileDashboard() {
                   onClick={() => setExecutionMode('WASM')}
                   id="mode-wasm-btn"
                 >
-                  ⚡ Client (WASM)
+                   Client (WASM)
                 </button>
                 <button
                   className={`execution-mode-btn ${executionMode === 'SERVER' ? 'active' : ''}`}
@@ -343,7 +349,7 @@ export default function MobileDashboard() {
                   >
                     {isRunning ? (
                       <><span className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }}></span> Processing…</>
-                    ) : '⚡ High Accuracy Analysis'}
+                    ) : ' High Accuracy Analysis'}
                   </button>
                   <button
                     className="btn btn-secondary btn-lg"
@@ -354,7 +360,7 @@ export default function MobileDashboard() {
                   >
                     {isRunning ? (
                       <><span className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }}></span> Processing…</>
-                    ) : '⚡ MWS Path (Vector)'}
+                    ) : ' MWS Path (Vector)'}
                   </button>
                 </div>
               ) : (
