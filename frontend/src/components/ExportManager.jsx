@@ -124,11 +124,13 @@ export default function ExportManager({ results, jobId }) {
         /* Hide sidebar */
         .sidebar { display: none !important; }
 
-        /* Hide interactive elements */
+        /* Hide interactive elements and storyboard from PDF */
         .export-bar, #new-analysis-btn,
         .report-close-btn,
         .report-overlay-header button,
-        .gee-prompt-overlay { display: none !important; }
+        .gee-prompt-overlay,
+        .ts-storyboard,
+        .ts-edit-btn { display: none !important; }
 
         /* Print-friendly cards */
         .card {

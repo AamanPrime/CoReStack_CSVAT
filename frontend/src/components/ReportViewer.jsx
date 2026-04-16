@@ -175,6 +175,7 @@ function StorySlides({ slides, villageName }) {
 
 /**
  * Download the report as PDF using html2pdf.js (loaded from CDN on demand).
+ * Excludes the storyboard section from the PDF output.
  */
 async function downloadReportAsPDF(contentEl, villageName) {
   const safeName = (villageName || 'report').replace(/\s+/g, '_');
@@ -188,6 +189,14 @@ async function downloadReportAsPDF(contentEl, villageName) {
       document.head.appendChild(s);
     });
   }
+
+  // Hide the storyboard section before PDF generation
+  const storyboardEl = contentEl.parentElement?.querySelector('.ts-storyboard');
+  const storyboardParent = storyboardEl?.parentElement;
+  const editBtn = contentEl.parentElement?.querySelector('.ts-edit-btn');
+  if (storyboardParent) storyboardParent.style.display = 'none';
+  if (editBtn) editBtn.style.display = 'none';
+
   const opt = {
     margin: [10, 5, 10, 5],
     filename: `CSVAT_${safeName}_Report.pdf`,
@@ -197,45 +206,36 @@ async function downloadReportAsPDF(contentEl, villageName) {
     pagebreak: { mode: ['avoid-all', 'css', 'legacy'] },
   };
   await window.html2pdf().set(opt).from(contentEl).save();
+
+  // Restore the storyboard after PDF generation
+  if (storyboardParent) storyboardParent.style.display = '';
+  if (editBtn) editBtn.style.display = '';
 }
 
 /**
- * Build and download a self-contained offline HTML file with interactive storyboard.
+ * Build and download a self-contained offline HTML file that mirrors the ReportViewer page
+ * with an interactive storyboard (scroll-snap + cross-fade backgrounds).
  */
 function downloadReportAsHTML(results, storySlides, villageName) {
   const safeName = (villageName || 'report').replace(/\s+/g, '_');
 
-  // 1. Collect ALL stylesheets from the page
-  let allCSS = '';
-  for (const sheet of document.styleSheets) {
-    try {
-      for (const rule of sheet.cssRules || sheet.rules || []) {
-        allCSS += rule.cssText + '\n';
-      }
-    } catch (e) {
-      if (sheet.href) {
-        allCSS += `@import url("${sheet.href}");\n`;
-      }
-    }
-  }
-
-  // 2. Clone the entire report overlay
-  const overlay = document.querySelector('.report-viewer-overlay');
-  if (!overlay) {
+  // 1. Clone the report-viewer-content (analytics cards only, NOT the storyboard)
+  const reportContent = document.querySelector('.report-viewer-content');
+  if (!reportContent) {
     alert('Report not visible. Please open the report first.');
     return;
   }
-  const clone = overlay.cloneNode(true);
+  const clone = reportContent.cloneNode(true);
 
   // 3. Convert all <canvas> charts to inline <img> tags
-  const origCanvases = overlay.querySelectorAll('canvas');
+  const origCanvases = reportContent.querySelectorAll('canvas');
   const clonedCanvases = clone.querySelectorAll('canvas');
   origCanvases.forEach((canvas, i) => {
     try {
       const img = document.createElement('img');
       img.src = canvas.toDataURL('image/png');
-      img.style.width = canvas.style.width || canvas.getAttribute('width') + 'px' || '100%';
-      img.style.height = canvas.style.height || canvas.getAttribute('height') + 'px' || 'auto';
+      img.style.width = '100%';
+      img.style.height = 'auto';
       img.style.maxWidth = '100%';
       if (clonedCanvases[i]?.parentNode) {
         clonedCanvases[i].parentNode.replaceChild(img, clonedCanvases[i]);
@@ -246,140 +246,149 @@ function downloadReportAsHTML(results, storySlides, villageName) {
   });
 
   // 4. Remove interactive-only elements from clone
-  clone.querySelectorAll('.story-close-btn, .ts-edit-btn, .se-overlay').forEach(el => el.remove());
+  clone.querySelectorAll('.export-bar, .se-overlay').forEach(el => el.remove());
 
-  // 5. Fix overlay positioning for standalone page
-  clone.style.position = 'relative';
-  clone.style.top = '0';
-  clone.style.height = 'auto';
-  clone.style.minHeight = 'auto';
+  // 5. Build storyboard slides HTML for the interactive section
+  const slidesHTML = (storySlides || []).map((slide, idx) => {
+    const bgStyle = slide.mapUrl
+      ? `background-image: url(${slide.mapUrl}); background-size: cover; background-position: center;`
+      : 'background-color: #1a1a2e;';
+    return `
+      <div class="ts-bg-layer" data-slide-idx="${idx}" style="${bgStyle}"></div>
+    `;
+  }).join('');
 
-  // 6. Make storyboard slides all visible
-  clone.querySelectorAll('.ts-card').forEach(card => {
-    card.classList.add('ts-card--visible');
-    card.style.opacity = '1';
-    card.style.transform = 'none';
-  });
-  clone.querySelectorAll('.ts-snap-page').forEach(page => {
-    page.style.scrollSnapAlign = 'none';
-    page.style.height = 'auto';
-    page.style.minHeight = 'auto';
-    page.style.paddingTop = '2rem';
-    page.style.paddingBottom = '2rem';
-  });
-  const scrollPanel = clone.querySelector('.ts-scroll-panel');
-  if (scrollPanel) {
-    scrollPanel.style.position = 'relative';
-    scrollPanel.style.height = 'auto';
-    scrollPanel.style.overflow = 'visible';
-    scrollPanel.style.scrollSnapType = 'none';
-  }
-  const storyboard = clone.querySelector('.ts-storyboard');
-  if (storyboard) {
-    storyboard.style.height = 'auto';
-    storyboard.style.minHeight = 'auto';
-  }
-  // Show first background layer
-  clone.querySelectorAll('.ts-bg-layer').forEach((layer, i) => {
-    if (i === 0) {
-      layer.classList.add('ts-bg-layer--active');
-      layer.style.position = 'absolute';
-      layer.style.opacity = '1';
-    } else {
-      layer.style.display = 'none';
-    }
-  });
+  const cardsHTML = (storySlides || []).map((slide, idx) => `
+    <div class="ts-snap-page" data-idx="${idx}">
+      <div class="ts-card">
+        <div class="ts-card-chapter">Chapter ${idx + 1}</div>
+        <h3 class="ts-card-title">
+          ${slide.icon ? `<span class="ts-card-icon">${slide.icon}</span>` : ''} ${slide.title || ''}
+        </h3>
+        ${slide.imageUrl ? `<img class="ts-card-image" src="${slide.imageUrl}" alt="${slide.title || ''}" loading="lazy" onerror="this.style.display='none'"/>` : ''}
+        <p class="ts-card-narrative" style="white-space: pre-line;">${slide.narrative || ''}</p>
+      </div>
+    </div>
+  `).join('');
 
-  // Make story sections visible
-  clone.querySelectorAll('.story-section').forEach(section => {
-    section.classList.add('visible');
-    section.style.opacity = '1';
-    section.style.transform = 'none';
-  });
+  const dotsHTML = (storySlides || []).map((_, idx) => `
+    <button class="ts-dot" data-dot-idx="${idx}" title="Chapter ${idx + 1}"></button>
+  `).join('');
 
-  // 7. Build the final HTML — scrollable and interactive
+  const storyboardSection = storySlides && storySlides.length > 0 ? `
+    <div class="ts-storyboard" id="interactive-storyboard">
+      ${slidesHTML}
+      <div class="ts-map-overlay"></div>
+      <div class="ts-scroll-panel" id="ts-scroll-panel">
+        ${cardsHTML}
+      </div>
+      <div class="ts-dots" id="ts-dots">
+        ${dotsHTML}
+      </div>
+      <div class="ts-village-badge">
+        <span class="ts-village-badge-label"> ${villageName || 'Village'}</span>
+      </div>
+    </div>
+  ` : '';
+
+  // 6. Build the interactive storyboard JavaScript
+  const storyboardJS = storySlides && storySlides.length > 0 ? `
+    (function() {
+      var scrollPanel = document.getElementById('ts-scroll-panel');
+      var pages = scrollPanel.querySelectorAll('.ts-snap-page');
+      var bgLayers = document.querySelectorAll('.ts-bg-layer');
+      var dots = document.querySelectorAll('.ts-dot');
+      var activeIdx = 0;
+
+      function setActive(idx) {
+        if (idx === activeIdx) return;
+        activeIdx = idx;
+        // Cross-fade backgrounds
+        bgLayers.forEach(function(layer, i) {
+          layer.classList.toggle('ts-bg-layer--active', i === idx);
+        });
+        // Update dots
+        dots.forEach(function(dot, i) {
+          dot.classList.toggle('ts-dot--active', i === idx);
+        });
+        // Animate cards
+        pages.forEach(function(page, i) {
+          var card = page.querySelector('.ts-card');
+          if (card) card.classList.toggle('ts-card--visible', i === idx);
+        });
+      }
+
+      // IntersectionObserver for scroll-snap detection
+      var observer = new IntersectionObserver(function(entries) {
+        entries.forEach(function(entry) {
+          if (entry.isIntersecting && entry.intersectionRatio >= 0.5) {
+            var idx = parseInt(entry.target.getAttribute('data-idx'), 10);
+            if (!isNaN(idx)) setActive(idx);
+          }
+        });
+      }, { root: scrollPanel, threshold: [0.5, 0.8] });
+
+      pages.forEach(function(page) { observer.observe(page); });
+
+      // Dot click navigation
+      dots.forEach(function(dot) {
+        dot.addEventListener('click', function() {
+          var idx = parseInt(dot.getAttribute('data-dot-idx'), 10);
+          if (!isNaN(idx) && pages[idx]) {
+            pages[idx].scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+        });
+      });
+
+      // Initialize first slide
+      setActive(0);
+      if (bgLayers[0]) bgLayers[0].classList.add('ts-bg-layer--active');
+      if (dots[0]) dots[0].classList.add('ts-dot--active');
+      var firstCard = pages[0] && pages[0].querySelector('.ts-card');
+      if (firstCard) firstCard.classList.add('ts-card--visible');
+    })();
+  ` : '';
+
+  // 7. Build the final HTML — fully scrollable with interactive storyboard
   const htmlContent = `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>CSVAT Report — ${villageName || 'Village'}</title>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
   <style>
     :root {
       --navbar-height: 0px;
+      --bg: #f8fafc;
+      --card: #ffffff;
+      --text: #1e293b;
+      --text-secondary: #64748b;
+      --text-muted: #94a3b8;
+      --heading: #0f172a;
+      --border: #e2e8f0;
+      --card-shadow: 0 4px 6px -1px rgba(0,0,0,0.05), 0 2px 4px -1px rgba(0,0,0,0.03);
     }
-    * { box-sizing: border-box; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
     html { scroll-behavior: smooth; }
     body {
-      margin: 0; padding: 0;
       font-family: 'Inter', sans-serif;
-      background: #f8fafc;
+      background: var(--bg);
+      color: var(--text);
       overflow-y: auto;
       overflow-x: hidden;
+      min-height: 100vh;
     }
 
-    /* Override fixed/absolute report to flow naturally */
-    .report-viewer-overlay {
-      position: relative !important;
-      top: 0 !important;
-      height: auto !important;
-      min-height: auto !important;
-      overflow: visible !important;
-    }
-    .report-viewer-scroll {
-      height: auto !important;
-      overflow: visible !important;
-    }
-
-    /* Storyboard: linearize for scrollable page */
-    .ts-storyboard {
-      height: auto !important;
-      min-height: auto !important;
-      overflow: visible !important;
-    }
-    .ts-scroll-panel {
-      position: relative !important;
-      height: auto !important;
-      overflow: visible !important;
-      scroll-snap-type: none !important;
-    }
-    .ts-snap-page {
-      height: auto !important;
-      min-height: auto !important;
-      scroll-snap-align: none !important;
-      padding-top: 2rem !important;
-      padding-bottom: 2rem !important;
-    }
-    .ts-card {
-      opacity: 1 !important;
-      transform: none !important;
-    }
-    .ts-card-chapter, .ts-card-title, .ts-card-narrative, .ts-card-image {
-      opacity: 1 !important;
-      transform: none !important;
-    }
-    .ts-bg-layer { position: absolute; }
-    .ts-dots { display: none; }
-    .ts-edit-btn, .story-close-btn, .export-bar { display: none; }
-
-    /* Story sections: all visible */
-    .story-section {
-      opacity: 1 !important;
-      transform: none !important;
-    }
-
-    /* Tables: keep scrollable on narrow screens */
-    .data-table { overflow-x: auto; display: block; }
-
-    /* Smooth scroll-to-section nav */
+    /* ─── Sticky Navigation ─── */
     .html-nav {
       position: sticky;
       top: 0;
       z-index: 100;
       background: rgba(255,255,255,0.95);
       backdrop-filter: blur(10px);
-      border-bottom: 1px solid #e2e8f0;
+      -webkit-backdrop-filter: blur(10px);
+      border-bottom: 1px solid var(--border);
       padding: 0.6rem 1rem;
       display: flex;
       gap: 0.75rem;
@@ -395,33 +404,289 @@ function downloadReportAsHTML(results, storySlides, villageName) {
       border-radius: 6px;
       transition: background 0.2s;
     }
-    .html-nav a:hover {
-      background: rgba(139,92,246,0.1);
+    .html-nav a:hover { background: rgba(139,92,246,0.1); }
+
+    /* ─── Report Content Section ─── */
+    .report-viewer-content {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 2rem 1.5rem;
+    }
+
+    /* ─── Cards ─── */
+    .card {
+      background: var(--card);
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      box-shadow: var(--card-shadow);
+      padding: 1.5rem;
+      margin-bottom: 1.5rem;
+    }
+    .card-header {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-bottom: 1rem;
+      padding-bottom: 0.75rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .card-header .icon { font-size: 1.3rem; }
+    .card-header h3 { font-size: 1.15rem; font-weight: 700; color: var(--heading); margin: 0; }
+
+    /* ─── Stats Grid ─── */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 1rem;
+    }
+    .stat-card {
+      background: #f8fafc;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      padding: 1rem;
+      text-align: center;
+    }
+    .stat-card .value { font-size: 1.5rem; font-weight: 800; }
+    .stat-card .label { font-size: 0.78rem; color: var(--text-secondary); margin-top: 0.25rem; }
+    .stat-blue .value { color: #2563eb; }
+    .stat-green .value { color: #16a34a; }
+    .stat-amber .value { color: #d97706; }
+    .stat-red .value { color: #dc2626; }
+
+    /* ─── Data Tables ─── */
+    .data-table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+    .data-table th, .data-table td { padding: 0.65rem 0.75rem; text-align: right; border-bottom: 1px solid var(--border); font-size: 0.85rem; }
+    .data-table th { color: var(--heading); font-weight: 600; font-size: 0.72rem; text-transform: uppercase; background: #f8fafc; letter-spacing: 0.05em; }
+    .data-table th:first-child, .data-table td:first-child { text-align: left; }
+
+    /* ─── Chart Wrapper ─── */
+    .chart-wrapper { position: relative; height: 300px; margin: 1rem 0; }
+    .chart-wrapper img { width: 100%; height: 100%; object-fit: contain; }
+
+    /* ─── Narrative ─── */
+    .narrative { color: var(--text); line-height: 1.7; font-size: 0.9rem; margin-top: 1rem; background: #f1f5f9; padding: 1rem; border-radius: 8px; border-left: 4px solid #3b82f6; }
+
+    /* ─── Boundary Info ─── */
+    .boundary-info { display: flex; gap: 1.5rem; flex-wrap: wrap; justify-content: center; }
+    .boundary-info-item { display: flex; flex-direction: column; align-items: center; gap: 0.15rem; }
+    .boundary-info-item .label { font-size: 0.68rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); }
+    .boundary-info-item .value { font-size: 0.9rem; font-weight: 600; color: var(--heading); }
+
+    /* ─── Export bar: hide in HTML export ─── */
+    .export-bar { display: none !important; }
+
+    /* ═══ TERRASO STORYBOARD (fully interactive in HTML export) ═══ */
+    .ts-storyboard {
+      position: relative;
+      width: 90%;
+      max-width: 1200px;
+      height: 80vh;
+      margin: 2rem auto;
+      border-radius: 16px;
+      overflow: hidden;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.3), 0 0 0 1px rgba(255,255,255,0.05);
+    }
+    .ts-bg-layer {
+      position: absolute;
+      inset: 0;
+      background-size: cover;
+      background-position: center;
+      background-repeat: no-repeat;
+      z-index: 0;
+      opacity: 0;
+      transition: opacity 0.8s ease-in-out;
+    }
+    .ts-bg-layer--active { opacity: 1; }
+    .ts-map-overlay {
+      position: absolute;
+      inset: 0;
+      z-index: 1;
+      background: linear-gradient(to right, rgba(0,0,0,0.7) 0%, rgba(0,0,0,0.4) 45%, rgba(0,0,0,0.15) 100%);
+      pointer-events: none;
+    }
+    .ts-scroll-panel {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      overflow-y: auto;
+      overflow-x: hidden;
+      z-index: 2;
+      scroll-snap-type: y mandatory;
+      scroll-behavior: smooth;
+      scrollbar-width: none;
+      -ms-overflow-style: none;
+    }
+    .ts-scroll-panel::-webkit-scrollbar { display: none; }
+    .ts-snap-page {
+      height: 100%;
+      min-height: 100%;
+      scroll-snap-align: center;
+      display: flex;
+      align-items: center;
+      padding: 2rem 52% 2rem 1.5rem;
+      box-sizing: border-box;
+    }
+    .ts-card {
+      background: rgba(0,0,0,0.78);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 12px;
+      padding: 2rem;
+      color: #ffffff;
+      width: 100%;
+      opacity: 0;
+      transform: translateY(30px) scale(0.97);
+      transition: opacity 0.5s cubic-bezier(0.16,1,0.3,1), transform 0.5s cubic-bezier(0.16,1,0.3,1);
+    }
+    .ts-card--visible {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+    .ts-card-chapter {
+      font-size: 0.68rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+      color: rgba(255,255,255,0.4);
+      margin-bottom: 0.6rem;
+      opacity: 0;
+      transform: translateY(10px);
+      transition: opacity 0.35s ease-out 0.1s, transform 0.35s ease-out 0.1s;
+    }
+    .ts-card--visible .ts-card-chapter { opacity: 1; transform: translateY(0); }
+    .ts-card-title {
+      font-family: 'Playfair Display', serif;
+      font-size: 1.35rem;
+      font-weight: 700;
+      line-height: 1.3;
+      color: #ffffff;
+      margin: 0 0 1rem 0;
+      opacity: 0;
+      transform: translateY(14px);
+      transition: opacity 0.4s ease-out 0.2s, transform 0.4s ease-out 0.2s;
+    }
+    .ts-card--visible .ts-card-title { opacity: 1; transform: translateY(0); }
+    .ts-card-icon { font-size: 1.2rem; margin-right: 0.2rem; }
+    .ts-card-image {
+      width: 100%;
+      max-height: 180px;
+      object-fit: cover;
+      border-radius: 8px;
+      margin-bottom: 1rem;
+      opacity: 0;
+      transform: translateY(10px);
+      transition: opacity 0.4s ease-out 0.25s, transform 0.4s ease-out 0.25s;
+    }
+    .ts-card--visible .ts-card-image { opacity: 1; transform: translateY(0); }
+    .ts-card-narrative {
+      font-size: 0.9rem;
+      font-weight: 400;
+      line-height: 1.75;
+      color: rgba(255,255,255,0.82);
+      margin: 0;
+      opacity: 0;
+      transform: translateY(18px);
+      transition: opacity 0.45s ease-out 0.3s, transform 0.45s ease-out 0.3s;
+    }
+    .ts-card--visible .ts-card-narrative { opacity: 1; transform: translateY(0); }
+    .ts-dots {
+      position: absolute;
+      right: 1.5rem;
+      top: 50%;
+      transform: translateY(-50%);
+      z-index: 5;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .ts-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      border: 2px solid rgba(255,255,255,0.4);
+      background: transparent;
+      cursor: pointer;
+      padding: 0;
+      transition: all 0.3s ease;
+    }
+    .ts-dot--active {
+      background: #ffffff;
+      border-color: #ffffff;
+      transform: scale(1.3);
+      box-shadow: 0 0 8px rgba(255,255,255,0.4);
+    }
+    .ts-dot:hover:not(.ts-dot--active) {
+      border-color: rgba(255,255,255,0.7);
+      background: rgba(255,255,255,0.2);
+    }
+    .ts-village-badge {
+      position: absolute;
+      top: 1rem;
+      right: 1rem;
+      z-index: 3;
+      background: rgba(0,0,0,0.6);
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 8px;
+      padding: 0.5rem 1rem;
+    }
+    .ts-village-badge-label {
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: #ffffff;
+    }
+
+    /* Responsive */
+    @media (max-width: 768px) {
+      .ts-storyboard { width: 95%; height: 70vh; }
+      .ts-snap-page { padding: 1.5rem 1rem; }
+      .ts-card { padding: 1.25rem; }
+      .ts-card-title { font-size: 1.15rem; }
+      .ts-card-narrative { font-size: 0.85rem; }
+      .ts-dots { right: 0.75rem; gap: 8px; }
+      .ts-dot { width: 8px; height: 8px; }
     }
 
     @media print {
       body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
       .html-nav { display: none; }
+      .ts-storyboard { height: auto; }
+      .ts-scroll-panel { position: relative; height: auto; overflow: visible; scroll-snap-type: none; }
+      .ts-snap-page { height: auto; min-height: auto; scroll-snap-align: none; padding: 1.5rem; }
+      .ts-card { opacity: 1; transform: none; }
+      .ts-card-chapter, .ts-card-title, .ts-card-narrative, .ts-card-image { opacity: 1; transform: none; }
+      .ts-dots { display: none; }
     }
-    ${allCSS}
   </style>
 </head>
 <body>
-  <div style="text-align:center;padding:1.5rem;background:linear-gradient(135deg,#1a1a2e,#16213e);color:#fff;">
-    <h1 style="font-family:'Playfair Display',serif;font-size:1.5rem;margin:0;">CSVAT Village Analytics Report</h1>
-    <p style="color:rgba(255,255,255,0.6);font-size:0.85rem;margin-top:0.25rem;">${villageName || 'Village'} — Generated ${new Date().toLocaleDateString()}</p>
+  <div style="text-align:center;padding:1.5rem 1.5rem 1.25rem;background:linear-gradient(135deg,#1a1a2e,#16213e);color:#fff;">
+    <h1 style="font-family:'Playfair Display',serif;font-size:1.6rem;margin:0;">CSVAT Village Analytics Report</h1>
+    <p style="color:rgba(255,255,255,0.6);font-size:0.85rem;margin-top:0.35rem;">${villageName || 'Village'} — Generated ${new Date().toLocaleDateString()}</p>
   </div>
   <nav class="html-nav">
-    <a href="#report-analytics">Analytics</a>
-    <a href="#report-storyboard">Storyboard</a>
-    <a href="#report-footer">Footer</a>
+    <a href="#report-analytics">📊 Analytics</a>
+    <a href="#report-storyboard">📖 Storyboard</a>
+    <a href="#report-footer">📄 Footer</a>
   </nav>
-  <div id="report-analytics"></div>
-  ${clone.outerHTML}
-  <div id="report-storyboard"></div>
+
+  <div id="report-analytics">
+    ${clone.outerHTML}
+  </div>
+
+  <div id="report-storyboard" style="padding: 0 0 2rem;">
+    ${storyboardSection}
+  </div>
+
   <div id="report-footer" style="text-align:center;padding:1.5rem;color:#94a3b8;font-size:0.8rem;border-top:1px solid #e2e8f0;">
     Generated by CSVAT &bull; CoRE Stack Analytics Platform &bull; ${new Date().toISOString().slice(0, 10)}
   </div>
+
+  <script>
+    ${storyboardJS}
+  </script>
 </body>
 </html>`;
 
