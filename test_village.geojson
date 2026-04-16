@@ -1,9 +1,0 @@
-{
-  "type": "Feature",
-  "properties": {"name": "Test Village"},
-  "geometry": {
-    "type": "Polygon",
-    "coordinates": [[[92.75, 24.9], [92.76, 24.9], [92.76, 24.91], [92.75, 24.91], [92.75, 24.9]]]
-  }
-}
-

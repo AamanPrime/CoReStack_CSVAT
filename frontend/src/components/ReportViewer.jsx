@@ -754,7 +754,7 @@ export default function ReportViewer({
             padding: '0.4rem 1rem', borderRadius: '8px',
             fontSize: '0.8rem', fontWeight: 600,
           }}>
-            📡 {data_source}
+             {data_source}
           </div>
         )}
         <div className="boundary-info" style={{ marginTop: '1rem' }}>

@@ -15,6 +15,10 @@ services:
       - "5435:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+      # Auto-init on first boot: schema + village stories seed
+      - ./backend/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - ./backend/docker/init-db.sh:/docker-entrypoint-initdb.d/02-seed.sh:ro
+      - ./backend/app/data/village_stories_batch_1_output.json:/docker-entrypoint-initdb.d/village_stories_batch_1_output.json:ro
     healthcheck:
       test: [ "CMD-SHELL", "pg_isready -U csvat -d csvat_db" ]
       interval: 10s

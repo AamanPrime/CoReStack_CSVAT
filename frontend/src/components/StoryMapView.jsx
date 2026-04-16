@@ -623,7 +623,7 @@ export default function StoryMapView({
             </div>
             {data_source && (
               <div className={`data-badge ${data_source.includes('GEE') ? 'gee' : 'corestack'}`}>
-                📡 {data_source}
+                 {data_source}
               </div>
             )}
           </div>

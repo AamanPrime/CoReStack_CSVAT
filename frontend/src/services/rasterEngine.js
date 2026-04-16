@@ -391,61 +391,6 @@ compute_raster_analytics(extracted_data, pixel_area_ha)
     throw new Error('Client-side raster computation failed');
   }
 
-  // Step 5: Surface water via MWS intersection (also client-side via Pyodide)
-  let waterData = null;
-  if (state && district && tehsil) {
-    try {
-      onProgress?.('Computing surface water via MWS intersection (Pyodide)…');
-
-      // Install Shapely for polygon intersection
-      try {
-        await pyodide.runPythonAsync(`import micropip; await micropip.install('shapely')`);
-      } catch { try { await pyodide.loadPackage('shapely'); } catch {} }
-
-      await pyodide.runPythonAsync(WATER_MWS_PYTHON);
-
-      const [mwsResp, tehsilResp] = await Promise.all([
-        fetch(`${API_BASE}/api/v1/corestack/mws-geometries?state=${enc(state)}&district=${enc(district)}&tehsil=${enc(tehsil)}`),
-        fetch(`${API_BASE}/api/v1/corestack/tehsil-data?state=${enc(state)}&district=${enc(district)}&tehsil=${enc(tehsil)}`),
-      ]);
-
-      if (mwsResp.ok && tehsilResp.ok) {
-        const mwsJson = await mwsResp.json();
-        const tehsilJson = await tehsilResp.json();
-        let mwsFeatures = [];
-        const mwsData = mwsJson.data;
-        if (mwsData?.type === 'FeatureCollection') mwsFeatures = mwsData.features || [];
-        else if (Array.isArray(mwsData)) mwsFeatures = mwsData;
-
-        const waterRecords = tehsilJson.data?.surfaceWaterBodies_annual || [];
-
-        if (mwsFeatures.length > 0 && waterRecords.length > 0) {
-          pyodide.globals.set('w_village', pyodide.toPy(villageGeojson));
-          pyodide.globals.set('w_mws', pyodide.toPy(mwsFeatures));
-          pyodide.globals.set('w_records', pyodide.toPy(waterRecords));
-          pyodide.globals.set('w_years', pyodide.toPy(selectedYears));
-
-          const waterRaw = await pyodide.runPythonAsync(`
-aggregate_water_mws(w_village, w_mws, w_records, w_years)
-          `);
-
-          let waterResult = typeof deepConvertPyodide === 'function'
-            ? deepConvertPyodide(waterRaw)
-            : (waterRaw?.toJs?.({ dict_converter: Object.fromEntries }) ?? waterRaw);
-          waterResult = JSON.parse(JSON.stringify(waterResult, (_k, v) =>
-            v instanceof Map ? Object.fromEntries(v) : v
-          ));
-
-          if (Array.isArray(waterResult) && waterResult.length > 0) {
-            waterData = waterResult;
-          }
-        }
-      }
-    } catch (e) {
-      console.warn('[Raster WASM] Water MWS aggregation failed:', e.message);
-    }
-  }
-
   onProgress?.('Building report…');
 
   // Step 6: Transform into standard CSVAT report schema
@@ -472,10 +417,8 @@ aggregate_water_mws(w_village, w_mws, w_records, w_years)
     };
   }
 
-  // Surface water: use raster-derived if it has actual data, else fall back to MWS vector
-  const rasterWaterHasData = pyResult.surface_water?.some(r => r.total_water_ha > 0);
-
-  if (rasterWaterHasData) {
+  // Surface water: always use pixel-level raster data (no MWS vector fallback)
+  if (pyResult.surface_water?.length > 0) {
     results.surface_water = {
       village_name: villageName,
       data: pyResult.surface_water.map(r => ({
@@ -485,18 +428,6 @@ aggregate_water_mws(w_village, w_mws, w_records, w_years)
       })),
       source: 'IndiaSAT LULC v3 Raster (10m)',
       processing: 'Client-side raster class extraction (Pyodide WASM)',
-    };
-  } else if (waterData) {
-    // LULC raster had no water pixels — use MWS vector water (captures smaller bodies)
-    results.surface_water = {
-      village_name: villageName,
-      data: waterData.map(r => ({
-        year: r.fiscal_year, fiscal_year: r.fiscal_year,
-        kharif_ha: r.kharif_ha, rabi_ha: r.rabi_ha,
-        zaid_ha: r.zaid_ha, total_water_ha: r.total_water_ha,
-      })),
-      source: 'CoRE Stack MWS Vector (surfaceWaterBodies_annual)',
-      processing: 'Client-side MWS intersection (Pyodide/Shapely)',
     };
   }
 
@@ -629,62 +560,9 @@ compute_raster_analytics(extracted_data, pixel_area_ha)
     throw new Error('Client-side raster computation failed');
   }
 
-  // Step 4: Surface water via MWS intersection (same as server-extract path)
-  let waterData = null;
-  if (state && district && tehsil) {
-    try {
-      onProgress?.('Computing surface water via MWS intersection (Pyodide)…');
-      try {
-        await pyodide.runPythonAsync(`import micropip; await micropip.install('shapely')`);
-      } catch { try { await pyodide.loadPackage('shapely'); } catch {} }
-
-      await pyodide.runPythonAsync(WATER_MWS_PYTHON);
-
-      const [mwsResp, tehsilResp] = await Promise.all([
-        fetch(`${API_BASE}/api/v1/corestack/mws-geometries?state=${enc(state)}&district=${enc(district)}&tehsil=${enc(tehsil)}`),
-        fetch(`${API_BASE}/api/v1/corestack/tehsil-data?state=${enc(state)}&district=${enc(district)}&tehsil=${enc(tehsil)}`),
-      ]);
-
-      if (mwsResp.ok && tehsilResp.ok) {
-        const mwsJson = await mwsResp.json();
-        const tehsilJson = await tehsilResp.json();
-        let mwsFeatures = [];
-        const mwsData = mwsJson.data;
-        if (mwsData?.type === 'FeatureCollection') mwsFeatures = mwsData.features || [];
-        else if (Array.isArray(mwsData)) mwsFeatures = mwsData;
-
-        const waterRecords = tehsilJson.data?.surfaceWaterBodies_annual || [];
-
-        if (mwsFeatures.length > 0 && waterRecords.length > 0) {
-          pyodide.globals.set('w_village', pyodide.toPy(villageGeojson));
-          pyodide.globals.set('w_mws', pyodide.toPy(mwsFeatures));
-          pyodide.globals.set('w_records', pyodide.toPy(waterRecords));
-          pyodide.globals.set('w_years', pyodide.toPy(selectedYears));
-
-          const waterRaw = await pyodide.runPythonAsync(`
-aggregate_water_mws(w_village, w_mws, w_records, w_years)
-          `);
-
-          let waterResult = typeof deepConvertPyodide === 'function'
-            ? deepConvertPyodide(waterRaw)
-            : (waterRaw?.toJs?.({ dict_converter: Object.fromEntries }) ?? waterRaw);
-          waterResult = JSON.parse(JSON.stringify(waterResult, (_k, v) =>
-            v instanceof Map ? Object.fromEntries(v) : v
-          ));
-
-          if (Array.isArray(waterResult) && waterResult.length > 0) {
-            waterData = waterResult;
-          }
-        }
-      }
-    } catch (e) {
-      console.warn('[Tiled Raster] Water MWS aggregation failed:', e.message);
-    }
-  }
-
   onProgress?.('Building report…');
 
-  // Step 5: Transform into standard CSVAT report schema (identical to server-extract)
+  // Step 4: Transform into standard CSVAT report schema
   const results = {
     village_name: villageName,
     state, district, tehsil,
@@ -708,8 +586,8 @@ aggregate_water_mws(w_village, w_mws, w_records, w_years)
     };
   }
 
-  const rasterWaterHasData = pyResult.surface_water?.some(r => r.total_water_ha > 0);
-  if (rasterWaterHasData) {
+  // Surface water: pixel-level only
+  if (pyResult.surface_water?.length > 0) {
     results.surface_water = {
       village_name: villageName,
       data: pyResult.surface_water.map(r => ({
@@ -719,17 +597,6 @@ aggregate_water_mws(w_village, w_mws, w_records, w_years)
       })),
       source: 'IndiaSAT LULC v3 Raster (10m, client-tiled)',
       processing: '100% client-side (geotiff.js + Pyodide WASM)',
-    };
-  } else if (waterData) {
-    results.surface_water = {
-      village_name: villageName,
-      data: waterData.map(r => ({
-        year: r.fiscal_year, fiscal_year: r.fiscal_year,
-        kharif_ha: r.kharif_ha, rabi_ha: r.rabi_ha,
-        zaid_ha: r.zaid_ha, total_water_ha: r.total_water_ha,
-      })),
-      source: 'CoRE Stack MWS Vector (surfaceWaterBodies_annual)',
-      processing: 'Client-side MWS intersection (Pyodide/Shapely)',
     };
   }
 
@@ -785,4 +652,3 @@ aggregate_water_mws(w_village, w_mws, w_records, w_years)
   onProgress?.('Tiled raster analytics complete! (100% client-side — zero server storage)');
   return results;
 }
-

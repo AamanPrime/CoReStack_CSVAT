@@ -1,80 +1,116 @@
 # CoRE Stack Village Analytics Tool (CSVAT)
 
-A full-stack geospatial analytics platform built with **FastAPI**, **React (Vite)**, **PostgreSQL/PostGIS**, **Redis**, and **Celery**.
+A full-stack geospatial analytics platform that generates village-level socio-ecological insights from [CoRE Stack](https://core-stack.org/) satellite datasets. Built with **FastAPI**, **React (Vite)**, **PostgreSQL/PostGIS**, **Redis**, **Celery**, and **Pyodide (Python WASM)**.
 
 ---
 
 ## Prerequisites
 
-| Tool               | Version | Install Guide                           |
-| ------------------ | ------- | --------------------------------------- |
-| **Docker**         | ≥ 24.x  | https://docs.docker.com/engine/install/ |
-| **Docker Compose** | ≥ 2.x   | Included with Docker Desktop            |
-| **Node.js**        | ≥ 18.x  | https://nodejs.org/                     |
-| **npm**            | ≥ 9.x   | Comes with Node.js                      |
+| Tool               | Version | Install Guide                                      |
+| ------------------ | ------- | -------------------------------------------------- |
+| **Docker**         | ≥ 24.x  | https://docs.docker.com/engine/install/             |
+| **Docker Compose** | ≥ 2.x   | Included with Docker Desktop                       |
+| **Node.js**        | ≥ 18.x  | https://nodejs.org/                                |
+| **npm**            | ≥ 9.x   | Comes with Node.js                                 |
+| **Git**            | ≥ 2.x   | https://git-scm.com/                               |
 
 ---
 
 ## Project Structure
 
 ```
-CSVAT_CoreStack/
-├── backend/               # FastAPI backend
-│   ├── app/               # Application source code
-│   ├── Dockerfile         # Backend Docker image
-│   ├── requirements.txt   # Python dependencies
-│   ├── .env               # Backend env vars (gitignored)
-│   └── .env.example       # Template for backend env vars
-├── frontend/              # React + Vite frontend
-│   ├── src/               # Frontend source code
-│   ├── package.json       # Node dependencies
-│   ├── vite.config.js     # Vite configuration
-│   └── .env               # Frontend env vars (gitignored)
-├── docker-compose.yml     # Orchestrates all backend services
+CSVAT_CoReStack/
+├── backend/                    # FastAPI backend
+│   ├── app/                    # Application source code
+│   │   ├── api/                # API route handlers
+│   │   ├── data/               # Village stories JSON seed data
+│   │   ├── models/             # SQLAlchemy ORM models
+│   │   ├── services/           # Core business logic
+│   │   ├── tasks/              # Celery background tasks
+│   │   ├── config.py           # Pydantic settings (env-based)
+│   │   ├── database.py         # SQLAlchemy engine & sessions
+│   │   └── main.py             # FastAPI app entry point
+│   ├── docker/                 # Docker initialization scripts
+│   │   └── init-db.sh          # Auto-seeds DB on first boot
+│   ├── scripts/                # Utility scripts
+│   ├── schema.sql              # Database schema (tables, indexes)
+│   ├── Dockerfile              # Backend Docker image
+│   ├── requirements.txt        # Python dependencies
+│   ├── .env                    # Backend env vars (gitignored)
+│   └── .env.example            # Template for backend env vars
+├── frontend/                   # React + Vite frontend
+│   ├── src/
+│   │   ├── components/         # React UI components
+│   │   ├── pages/              # Page-level components
+│   │   └── services/           # API clients, analytics engines
+│   ├── package.json            # Node dependencies
+│   ├── vite.config.js          # Vite configuration
+│   ├── .env                    # Frontend env vars (gitignored)
+│   └── .env.example            # Template for frontend env vars
+├── docker-compose.yml          # Orchestrates all backend services
 └── README.md
 ```
 
 ---
 
-## Quick Start
+## Installation Guide
 
-### 1. Clone the repository
+### Step 1 — Clone the Repository
 
 ```bash
 git clone <repo-url>
-cd CSVAT_CoreStack
+cd CSVAT_CoReStack
 ```
 
-### 2. Configure environment variables
+### Step 2 — Configure Backend Environment
 
-**Backend** — copy the example and fill in your values:
+Copy the example and fill in your API keys:
 
 ```bash
 cp backend/.env.example backend/.env
 ```
 
-Edit `backend/.env` and set:
+Edit `backend/.env`:
 
-| Variable                 | Description                          |
-| ------------------------ | ------------------------------------ |
-| `DATABASE_URL`           | PostgreSQL connection string         |
-| `REDIS_URL`              | Redis connection string              |
-| `CORESTACK_API_BASE_URL` | CoRE Stack API endpoint              |
-| `CORESTACK_API_KEY`      | Your CoRE Stack API key              |
-| `JWT_SECRET_KEY`         | A random secret for JWT signing      |
-| `GEE_API_KEY`            | Google Earth Engine API key          |
-| `GEE_PROJECT`            | GEE project ID                       |
-| `GEE_SERVICE_ACCOUNT`    | GEE service account email            |
-| `GEE_KEY_FILE`           | Path to GEE service account key JSON |
+```env
+# Database (auto-configured for Docker — change only for external DB)
+DATABASE_URL=postgresql://csvat:csvat_pass@db:5432/csvat_db
 
-**Frontend** — create `frontend/.env`:
+# Redis (auto-configured for Docker)
+REDIS_URL=redis://redis:6379/0
+
+# CoRE Stack API (required — get from https://core-stack.org/)
+CORESTACK_API_BASE_URL=https://api.core-stack.org
+CORESTACK_API_KEY=your-corestack-api-key
+
+# JWT Authentication
+JWT_SECRET_KEY=change-me-to-a-random-secret
+JWT_ALGORITHM=HS256
+JWT_EXPIRY_MINUTES=60
+
+# Google Earth Engine (required for raster extraction)
+GEE_API_KEY=your-gee-api-key
+GEE_PROJECT=your-gcp-project-id
+GEE_SERVICE_ACCOUNT=your-sa@project.iam.gserviceaccount.com
+GEE_KEY_FILE=path/to/gee-key.json
+```
+
+> **Important**: The `DATABASE_URL` and `REDIS_URL` values above use Docker service names (`db`, `redis`) — these resolve automatically inside Docker Compose. Do not change them unless you are running without Docker.
+
+### Step 3 — Configure Frontend Environment
 
 ```bash
+cp frontend/.env.example frontend/.env
+```
+
+Edit `frontend/.env`:
+
+```env
 VITE_API_BASE=http://localhost:8000
 VITE_GOOGLE_MAPS_KEY=your-google-maps-api-key
 ```
 
-### 3. Start backend services (Docker)
+### Step 4 — Start Backend Services (Docker)
 
 ```bash
 docker compose up -d --build
@@ -82,14 +118,23 @@ docker compose up -d --build
 
 This starts **4 containers**:
 
-| Container      | Service              | Port          |
-| -------------- | -------------------- | ------------- |
-| `csvat_db`     | PostgreSQL + PostGIS | `5435 → 5432` |
-| `csvat_redis`  | Redis                | `6379 → 6379` |
-| `csvat_api`    | FastAPI backend      | `8006 → 8000` |
-| `csvat_worker` | Celery worker        | —             |
+| Container      | Service              | Port          | Description                           |
+| -------------- | -------------------- | ------------- | ------------------------------------- |
+| `csvat_db`     | PostgreSQL + PostGIS | `5435 → 5432` | Spatial database with auto-init       |
+| `csvat_redis`  | Redis                | internal      | Celery broker & result backend        |
+| `csvat_api`    | FastAPI backend      | `8000 → 8000` | REST API server (hot-reload enabled)  |
+| `csvat_worker` | Celery worker        | —             | Background analytics task processing  |
 
-### 4. Start frontend dev server
+**On first boot**, the database automatically:
+1. Creates all tables from `schema.sql`
+2. Seeds **312 village stories** from `village_stories_batch_1_output.json`
+
+> To re-initialize the database from scratch, remove the volume and restart:
+> ```bash
+> docker compose down -v && docker compose up -d --build
+> ```
+
+### Step 5 — Start Frontend Dev Server
 
 ```bash
 cd frontend
@@ -105,10 +150,21 @@ The frontend will be available at **http://localhost:5173**.
 
 | Service                | URL                         |
 | ---------------------- | --------------------------- |
-| **Frontend**           | http://localhost:5173       |
-| **Backend API**        | http://localhost:8000       |
-| **API Docs (Swagger)** | http://localhost:8000/docs  |
-| **API Docs (ReDoc)**   | http://localhost:8000/redoc |
+| **Frontend**           | http://localhost:5173        |
+| **Backend API**        | http://localhost:8000        |
+| **API Docs (Swagger)** | http://localhost:8000/docs   |
+| **API Docs (ReDoc)**   | http://localhost:8000/redoc  |
+| **Health Check**       | http://localhost:8000/health |
+
+---
+
+## API Keys Required
+
+| Key                    | Provider                      | Used For                                 |
+| ---------------------- | ----------------------------- | ---------------------------------------- |
+| `CORESTACK_API_KEY`    | [CoRE Stack](https://core-stack.org/) | MWS data, village geometries, raster layers |
+| `GEE_SERVICE_ACCOUNT`  | [Google Earth Engine](https://earthengine.google.com/) | IndiaSAT LULC raster extraction, GEE fallback |
+| `VITE_GOOGLE_MAPS_KEY` | [Google Cloud Console](https://console.cloud.google.com/) | Maps display, Places autocomplete |
 
 ---
 
@@ -132,10 +188,11 @@ docker compose logs -f db
 docker compose down
 ```
 
-### Stop and remove volumes (⚠️ deletes database data)
+### Reset database (⚠️ deletes all data)
 
 ```bash
 docker compose down -v
+docker compose up -d --build
 ```
 
 ### Rebuild after code/dependency changes
@@ -150,23 +207,78 @@ docker compose up -d --build
 docker compose ps
 ```
 
+### Manually seed village stories (if DB already exists)
+
+```bash
+# Via API endpoint
+curl -X POST http://localhost:8000/api/v1/village-stories/seed
+
+# Via script (from host machine)
+cd backend && python scripts/seed_stories.py app/data/village_stories_batch_1_output.json
+```
+
+---
+
+## Architecture Overview
+
+```
+┌──────────────────────────────────────────────────────────┐
+│                    React Frontend (Vite)                  │
+│  ┌─────────────┐  ┌────────────┐  ┌───────────────────┐  │
+│  │ Dashboard    │  │ Storyboard │  │ Report Viewer     │  │
+│  └──────┬──────┘  └─────┬──────┘  └────────┬──────────┘  │
+│         │               │                  │              │
+│  ┌──────┴───────────────┴──────────────────┴──────────┐  │
+│  │  wasmEngine.js  │  rasterEngine.js  │  tileEngine   │  │
+│  │  (Pyodide WASM) │  (Client Raster)  │  (geotiff.js) │  │
+│  └──────────────────────┬─────────────────────────────┘  │
+└─────────────────────────┼────────────────────────────────┘
+                          │ HTTP API
+┌─────────────────────────┼────────────────────────────────┐
+│                  FastAPI Backend                          │
+│  ┌──────────┐  ┌───────┴──────┐  ┌─────────────────────┐ │
+│  │ CoRE     │  │ GEE Proxy    │  │ Raster Proxy        │ │
+│  │ Stack    │  │ (LULC/Water/ │  │ (GeoServer/GEE      │ │
+│  │ Proxy    │  │  NDVI)       │  │  tile URLs)         │ │
+│  └────┬─────┘  └──────┬───────┘  └──────┬──────────────┘ │
+│       │               │                 │                 │
+│  ┌────┴───────────────┴─────────────────┴──────────────┐ │
+│  │  PostgreSQL/PostGIS  │  Redis  │  Celery Worker     │ │
+│  └─────────────────────────────────────────────────────┘ │
+└──────────────────────────────────────────────────────────┘
+```
+
+### Computation Paths
+
+| Path             | Resolution | Where           | When                                     |
+| ---------------- | ---------- | --------------- | ---------------------------------------- |
+| **Raster Tiled** | 10m        | 100% Browser    | Default — downloads GeoTIFF tiles client-side |
+| **MWS Vector**   | 10m        | Browser (WASM)  | Fallback — spatial intersection of MWS polygons |
+| **GEE Fallback** | 500m       | Browser (WASM)  | When CoRE Stack data unavailable         |
+
 ---
 
 ## Development Notes
 
-- The **frontend** proxies `/api` requests to the backend (configured in `vite.config.js`).
-- The **backend** uses hot-reload via `--reload` in the Uvicorn command — code changes in `backend/app/` are reflected immediately.
-- The **Celery worker** processes background tasks (analytics jobs, report generation).
-- **PostGIS** is enabled in the database for geospatial queries.
+- The **frontend** runs independently via Vite dev server — no need to rebuild Docker for frontend changes.
+- The **backend** uses hot-reload (`--reload` flag) — code changes in `backend/app/` are reflected immediately.
+- The **Celery worker** must be restarted manually for code changes: `docker compose restart worker`.
+- **PostGIS** is enabled for geospatial queries (village boundary storage, spatial indexing).
+- **Pyodide** (Python WASM) runs in the browser — all analytics computation is client-side by default.
 
 ---
 
 ## Troubleshooting
 
-| Issue                       | Solution                                                       |
-| --------------------------- | -------------------------------------------------------------- |
-| Containers won't start      | Run `docker compose logs` to check errors                      |
-| Port conflict               | Change ports in `docker-compose.yml`                           |
-| Database connection refused | Wait for `csvat_db` health check to pass                       |
-| Frontend can't reach API    | Ensure `VITE_API_BASE` in `frontend/.env` matches the API port |
-| Worker crashes              | Check `docker compose logs worker` for import errors           |
+| Issue                              | Solution                                                                |
+| ---------------------------------- | ----------------------------------------------------------------------- |
+| Containers won't start             | Run `docker compose logs` to check errors                               |
+| Port conflict on 5435              | Change the DB port mapping in `docker-compose.yml`                      |
+| Port conflict on 8000              | Change the API port mapping in `docker-compose.yml`                     |
+| Database connection refused        | Wait for `csvat_db` health check: `docker compose ps`                   |
+| Frontend can't reach API           | Ensure `VITE_API_BASE=http://localhost:8000` in `frontend/.env`         |
+| Worker crashes                     | Check `docker compose logs worker` — usually a missing Python import    |
+| Village stories not loaded         | Run `curl -X POST http://localhost:8000/api/v1/village-stories/seed`    |
+| GEE raster extraction fails        | Verify `GEE_SERVICE_ACCOUNT` and `GEE_KEY_FILE` in `backend/.env`      |
+| Docker builds are slow             | Use `docker compose up -d --build` (builds only changed layers)         |
+| DB needs full reset                | `docker compose down -v && docker compose up -d --build`                |

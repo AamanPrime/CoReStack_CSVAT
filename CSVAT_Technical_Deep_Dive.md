@@ -1328,7 +1328,6 @@ Example: $\text{fiscal\_year}(2023) = \text{"2022-2023"}$
 | `backend/app/services/boundary_service.py`          | ~140  | GeoJSON validation + admin resolution                 |
 | `backend/app/services/report_service.py`            | 452   | Jinja2 HTML report + CSV generation                   |
 | `backend/app/services/pdf_service.py`               | —     | Playwright HTML → PDF                                 |
-| `backend/app/services/raster_service.py`            | ~335  | IndiaSAT GeoTIFF pixel analytics (alternate)          |
 | `backend/app/services/village_search.py`            | —     | Village name search utility                           |
 | `backend/app/services/analytics/cropping.py`        | ~95   | Server-side cropping from MWS data                    |
 | `backend/app/services/analytics/water.py`           | ~90   | Server-side water from MWS data                       |
