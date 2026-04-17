@@ -74,7 +74,7 @@ export default function DesktopDashboard() {
   const availableLayers = [];
   const selectedLayers = ['cropping_intensity', 'surface_water', 'vegetation'];
   const selectedYears = [2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025];
-  const [executionMode, setExecutionMode] = useState('SERVER');
+  const [executionMode, setExecutionMode] = useState('WASM');
   const [results, setResults] = useState(null);
   const [isRunning, setIsRunning] = useState(false);
   const [error, setError] = useState(null);
@@ -468,7 +468,7 @@ export default function DesktopDashboard() {
                       onClick={() => setExecutionMode('SERVER')}
                       id="mode-server-btn"
                     >
-                      🖥️ Server
+                       Server
                     </button>
                   </div>
                   <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>
@@ -512,7 +512,7 @@ export default function DesktopDashboard() {
                     >
                       {isRunning ? (
                         <><span className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }}></span> Processing…</>
-                      ) : '🖥️ Run Analytics (Server)'}
+                      ) : ' Run Analytics (Server)'}
                     </button>
                   )}
                 </>

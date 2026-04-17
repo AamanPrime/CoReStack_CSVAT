@@ -208,6 +208,10 @@ def _run_pipeline(job_params: dict) -> dict:
                 village_name, mws_results["vegetation"], years
             )
 
+        # Cropping intensity change transitions (same as client_tile path)
+        if mws_results.get("crop_intensity_change"):
+            results["crop_intensity_change"] = mws_results["crop_intensity_change"]
+
         results["data_source"] = "corestack_mws"
         results["mws_count"] = mws_results.get("mws_count", 0)
         mws_succeeded = True
