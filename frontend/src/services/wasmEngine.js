@@ -352,17 +352,6 @@ def aggregate_vegetation(intersections, deforest_records, afforest_records, year
         'yearly_data': [],
     }
 
-def aggregate_terrain(intersections, terrain_records):
-    """Aggregate terrain composition from terrain vector."""
-    data_by_uid = build_uid_lookup(terrain_records)
-    terrain_types = ['hill_slope', 'plain', 'ridge', 'slopy', 'valley']
-    result = {}
-    for t in terrain_types:
-        val = weighted_aggregate(intersections, data_by_uid, f'{t}_area_in_ha', 'sum')
-        result[t] = round(val or 0, 2)
-    result['total_area_ha'] = round(sum(result.values()), 2)
-    return result
-
 def aggregate_crop_intensity_change(intersections, crop_change_records):
     """Aggregate cropping intensity transitions from change_detection_cropintensity."""
     data_by_uid = build_uid_lookup(crop_change_records)
@@ -419,7 +408,7 @@ def run_mws_village_analytics(village_geojson, mws_features, tehsil_data,
     crop_change_records = tehsil_data.get('change_detection_cropintensity', []) if isinstance(tehsil_data, dict) else []
 
     # Debug: show keys from first record of each vector
-    for vname, vrecs in [('cropping', cropping_records), ('water', water_records), ('terrain', terrain_records)]:
+    for vname, vrecs in [('cropping', cropping_records), ('water', water_records)]:
         if vrecs and isinstance(vrecs[0], dict):
             print(f'[CSVAT MWS] {vname} keys: {list(vrecs[0].keys())[:10]}')
 
@@ -438,10 +427,6 @@ def run_mws_village_analytics(village_geojson, mws_features, tehsil_data,
         veg_data = aggregate_vegetation(intersections, deforest_records, afforest_records, selected_years)
         veg_data['village_name'] = village_name
         result['vegetation'] = veg_data
-
-    # Terrain composition
-    if terrain_records:
-        result['terrain'] = aggregate_terrain(intersections, terrain_records)
 
     # Cropping intensity change transitions
     if crop_change_records:

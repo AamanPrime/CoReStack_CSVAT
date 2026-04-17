@@ -570,22 +570,7 @@ class MWSIntersectionService:
                 state, district, tehsil,
             )
 
-        # 6. Terrain composition
-        terrain_by_uid = _build_uid_lookup("terrain")
-        if terrain_by_uid:
-            logger.info("Terrain: %d MWS records found", len(terrain_by_uid))
-            terrain_types = ["hill_slope", "plain", "ridge", "slopy", "valley"]
-            terrain_result = {}
-            for t in terrain_types:
-                val = self.aggregate_mws_metric(
-                    intersections, terrain_by_uid,
-                    f"{t}_area_in_ha", "weighted_sum",
-                )
-                terrain_result[t] = round(val or 0, 2)
-            terrain_result["total_area_ha"] = round(sum(terrain_result.values()), 2)
-            results["terrain"] = terrain_result
-
-        # 7. Cropping intensity change transitions
+        # 6. Cropping intensity change transitions
         crop_change_by_uid = _build_uid_lookup("change_detection_cropintensity")
         if crop_change_by_uid:
             logger.info("Crop intensity change: %d MWS records found", len(crop_change_by_uid))

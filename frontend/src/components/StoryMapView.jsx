@@ -224,11 +224,11 @@ export default function StoryMapView({
   const {
     cropping_intensity, surface_water, vegetation, waterbodies,
     village_name, state, district, tehsil, data_source,
-    mws_count, terrain, crop_intensity_change, area_hectares,
+    mws_count, crop_intensity_change, area_hectares,
     data_warning,
   } = results || {};
 
-  const totalAreaHa = area_hectares || terrain?.total_area_ha || 0;
+  const totalAreaHa = area_hectares || 0;
 
   // ─── Fetch village story from backend (fall back to hardcoded) ───
   useEffect(() => {
@@ -1201,104 +1201,11 @@ export default function StoryMapView({
                 </div>
               </div>
 
-              <div className="story-divider"><span className="divider-icon">⛰️</span></div>
-            </>
-          )}
-
-          {/* ── Section 5: Terrain Composition ── */}
-          {terrain && terrain.total_area_ha > 0 && (
-            <>
-              <div
-                className={sectionClass('terrain')}
-                data-section-id="terrain"
-                ref={setSectionRef(5)}
-              >
-                <div className="story-section-label terrain">
-                  <span>⛰️</span> Terrain
-                </div>
-                <h2 className="story-section-title">Terrain Composition</h2>
-                <p className="story-section-desc">
-                  Topographical distribution of the village area — essential for watershed
-                  planning and land management.
-                </p>
-
-                <div className="story-chart-card">
-                  <div className="chart-header">
-                    <div className="chart-icon" style={{ background: 'rgba(245,158,11,0.1)' }}>🗺️</div>
-                    <h4>Land Classification</h4>
-                  </div>
-                  <div style={{ display: 'flex', gap: '2rem', flexWrap: 'wrap', alignItems: 'center', padding: '0.5rem' }}>
-                    <div style={{ width: '240px', height: '240px' }}>
-                      <Doughnut
-                        data={{
-                          labels: Object.entries(terrain)
-                            .filter(([k]) => k !== 'total_area_ha')
-                            .filter(([, v]) => v > 0)
-                            .map(([k]) => k.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())),
-                          datasets: [{
-                            data: Object.entries(terrain)
-                              .filter(([k]) => k !== 'total_area_ha')
-                              .filter(([, v]) => v > 0)
-                              .map(([, v]) => v),
-                            backgroundColor: [
-                              'rgba(245, 158, 11, 0.7)',
-                              'rgba(34, 197, 94, 0.7)',
-                              'rgba(156, 163, 175, 0.7)',
-                              'rgba(239, 68, 68, 0.7)',
-                              'rgba(59, 130, 246, 0.7)',
-                            ],
-                            borderWidth: 2,
-                            borderColor: '#ffffff',
-                          }],
-                        }}
-                        options={{
-                          responsive: true,
-                          maintainAspectRatio: true,
-                          plugins: { legend: { position: 'right', labels: { font: { size: 11 } } } },
-                        }}
-                      />
-                    </div>
-                  </div>
-
-                  <table className="story-table">
-                    <thead>
-                      <tr>
-                        <th>Terrain Type</th>
-                        <th>Area (ha)</th>
-                        <th>Percentage</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {Object.entries(terrain)
-                        .filter(([k]) => k !== 'total_area_ha')
-                        .map(([k, v]) => (
-                          <tr key={k}>
-                            <td>{k.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</td>
-                            <td>{v.toFixed(2)}</td>
-                            <td>{((v / terrain.total_area_ha) * 100).toFixed(1)}%</td>
-                          </tr>
-                        ))}
-                      <tr style={{ fontWeight: 700 }}>
-                        <td>Total</td>
-                        <td>{terrain.total_area_ha.toFixed(2)}</td>
-                        <td>100%</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-
-                <div className="story-insight">
-                  <strong>Insight:</strong> Terrain composition analysis classifies the village area into
-                  five terrain types: hill slope, plain, ridge, slopy, and valley terrain. This data helps
-                  understand the topographical distribution for watershed planning.
-                </div>
-              </div>
-
               <div className="story-divider"><span className="divider-icon">🏞️</span></div>
             </>
           )}
 
-          {/* ── Section 6: Waterbodies ── */}
+          {/* ── Section 5: Waterbodies ── */}
           {waterbodies && waterbodies.count > 0 && (
             <>
               <div
@@ -1588,7 +1495,7 @@ export default function StoryMapView({
 function generateNarrative(results, ciData, swData) {
   if (!results) return '';
   const parts = [];
-  const { vegetation, terrain, crop_intensity_change, village_name } = results;
+  const { vegetation, crop_intensity_change, village_name } = results;
   parts.push(`${village_name || 'The village'} analytics report provides a comprehensive assessment of land use, water resources, and vegetation cover.`);
   if (ciData && ciData.length > 0) {
     const latest = ciData[ciData.length - 1];

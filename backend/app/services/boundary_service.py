@@ -4,6 +4,7 @@ Uses CoRE Stack APIs for admin details resolution and active location validation
 """
 
 import logging
+import math
 from typing import Optional
 from shapely.geometry import shape, mapping
 import json
@@ -66,8 +67,10 @@ class BoundaryService:
                 raise ValueError("Geometry is empty")
 
             area_deg2 = geom.area
-            area_km2 = area_deg2 * (111 ** 2)
-            area_ha = area_km2 * 100
+            # Latitude-corrected area (matches client-side computeAreaHectares)
+            avg_lat = geom.centroid.y
+            area_km2 = area_deg2 * 111.0 * 111.0 * math.cos(math.radians(avg_lat))
+            area_ha = round(area_km2 * 100)
 
             return {
                 "name": "Custom Upload",

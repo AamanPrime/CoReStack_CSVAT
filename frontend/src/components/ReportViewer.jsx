@@ -702,7 +702,7 @@ function downloadReportAsHTML(results, storySlides, villageName) {
 }
 
 function generateStorySlides(results, ciData, swData, center) {
-  const { vegetation, terrain, crop_intensity_change, village_name, state, district, tehsil } = results;
+  const { vegetation, crop_intensity_change, village_name, state, district, tehsil } = results;
   const slides = [];
 
   // Slide 1: Village Introduction
@@ -765,23 +765,7 @@ function generateStorySlides(results, ciData, swData, center) {
     });
   }
 
-  // Slide 5: Terrain & Land
-  if (terrain && terrain.total_area_ha > 0) {
-    const entries = Object.entries(terrain).filter(([k]) => k !== 'total_area_ha').sort(([, a], [, b]) => b - a);
-    const dominant = entries[0];
-    const dominantPct = ((dominant[1] / terrain.total_area_ha) * 100).toFixed(1);
-    const composition = entries.slice(0, 3).map(([k, v]) =>
-      `${k.replace(/_/g, ' ')} (${((v / terrain.total_area_ha) * 100).toFixed(1)}%)`
-    ).join(', ');
-    slides.push({
-      title: 'Reading the Terrain',
-      icon: '⛰️',
-      narrative: `Spanning ${terrain.total_area_ha.toFixed(2)} hectares, the terrain is predominantly ${dominant[0].replace(/_/g, ' ')} at ${dominantPct}% of the total area. The full composition includes ${composition}. This topographical profile shapes everything from water flow patterns to soil erosion risk, and is fundamental to watershed planning and sustainable land management strategies for the region.`,
-      mapUrl: getStaticMapUrl(center, 13, '1280x900', 45),
-      imageUrl: 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=600&h=300&fit=crop',
-      mapZoom: 13,
-    });
-  }
+
 
   // Slide 6: Cropping Intensity Change (if available)
   if (crop_intensity_change && crop_intensity_change.length > 0) {
@@ -821,10 +805,10 @@ export default function ReportViewer({
   const {
     cropping_intensity, surface_water, vegetation, waterbodies,
     village_name, state, district, tehsil, data_source,
-    mws_count, terrain, crop_intensity_change, area_hectares,
+    mws_count, crop_intensity_change, area_hectares,
   } = results;
 
-  const totalAreaHa = area_hectares || terrain?.total_area_ha || 0;
+  const totalAreaHa = area_hectares || 0;
 
   const ciData = Array.isArray(cropping_intensity?.data)
     ? cropping_intensity.data
@@ -1250,39 +1234,6 @@ export default function ReportViewer({
         </div>
       )}
 
-      {/* ─── Terrain Composition ─── */}
-      {terrain && (
-        <div className="card animate-slide-up">
-          <div className="card-header">
-            <span className="icon">⛰️</span>
-            <h3>Terrain Composition</h3>
-          </div>
-          <div style={{ display: 'flex', gap: '2rem', flexWrap: 'wrap', alignItems: 'center' }}>
-            <div style={{ width: '280px', height: '280px' }}>
-              <Doughnut
-                data={{
-                  labels: Object.entries(terrain).filter(([k]) => k !== 'total_area_ha').filter(([, v]) => v > 0).map(([k]) => k.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())),
-                  datasets: [{ data: Object.entries(terrain).filter(([k]) => k !== 'total_area_ha').filter(([, v]) => v > 0).map(([, v]) => v), backgroundColor: ['rgba(245,158,11,0.7)', 'rgba(34,197,94,0.7)', 'rgba(156,163,175,0.7)', 'rgba(239,68,68,0.7)', 'rgba(59,130,246,0.7)'], borderWidth: 2, borderColor: '#ffffff' }],
-                }}
-                options={{ responsive: true, maintainAspectRatio: true, plugins: { legend: { position: 'right' } } }}
-              />
-            </div>
-            <table className="data-table" style={{ flex: 1 }}>
-              <thead><tr><th>Terrain Type</th><th>Area (ha)</th><th>Percentage</th></tr></thead>
-              <tbody>
-                {Object.entries(terrain).filter(([k]) => k !== 'total_area_ha').map(([k, v]) => (
-                  <tr key={k}><td>{k.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</td><td>{v.toFixed(2)}</td><td>{terrain.total_area_ha > 0 ? ((v / terrain.total_area_ha) * 100).toFixed(1) : '0.0'}%</td></tr>
-                ))}
-                <tr style={{ fontWeight: 700 }}><td>Total</td><td>{terrain.total_area_ha.toFixed(2)}</td><td>100%</td></tr>
-              </tbody>
-            </table>
-          </div>
-          <div className="narrative">
-            Terrain composition analysis classifies the village area into terrain types.
-            This data helps understand the topographical distribution for watershed planning.
-          </div>
-        </div>
-      )}
 
       {/* ─── Waterbodies ─── */}
       {waterbodies && waterbodies.count > 0 && (

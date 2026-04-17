@@ -22,25 +22,26 @@ export default function Methodology() {
             <li><strong>Satellite Source:</strong> Multi-temporal Sentinel-2 imagery, classified using IndiaSAT algorithms.</li>
             <li><strong>GEE Assets:</strong> <code>projects/corestack-datasets/assets/datasets/LULC_v3_river_basin/</code></li>
             <li><strong>Coverage:</strong> Any Indian village — requires a boundary GeoJSON polygon (from CoRE Stack registry or user upload).</li>
-            <li><strong>Classes:</strong> 13 land cover classes (0–12): Built-up, Water (Kharif/Rabi/Zaid), Crops (Single/Double/Triple), Trees, Barren, Scrub, etc.</li>
+            <li><strong>Classes:</strong> 13 land cover classes (0–12): Built-up, Water (Class 2/3/4), Crops (Single/Double/Triple), Trees, Barren, Scrub, etc.</li>
             <li><strong>CRS:</strong> Downloaded in <strong>EPSG:4326</strong> at 10m scale — same coordinate system as the village boundary GeoJSON, eliminating any CRS reprojection.</li>
-            <li><strong>Processing:</strong> 100% client-side. Village boundary is split into ~1 km² spatial tiles. Each tile's GeoTIFF is downloaded via a signed GEE URL, parsed with <code>geotiff.js</code>, and masked using <code>turf.booleanPointInPolygon</code> — mathematically equivalent to server-side <code>rasterio.geometry_mask</code>.</li>
+            <li><strong>Processing:</strong> 100% client-side. Village boundary is split into ~1 km² spatial tiles. Each tile's GeoTIFF is downloaded via a signed GEE URL, parsed with <code>geotiff.js</code>, and masked using <code>turf.booleanPointInPolygon</code>.</li>
             <li><strong>Storage:</strong> Raw TIFF tiles are cached in browser <strong>IndexedDB</strong> for instant re-analysis. Auto-cleanup purges tiles from the 6th oldest village onward.</li>
-            <li><strong>Temporal Range:</strong> Fiscal years 2017-18 through 2024-25.</li>
+            <li><strong>Temporal Range:</strong> agricultural years 2017-18 through 2024-25.</li>
           </ul>
         </SubSection>
 
-        <SubSection title="CoRE Stack Vector API (MWS Path)">
+        <SubSection title="CoRE Stack Vector API (MWS Path &amp; Server Path)">
           <ul style={ulStyle}>
-            <li><strong>Provider:</strong> CoRE Stack REST APIs (pre-aggregated per Micro-Watershed).</li>
-            <li><strong>Data Products:</strong> Surface water bodies, cropping summaries, vegetation indices — already computed at MWS level.</li>
-            <li><strong>Coverage:</strong> Active tehsils only.</li>
+            <li><strong>Provider:</strong> CoRE Stack REST APIs — pre-computed analytics per Micro-Watershed (MWS).</li>
+            <li><strong>Data Products:</strong> <code>croppingIntensity_annual</code>, <code>surfaceWaterBodies_annual</code> (with <code>kharif_area_in_ha</code>, <code>rabi_area_in_ha</code>, <code>zaid_area_in_ha</code> per agricultural year), change detection layers.</li>
+            <li><strong>Coverage:</strong> Active tehsils only — requires CoRE Stack boundary selection (not available for uploaded GeoJSON boundaries).</li>
+            <li><strong>Village-level aggregation:</strong> MWS polygons are intersected with the village boundary using Shapely (Pyodide WASM client-side, or Python server-side). Values are weighted by overlap fraction.</li>
           </ul>
         </SubSection>
 
         <SubSection title="MODIS/JRC GEE Fallback (500m — Low Resolution)">
           <ul style={ulStyle}>
-            <li><strong>Triggered when:</strong> User explicitly selects "🌐 Use GEE" in the fallback dialog (when CoRE Stack has no data for the tehsil).</li>
+            <li><strong>Triggered when:</strong> User explicitly selects "🌐 Use GEE" in the fallback dialog — only when CoRE Stack has no data for the selected tehsil.</li>
             <li><strong>LULC:</strong> MODIS MCD12Q1 (500m, IGBP classification — 17 land cover classes).</li>
             <li><strong>Water:</strong> JRC Global Surface Water v1.4 (30m — permanent vs. seasonal classification).</li>
             <li><strong>Vegetation:</strong> MODIS MOD13A2 NDVI (500m, 16-day composite).</li>
@@ -54,20 +55,24 @@ export default function Methodology() {
       </Section>
 
       {/* ─── 2. Boundary Selection ─── */}
-      <Section num="2" title="Boundary Selection & Village Identification" color="var(--accent-blue)">
+      <Section num="2" title="Boundary Selection &amp; Village Identification" color="var(--accent-blue)">
         <p style={pStyle}>Villages are identified through two methods:</p>
         <ul style={ulStyle}>
-          <li><strong>CoRE Stack Registry:</strong> State → District → Tehsil → Village hierarchy. Village polygons are fetched as GeoJSON from the CoRE Stack API with verified administrative boundaries. Supports all three execution modes (Raster, MWS, Server).</li>
-          <li><strong>GeoJSON Upload (Pan-India):</strong> Users can upload any village boundary GeoJSON file. This mode bypasses CoRE Stack location selection and routes directly to the  Raster path, enabling analysis for <em>any</em> Indian village — no tehsil registration required.</li>
+          <li><strong>CoRE Stack Registry:</strong> State → District → Tehsil → Village hierarchy. Village polygons are fetched as GeoJSON from the CoRE Stack API with verified administrative boundaries. Supports all three execution modes (High Accuracy Raster, MWS Vector, Server).</li>
+          <li><strong>GeoJSON Upload (Pan-India):</strong> Users can upload any village boundary GeoJSON file. This mode bypasses CoRE Stack location selection and routes directly to the High Accuracy Raster path, enabling analysis for <em>any</em> Indian village — no tehsil registration required.</li>
         </ul>
         <p style={pStyle}>
-          For CoRE Stack boundaries, the system identifies overlapping Micro-Watersheds (MWS) for vector analytics.
-          For uploaded boundaries, analytics are computed entirely from raster pixel data via GEE — no MWS intersection is needed.
+          For CoRE Stack boundaries, either pixel-level raster analysis or MWS vector aggregation can be used.
+          For uploaded boundaries, analytics are computed entirely from raster pixel data via GEE — no MWS intersection is available.
         </p>
       </Section>
 
-      {/* ─── 3. Spatial Processing ─── */}
-      <Section num="3" title="Spatial Processing" color="var(--accent-amber)">
+      {/* ─── 3. Spatial Processing (MWS Path) ─── */}
+      <Section num="3" title="Spatial Processing (MWS &amp; Server Path Only)" color="var(--accent-amber)">
+        <p style={pStyle}>
+          This section applies only to the <strong>MWS Vector</strong> and <strong>Server</strong> paths.
+          The High Accuracy Raster path skips this step — it works directly with individual pixels inside the village boundary.
+        </p>
         <p style={pStyle}>
           Village boundaries rarely align with MWS boundaries. CSVAT handles this geometric mismatch
           through polygon intersection and fractional overlap computation.
@@ -80,40 +85,36 @@ export default function Methodology() {
           </FormulaBox>
           <p style={pStyle}>
             Where f<sub>i</sub> is the <strong>overlap fraction</strong> — the proportion of MWS <em>i</em> that
-            falls within the village. This is computed using Shapely (Python) for exact polygon-polygon intersection.
+            falls within the village. Computed using Shapely (Python WASM via Pyodide client-side, or Python on the server).
           </p>
         </SubSection>
 
         <SubSection title="Step 2: Weighted Aggregation">
           <p style={pStyle}>
             MWS-level values are aggregated to village-level using overlap fractions as weights.
-            Two aggregation methods are used depending on the metric type:
           </p>
-
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', margin: '1rem 0' }}>
             <div style={formulaCardStyle}>
               <div style={{ fontWeight: 700, color: 'var(--accent-green)', marginBottom: '0.5rem', fontSize: '0.85rem' }}>
-                Extensive Properties (Areas)
+                Area Metrics (Extensive)
               </div>
               <FormulaBox small>
                 X<sub>village</sub> = Σ (x<sub>i</sub> × f<sub>i</sub>)
               </FormulaBox>
               <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '0.5rem' }}>
-                Used for: cropped area (ha), water body area (ha), tree cover change area (ha).
-                Sum of overlap-weighted values.
+                Used for: cropped area (ha), water body area (ha), tree cover area (ha).
               </p>
             </div>
 
             <div style={formulaCardStyle}>
               <div style={{ fontWeight: 700, color: 'var(--accent-blue)', marginBottom: '0.5rem', fontSize: '0.85rem' }}>
-                Intensive Properties (Indices)
+                Index Metrics (Intensive)
               </div>
               <FormulaBox small>
                 X<sub>village</sub> = Σ(x<sub>i</sub> × f<sub>i</sub>) / Σ(f<sub>i</sub>)
               </FormulaBox>
               <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '0.5rem' }}>
                 Used for: NDVI mean and similar ratio metrics.
-                Weighted average prevents bias from partial overlaps.
               </p>
             </div>
           </div>
@@ -135,11 +136,24 @@ export default function Methodology() {
 
         <SubSection title="4.1 Cropping Intensity">
           <p style={pStyle}>Measures how many crop cycles occur per year on agricultural land.</p>
+          
+          <SubSection title="LULC Crop Classes (IndiaSAT v3)">
+            <p style={pStyle}>
+              Crop intensity is classified using specific raster pixel classes from the IndiaSAT LULC dataset:
+            </p>
+            <MetricsTable rows={[
+              ['Class 8', 'Single Crop (Kharif) — cultivated only during monsoon', '—', '—'],
+              ['Class 9', 'Single Crop (Non-Kharif) — cultivated only in dry seasons', '—', '—'],
+              ['Class 10', 'Double Crop — cultivated twice a year', '—', '—'],
+              ['Class 11', 'Triple Crop — cultivated thrice a year', '—', '—'],
+            ]} />
+          </SubSection>
+          
           <MetricsTable rows={[
-            ['Single Crop Area', 'Land cropped once per year', 'ha', 'Weighted sum'],
-            ['Double Crop Area', 'Land cropped twice per year', 'ha', 'Weighted sum'],
-            ['Triple Crop Area', 'Land cropped thrice per year', 'ha', 'Weighted sum'],
-            ['Total Cropped Area', 'Sum of all crop areas', 'ha', 'Derived'],
+            ['Single Crop Area', 'Classes 8 and 9 combined', 'ha', 'Pixel count / Weighted sum'],
+            ['Double Crop Area', 'Class 10', 'ha', 'Pixel count / Weighted sum'],
+            ['Triple Crop Area', 'Class 11', 'ha', 'Pixel count / Weighted sum'],
+            ['Total Cropped Area (NSA)', 'Sum of all crop areas', 'ha', 'Derived'],
             ['Intensity Index', 'GCA / NSA (avg crop cycles per unit area)', '—', 'Derived'],
           ]} />
           <SubSection title="Intensity Index Formula (GCA / NSA)">
@@ -152,47 +166,66 @@ export default function Methodology() {
               The Gross Cropped Area (GCA) counts each crop cycle separately.
               The Net Sown Area (NSA) is the total physical area.
               An intensity of 2.0 means on average every hectare is cropped twice per year.
-              Both Raster and MWS paths use this identical formula.
+              Both Raster (pixel-level) and MWS paths use this identical formula.
             </p>
           </SubSection>
-          <p style={{ ...pStyle, fontSize: '0.82rem', color: 'var(--text-muted)' }}>
-            Source: CoRE Stack LULC classification from Sentinel-2 multi-temporal analysis.
-            Each pixel is classified by how many distinct crop cycles are detected across
-            Kharif (June–Sep), Rabi (Oct–Feb), and Zaid (Mar–May) seasons.
-          </p>
         </SubSection>
 
         <SubSection title="4.2 Surface Water Bodies">
           <p style={pStyle}>
             Seasonal water body coverage aligned with Indian agricultural seasons.
-            CSVAT uses a <strong>dual-source approach</strong> for maximum coverage:
+            CSVAT uses exclusively <strong>pixel-level calculation from the IndiaSAT LULC v3 raster</strong>
+            in the High Accuracy path — no MWS vector fallback is applied.
           </p>
-          <ul style={ulStyle}>
-            <li><strong>Primary — LULC Raster (10m):</strong> Water classes from IndiaSAT LULC v3: Class 2 = Kharif Water, Class 3 = Kharif+Rabi Water, Class 4 = Perennial Water. Pixel-level extraction from the same raster used for cropping intensity.</li>
-            <li><strong>Fallback — MWS Vector:</strong> If the LULC raster has no water pixels (e.g., tree cover areas with small waterbodies below pixel resolution), the system falls back to <code>surfaceWaterBodies_annual</code> vector records from the CoRE Stack tehsil API, aggregated via MWS weighted intersection.</li>
-          </ul>
+
+          <SubSection title="LULC Water Classes (IndiaSAT v3)">
+            <MetricsTable rows={[
+              ['Class 2', 'Kharif-only water — present during monsoon, dry in Rabi/Zaid', '—', '—'],
+              ['Class 3', 'Kharif + Rabi water — present seasonally, dry in Zaid', '—', '—'],
+              ['Class 4', 'Perennial water — present year-round (Kharif + Rabi + Zaid)', '—', '—'],
+            ]} />
+          </SubSection>
+
+          <SubSection title="Cumulative Seasonal Aggregation Formula">
+            <p style={pStyle}>
+              Water classes are <strong>cumulative</strong> — a higher class includes all lower seasons.
+              This means Kharif water includes all water present during the monsoon period (Classes 2+3+4):
+            </p>
+            <FormulaBox>
+              Kharif water area  = (Class 2 pixels + Class 3 pixels + Class 4 pixels) × pixel_area_ha{"\n"}
+              Rabi water area    = (Class 3 pixels + Class 4 pixels) × pixel_area_ha{"\n"}
+              Zaid water area    = (Class 4 pixels) × pixel_area_ha{"\n"}
+              Total unique water = (Class 2 + Class 3 + Class 4 pixels) × pixel_area_ha
+            </FormulaBox>
+            <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '0.5rem' }}>
+              Total water is the unique area (not summed across seasons — avoids double counting).
+              This matches how CoRE Stack MWS API provides <code>kharif_area_in_ha</code>,
+              <code>rabi_area_in_ha</code>, and <code>zaid_area_in_ha</code> separately.
+            </p>
+          </SubSection>
+
           <MetricsTable rows={[
-            ['Kharif Water Area', 'All water during monsoon (Jun–Sep) — includes Rabi + Zaid water', 'ha', 'Pixel count / Weighted sum'],
-            ['Rabi Water Area', 'Water persisting into winter (Oct–Feb) — includes Zaid water', 'ha', 'Pixel count / Weighted sum'],
-            ['Zaid/Perennial Area', 'Only perennial water that persists year-round (Mar–May)', 'ha', 'Pixel count / Weighted sum'],
-            ['Total Water Area', 'Unique water area (not double-counted)', 'ha', 'Derived'],
+            ['Kharif Water Area', 'All water during monsoon (Jun–Sep) — Classes 2+3+4', 'ha', 'Pixel count (cumulative)'],
+            ['Rabi Water Area', 'Water persisting into winter (Oct–Feb) — Classes 3+4', 'ha', 'Pixel count (cumulative)'],
+            ['Zaid / Perennial', 'Perennial water year-round (Mar–May) — Class 4 only', 'ha', 'Pixel count'],
+            ['Total Water Area', 'Unique area with any water class (2+3+4, no double-count)', 'ha', 'Derived'],
           ]} />
           <WarningBox>
-            Small waterbodies (ponds, streams) may not be captured by the 10m LULC classification.
-            The MWS vector fallback uses a dedicated surface water layer that detects smaller features.
-            The data source label in the report indicates which source was used.
+            Small waterbodies (narrow streams, village ponds) smaller than 10×10 metres may not register
+            as a full pixel and will not be captured by this classification. The LULC raster minimum
+            detectable water body is approximately 100 m².
           </WarningBox>
         </SubSection>
 
-        <SubSection title="4.3 Vegetation & Tree Cover Change">
+        <SubSection title="4.3 Vegetation &amp; Tree Cover Change">
           <p style={pStyle}>Tree cover change detection between the analysis start and end years.</p>
           <MetricsTable rows={[
-            ['Tree Cover Loss', 'Total tree cover lost', 'ha', 'Weighted sum'],
-            ['Tree Cover Gain', 'Total tree cover gained', 'ha', 'Weighted sum'],
+            ['Tree Cover Loss', 'Total tree cover lost over analysis period', 'ha', 'Pixel count / Weighted sum'],
+            ['Tree Cover Gain', 'Total tree cover gained over analysis period', 'ha', 'Pixel count / Weighted sum'],
             ['Net Change', 'Tree Cover Gain − Tree Cover Loss', 'ha', 'Derived'],
             ['Degraded Land', 'Tree Cover → Barren + Tree Cover → Scrub', 'ha', 'Derived'],
           ]} />
-          <p style={{ ...pStyle, fontSize: '0.82rem', }}>
+          <p style={{ ...pStyle, fontSize: '0.82rem' }}>
             <strong>Transition classes tracked:</strong> Tree Cover → Tree Cover (stable), Tree Cover → Barren,
             Tree Cover → Built Up, Tree Cover → Farm, Tree Cover → Scrub Land.
           </p>
@@ -203,26 +236,25 @@ export default function Methodology() {
             Tracks how land transitions between cropping intensity classes over time:
           </p>
           <MetricsTable rows={[
-            ['Single → Double', 'Intensification', 'ha', 'Weighted sum'],
-            ['Double → Triple', 'Further intensification', 'ha', 'Weighted sum'],
-            ['Double → Single', 'De-intensification', 'ha', 'Weighted sum'],
-            ['Triple → Single', 'Major de-intensification', 'ha', 'Weighted sum'],
+            ['Single → Double', 'Intensification', 'ha', 'Pixel count / Weighted sum'],
+            ['Double → Triple', 'Further intensification', 'ha', 'Pixel count / Weighted sum'],
+            ['Double → Single', 'De-intensification', 'ha', 'Pixel count / Weighted sum'],
+            ['Triple → Single / Double', 'Major de-intensification', 'ha', 'Pixel count / Weighted sum'],
           ]} />
         </SubSection>
       </Section>
 
       {/* ─── 5. Limitations ─── */}
-      <Section num="5" title="Limitations & Known Constraints" color="var(--accent-red)">
+      <Section num="5" title="Limitations &amp; Known Constraints" color="var(--accent-red)">
         <ul style={ulStyle}>
           <li>
-            <strong>MWS Boundary Misalignment:</strong> Village boundaries don't align perfectly
-            with MWS polygons. The weighted aggregation introduces small errors at boundary edges —
-            typically &lt;5% for compact villages, potentially higher for irregular shapes.
+            <strong>10m Minimum Pixel Size:</strong> Water bodies or crop patches smaller than
+            100 m² (one 10m pixel) will not be captured in the raster path. No sub-pixel correction is applied.
           </li>
           <li>
-            <strong>GEE IndiaSAT Fallback (minor):</strong> The automatic GEE fallback uses the same
-            IndiaSAT LULC v3 dataset at 10m resolution. Pixel counts may differ by &lt;1% due to
-            floating-point grid alignment at village boundaries. Analytical conclusions are unaffected.
+            <strong>MWS Boundary Misalignment (MWS &amp; Server path):</strong> Village boundaries don't align perfectly
+            with MWS polygons. The weighted aggregation introduces small errors at boundary edges —
+            typically &lt;5% for compact villages, potentially higher for irregular shapes.
           </li>
           <li>
             <strong>MODIS/JRC GEE Fallback (significant):</strong> When user explicitly selects the
@@ -234,7 +266,7 @@ export default function Methodology() {
             </ul>
           </li>
           <li>
-            <strong>Temporal Resolution:</strong> CoRE Stack data is aggregated per fiscal year.
+            <strong>Temporal Resolution:</strong> CoRE Stack data is aggregated per agricultural year.
             Sub-seasonal events (e.g., mid-season crop failure) may not be captured.
           </li>
           <li>
@@ -246,86 +278,117 @@ export default function Methodology() {
 
       {/* ─── 6. Execution Modes ─── */}
       <Section num="6" title="Execution Modes" color="var(--accent-purple, #8b5cf6)">
-        <p style={pStyle}>CSVAT supports three execution paths. Uploaded GeoJSON boundaries are restricted to the High Accuracy Raster path (pan-India). CoRE Stack boundaries support all three:</p>
+        <p style={pStyle}>CSVAT supports three execution paths. Uploaded GeoJSON boundaries are restricted to the High Accuracy Raster path. CoRE Stack boundaries support all three:</p>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.75rem', margin: '1rem 0' }}>
           <div style={{ ...formulaCardStyle, borderColor: '#10b981' }}>
-            <div style={{ fontWeight: 700, color: '#10b981', marginBottom: '0.5rem', fontSize: '0.9rem' }}> High Accuracy Analysis (Raster)</div>
+            <div style={{ fontWeight: 700, color: '#10b981', marginBottom: '0.5rem', fontSize: '0.9rem' }}>⚡ High Accuracy Raster</div>
             <ul style={{ ...ulStyle, fontSize: '0.78rem' }}>
-              <li><strong>100% browser-side</strong> — server never stores or processes TIFF data</li>
-              <li>Village bbox split into ~1 km² spatial tiles</li>
-              <li>Backend signs GEE download URLs (auth only, zero storage)</li>
-              <li>Browser downloads GeoTIFFs in EPSG:4326 at 10m scale</li>
+              <li><strong>100% browser-side</strong> — server never stores TIFF data</li>
+              <li>Village bbox split into ~1 km² tiles</li>
+              <li>Backend signs GEE download URLs only</li>
+              <li>Browser downloads GeoTIFFs in EPSG:4326 at 10m</li>
               <li>Parsed with <code>geotiff.js</code>, masked with <code>turf.booleanPointInPolygon</code></li>
-              <li>Raw tiles cached in IndexedDB (instant re-analysis)</li>
-              <li>Analytics computed in Pyodide (Python WASM)</li>
-              <li><strong>Cropping, vegetation, and surface water</strong> all derived from LULC pixel classes</li>
-              <li>Water fallback to MWS vector if raster has no water pixels</li>
+              <li>Tiles cached in IndexedDB</li>
+              <li>Analytics in Pyodide (Python WASM)</li>
+              <li>Surface water: <strong>pixel-level only</strong> — Classes 2+3+4 (no MWS fallback)</li>
               <li><strong>Pan-India</strong> — works for any boundary (upload or CoRE Stack)</li>
               <li><strong>Privacy:</strong> all geospatial data stays in your browser</li>
             </ul>
           </div>
           <div style={formulaCardStyle}>
-            <div style={{ fontWeight: 700, color: '#8b5cf6', marginBottom: '0.5rem', fontSize: '0.9rem' }}> MWS Vector</div>
+            <div style={{ fontWeight: 700, color: '#8b5cf6', marginBottom: '0.5rem', fontSize: '0.9rem' }}>⚡ MWS Vector</div>
             <ul style={{ ...ulStyle, fontSize: '0.78rem' }}>
-              <li>Pre-aggregated MWS-level data from CoRE Stack API</li>
+              <li>Fetches pre-aggregated MWS data from CoRE Stack API</li>
               <li>Village-MWS polygon intersection + weighted aggregation</li>
-              <li>Faster — no raster downloads needed</li>
-              <li>Small area approximation from overlap fractions</li>
+              <li>Pyodide (Python WASM) computes intersection client-side</li>
+              <li>Faster — no raster tile downloads</li>
+              <li>Surface water comes from <code>surfaceWaterBodies_annual</code> layer (CoRE Stack pre-computed)</li>
               <li>CoRE Stack boundaries only (active tehsils)</li>
             </ul>
           </div>
           <div style={formulaCardStyle}>
             <div style={{ fontWeight: 700, color: '#3b82f6', marginBottom: '0.5rem', fontSize: '0.9rem' }}>🖥️ Server</div>
             <ul style={{ ...ulStyle, fontSize: '0.78rem' }}>
-              <li>Same logic as MWS Vector, dispatched to backend workers</li>
-              <li>Celery async processing</li>
-              <li>Good for batch or low-power clients</li>
+              <li>Same computation logic as MWS Vector</li>
+              <li>Dispatched to backend Celery workers</li>
+              <li>Pipeline: MWS intersection → GEE fallback (if MWS unavailable)</li>
+              <li>Good for batch/low-power clients</li>
               <li>CoRE Stack boundaries only (active tehsils)</li>
+              <li>No local TIFF processing — server holds no raster data</li>
             </ul>
           </div>
         </div>
 
-        <SubSection title="High Accuracy Tiled Pipeline — How It Works">
+        <SubSection title="High Accuracy Tiled Pipeline — Step by Step">
           <ol style={{ ...ulStyle, fontSize: '0.82rem' }}>
             <li><strong>Tile Grid:</strong> The village bounding box is split into a grid of ~1 km² tiles using <code>@turf/turf</code>. Small villages (&lt;1 km²) get a single tile.</li>
-            <li><strong>URL Signing:</strong> For each tile × fiscal year, the backend calls <code>image.getDownloadURL()</code> with the tile's bbox, <code>EPSG:4326</code>, and <code>scale=10</code>. It returns a signed GEE URL — no TIFF data touches the server.</li>
+            <li><strong>URL Signing:</strong> For each tile × agricultural year, the backend calls <code>image.getDownloadURL()</code> with the tile's bbox, <code>EPSG:4326</code>, and <code>scale=10</code>. It returns a signed GEE URL — no TIFF data touches the server.</li>
             <li><strong>Download:</strong> The browser downloads up to 4 tiles concurrently. Raw <code>ArrayBuffer</code>s are stored in IndexedDB for caching.</li>
-            <li><strong>Parse:</strong> Each tile is parsed with <code>geotiff.js</code>. The affine transform is computed from the known tile bbox + image dimensions (not from TIFF metadata), guaranteeing correctness.</li>
-            <li><strong>Mask:</strong> For every pixel, the center coordinate (lng, lat) is computed and tested against the village polygon using <code>turf.booleanPointInPolygon</code>. Only pixels inside the boundary are counted.</li>
-            <li><strong>Merge:</strong> Histograms and pixel arrays from all tiles are combined into a single year result.</li>
-            <li><strong>Analytics:</strong> The merged data feeds into the existing Pyodide analytics engine — identical formulas for cropping intensity, water, vegetation, and change detection.</li>
+            <li><strong>Parse:</strong> Each tile is parsed with <code>geotiff.js</code>. The affine transform is computed from the tile bbox + image dimensions.</li>
+            <li><strong>Mask:</strong> For every pixel, the center coordinate (lng, lat) is tested against the village polygon using <code>turf.booleanPointInPolygon</code>. Only pixels inside the boundary are counted.</li>
+            <li><strong>Merge:</strong> Pixel histograms from all tiles are combined into a single year result.</li>
+            <li><strong>Analytics:</strong> The merged histogram feeds into the Pyodide analytics engine — cropping intensity (Classes 8/9/10/11), water (Classes 2/3/4 cumulative), vegetation (Class 6 transitions).</li>
           </ol>
         </SubSection>
 
+        <SubSection title="Server Pipeline — Strategy Flow">
+          <ol style={{ ...ulStyle, fontSize: '0.82rem' }}>
+            <li><strong>Strategy A — MWS Intersection:</strong> Fetch CoRE Stack tehsil data + MWS geometries. Run polygon intersection and weighted aggregation. If successful, return results. <em>(Primary path)</em></li>
+            <li><strong>Strategy B — GEE Fallback:</strong> Only triggered if CoRE Stack returns no data for the tehsil, or user explicitly selects GEE. Uses MODIS/JRC at lower resolution. <em>(Fallback only)</em></li>
+          </ol>
+          
+        </SubSection>
+
         <p style={{ ...pStyle, fontSize: '0.82rem', color: 'var(--text-muted)' }}>
-          All modes use the same GCA/NSA intensity formula.
-          The High Accuracy path provides the highest accuracy by counting individual 10m pixels entirely in the browser.
-          Surface water in the Raster path comes from LULC classes 2/3/4 (with MWS vector fallback for small waterbodies).
+          All modes use the same GCA/NSA intensity formula and cumulative water class aggregation.
           The report's data source label (e.g., "IndiaSAT LULC v3" vs "CoRE Stack MWS Vector") indicates which source was used for each section.
         </p>
       </Section>
 
-      {/* ─── 7. Report Narrative ─── */}
-      <Section num="7" title="Report Narrative Generation" color="var(--accent-amber)">
+      {/* ─── 7. Village Storyboard ─── */}
+      <Section num="7" title="Village Storyboard" color="var(--accent-teal)">
         <p style={pStyle}>
-          The "Data Story" narrative in each report is generated using <strong>deterministic string templating</strong>,
-          not AI or LLMs. Computed values (e.g., total area = 500 ha, net sown area = 45%) are injected into
-          pre-written text templates.
+          The <strong>Village Storyboard</strong> is a narrative-driven, scroll-based map experience that appears below
+          the analytics report for villages that have an associated story in the CSVAT database.
+          It is inspired by the Terraso Story Map format.
         </p>
-        <p style={pStyle}>
-          Simple logic gates control phrasing:
-        </p>
-        <FormulaBox>
-          IF trend &gt; 0 → "increased by X%" ELSE "decreased by X%"
-        </FormulaBox>
-        <p style={{ ...pStyle, fontSize: '0.82rem', color: 'var(--text-muted)' }}>
-          This ensures reproducibility — the same input data always produces the same narrative text.
-        </p>
+
+        <SubSection title="How It Works">
+          <ul style={ulStyle}>
+            <li><strong>Story Data Source:</strong> Village narratives are stored in the CSVAT PostgreSQL database (<code>village_stories</code> table), seeded from structured story objects covering demographics, economy, cultural context, and environmental chapters.</li>
+            <li><strong>Chapter Structure:</strong> The storyboard merges database content with live analytics:
+              <ul style={{ ...ulStyle, marginTop: '0.3rem', marginBottom: '0.3rem' }}>
+                <li><strong>Dynamic LLM Chapters:</strong> The first several chapters are generated by an LLM (Qwen 2.5 14B) running on the backend. This AI processes structured census and location data to create vivid, village-specific narratives and selects appropriate map actions.</li>
+                <li><strong>Static Analytics Slides:</strong> The final 4 sequence slides (e.g. Cropping, Water, Vegetation) are strictly deterministic. They are generated directly from the live spatial analytics calculated for that village, ensuring no AI hallucinations occur regarding core data.</li>
+              </ul>
+            </li>
+            <li><strong>Scroll-Driven Map:</strong> A sticky map panel shows the village satellite view. An IntersectionObserver tracks which chapter panel is in the viewport and triggers map transitions (zoom, tilt, layer toggle) accordingly.</li>
+
+          </ul>
+        </SubSection>
+
+        <SubSection title="Sticky TOC Navigation">
+          <p style={pStyle}>
+            A floating table-of-contents (TOC) navigation bar tracks active chapter progress.
+            Clicking a TOC dot scrolls directly to that chapter. The TOC appears only when
+            the storyboard section is visible in the viewport.
+          </p>
+        </SubSection>
+
+        <SubSection title="Data Fallback">
+          <p style={pStyle}>
+            If no village story exists in the database for the selected village, the storyboard
+            section is not rendered. The analytics report sections (cropping, water, vegetation) are
+            always shown regardless of storyboard availability.
+          </p>
+        </SubSection>
       </Section>
 
+
+
       <div style={{ textAlign: 'center', padding: '2rem 0 1rem', color: 'var(--text-muted)', fontSize: '0.78rem' }}>
-        CSVAT — CoRE Stack Village Analytics Tool
+        CSVAT — CoRE Stack Village Analytics Tool · Last updated April 2026
       </div>
     </div>
   );
@@ -382,6 +445,7 @@ function FormulaBox({ children, small }) {
       color: 'var(--text-primary)',
       textAlign: 'center',
       letterSpacing: '0.02em',
+      whiteSpace: 'pre-line',
     }}>
       {children}
     </div>
@@ -416,23 +480,26 @@ function ComparisonTable() {
         <thead>
           <tr>
             <th style={headerStyle}>Attribute</th>
-            <th style={{ ...headerStyle, color: '#10b981' }}> Raster Path</th>
-            <th style={{ ...headerStyle, color: '#8b5cf6' }}> MWS Vector Path</th>
+            <th style={{ ...headerStyle, color: '#10b981' }}>⚡ High Accuracy Raster</th>
+            <th style={{ ...headerStyle, color: '#8b5cf6' }}>⚡ MWS Vector / 🖥️ Server</th>
           </tr>
         </thead>
         <tbody>
           {[
-            ['Source', 'GEE IndiaSAT LULC v3', 'CoRE Stack REST API'],
-            ['Resolution', '10m (Sentinel-2)', 'MWS-level aggregates'],
-            ['Crop Classification', '13 classes incl. Single/Double/Triple', 'Pre-computed per MWS'],
-            ['Water Seasons', 'Kharif / Rabi / Zaid (pixel-level)', 'Kharif / Rabi / Zaid (MWS-level)'],
-            ['Tree Cover Transitions', 'Full transition matrix (pixel-level)', 'Weighted aggregation'],
-            ['Coverage', 'Any village with boundary GeoJSON', 'Active tehsils only'],
-          ].map(([attr, core, gee], i) => (
+            ['Source', 'GEE IndiaSAT LULC v3 (raw pixels)', 'CoRE Stack REST API (pre-aggregated)'],
+            ['Resolution', '10m (Sentinel-2 based)', 'MWS-level aggregates (from same 10m source)'],
+            ['Spatial unit', 'Individual 10m pixels inside village', 'MWS polygon → weighted fraction to village'],
+            ['Crop Classification', 'Classes 8/9 = single, 10 = double, 11 = triple', 'Pre-computed per MWS agricultural year'],
+            ['Water Seasons', 'Cumulative Class 2+3+4 → Kharif/Rabi/Zaid', 'kharif/rabi/zaid_area_in_ha per MWS'],
+            ['Surface Water Source', 'Pixel-level only (no MWS fallback)', 'surfaceWaterBodies_annual layer'],
+            ['Tree Cover', 'Full pixel transition matrix (Class 6)', 'Weighted aggregation'],
+            ['Coverage', 'Any village with boundary GeoJSON (pan-India)', 'Active tehsils only'],
+            ['Processing location', 'Browser (Pyodide WASM + geotiff.js)', 'Browser (Pyodide) or Server (Python/Celery)'],
+          ].map(([attr, raster, mws], i) => (
             <tr key={i}>
               <td style={{ ...cellStyle, fontWeight: 500 }}>{attr}</td>
-              <td style={cellStyle}>{core}</td>
-              <td style={cellStyle}>{gee}</td>
+              <td style={cellStyle}>{raster}</td>
+              <td style={cellStyle}>{mws}</td>
             </tr>
           ))}
         </tbody>
@@ -453,7 +520,7 @@ function MetricsTable({ rows }) {
             <th style={headerStyle}>Metric</th>
             <th style={headerStyle}>Description</th>
             <th style={headerStyle}>Unit</th>
-            <th style={headerStyle}>Aggregation</th>
+            <th style={headerStyle}>Method</th>
           </tr>
         </thead>
         <tbody>
