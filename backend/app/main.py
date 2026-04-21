@@ -8,7 +8,7 @@ import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api import auth, boundaries, layers, jobs, gee, analytics, corestack, raster_proxy, village_stories, custom_slides
+from app.api import auth, boundaries, layers, jobs, gee, analytics, corestack, raster_proxy, village_stories, custom_slides, maps_proxy
 from app.config import get_settings
 
 logger = logging.getLogger(__name__)
@@ -61,6 +61,7 @@ app.include_router(corestack.router)
 app.include_router(raster_proxy.router)
 app.include_router(village_stories.router)
 app.include_router(custom_slides.router)
+app.include_router(maps_proxy.router)
 
 
 @app.get("/", tags=["Health"])

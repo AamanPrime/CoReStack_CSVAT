@@ -8,36 +8,33 @@
  *   4. Geometry helpers (place → bounding box for GEE)
  */
 import React, { useEffect, useRef, useState, useCallback } from 'react';
+import { Loader } from '@googlemaps/js-api-loader';
 
 const MAPS_KEY = import.meta.env.VITE_GOOGLE_MAPS_KEY || '';
 
-// ─── Script Loader ───
+// ─── Script Loader (via @googlemaps/js-api-loader for async loading) ───
 
 let mapsLoaded = false;
 let mapsLoadPromise = null;
 
-function loadGoogleMaps() {
+const loader = new Loader({
+  apiKey: MAPS_KEY,
+  version: 'weekly',
+  libraries: ['places', 'geometry'],
+});
+
+export function loadGoogleMaps() {
   if (mapsLoaded && window.google?.maps) return Promise.resolve();
   if (mapsLoadPromise) return mapsLoadPromise;
 
-  mapsLoadPromise = new Promise((resolve, reject) => {
-    if (window.google?.maps) {
-      mapsLoaded = true;
-      resolve();
-      return;
-    }
-
-    // Use the new Google Maps JavaScript API loading
-    const script = document.createElement('script');
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${MAPS_KEY}&libraries=places,geometry&v=weekly`;
-    script.async = true;
-    script.defer = true;
-    script.onload = () => {
-      mapsLoaded = true;
-      resolve();
-    };
-    script.onerror = () => reject(new Error('Failed to load Google Maps'));
-    document.head.appendChild(script);
+  mapsLoadPromise = loader.importLibrary('maps').then(() => {
+    // Also ensure places and geometry are loaded
+    return Promise.all([
+      loader.importLibrary('places'),
+      loader.importLibrary('geometry'),
+    ]);
+  }).then(() => {
+    mapsLoaded = true;
   });
 
   return mapsLoadPromise;

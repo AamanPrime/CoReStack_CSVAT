@@ -44,16 +44,17 @@ ChartJS.register(
 ChartJS.defaults.color = '#475569';
 ChartJS.defaults.borderColor = 'rgba(226,232,240,0.6)';
 
-// Google Maps API key for static map images
-const MAPS_KEY = import.meta.env.VITE_GOOGLE_MAPS_KEY || '';
+// Backend proxy base for static map images (key stays server-side)
+const API_BASE = (import.meta.env.VITE_API_BASE || '').replace(/\/$/, '');
 
 /**
- * Generate a static satellite map image URL for a slide.
- * Each slide can have different zoom/center/heading for visual variety.
+ * Generate a proxied static satellite map image URL for a slide.
+ * The backend /api/v1/maps/static endpoint appends the API key server-side,
+ * so the key is never exposed in client code or exported HTML.
  */
 function getStaticMapUrl(center, zoom = 14, size = '1280x900', heading = 0) {
-  if (!MAPS_KEY || !center?.lat || !center?.lng) return null;
-  return `https://maps.googleapis.com/maps/api/staticmap?center=${center.lat},${center.lng}&zoom=${zoom}&size=${size}&maptype=satellite&heading=${heading}&key=${MAPS_KEY}`;
+  if (!center?.lat || !center?.lng) return null;
+  return `${API_BASE}/api/v1/maps/static?center=${center.lat},${center.lng}&zoom=${zoom}&size=${size}&maptype=satellite&heading=${heading}`;
 }
 
 /**
@@ -216,7 +217,7 @@ async function downloadReportAsPDF(contentEl, villageName) {
  * Build and download a self-contained offline HTML file that mirrors the ReportViewer page
  * with an interactive storyboard (scroll-snap + cross-fade backgrounds).
  */
-function downloadReportAsHTML(results, storySlides, villageName) {
+async function downloadReportAsHTML(results, storySlides, villageName) {
   const safeName = (villageName || 'report').replace(/\s+/g, '_');
 
   // 1. Clone the report-viewer-content (analytics cards only, NOT the storyboard)
@@ -248,11 +249,34 @@ function downloadReportAsHTML(results, storySlides, villageName) {
   // 4. Remove interactive-only elements from clone
   clone.querySelectorAll('.export-bar, .se-overlay').forEach(el => el.remove());
 
-  // 5. Build storyboard slides HTML for the interactive section
+  // 5. Pre-fetch storyboard background images as base64 data-URIs
+  //    This ensures the exported HTML is fully self-contained with no API key references.
+  const slideMapUrls = (storySlides || []).map(s => s.mapUrl || null);
+  const base64Maps = await Promise.all(
+    slideMapUrls.map(async (url) => {
+      if (!url) return null;
+      try {
+        const resp = await fetch(url);
+        if (!resp.ok) return null;
+        const blob = await resp.blob();
+        return await new Promise((resolve) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result);
+          reader.readAsDataURL(blob);
+        });
+      } catch {
+        return null;
+      }
+    })
+  );
+
   const slidesHTML = (storySlides || []).map((slide, idx) => {
-    const bgStyle = slide.mapUrl
-      ? `background-image: url(${slide.mapUrl}); background-size: cover; background-position: center;`
-      : 'background-color: #1a1a2e;';
+    const bgDataUri = base64Maps[idx];
+    const bgStyle = bgDataUri
+      ? `background-image: url(${bgDataUri}); background-size: cover; background-position: center;`
+      : slide.mapUrl
+        ? `background-image: url(${slide.mapUrl}); background-size: cover; background-position: center;`
+        : 'background-color: #1a1a2e;';
     return `
       <div class="ts-bg-layer" data-slide-idx="${idx}" style="${bgStyle}"></div>
     `;
@@ -1326,7 +1350,14 @@ export default function ReportViewer({
           <button
             className="btn btn-primary"
             style={{ background: 'linear-gradient(135deg, #8b5cf6, #6366f1)' }}
-            onClick={() => downloadReportAsHTML(results, allSlides, village_name)}
+            onClick={async () => {
+              try {
+                await downloadReportAsHTML(results, allSlides, village_name);
+              } catch (err) {
+                console.error('HTML export failed:', err);
+                alert('HTML export failed.');
+              }
+            }}
           >
             🌐 Download HTML
           </button>
