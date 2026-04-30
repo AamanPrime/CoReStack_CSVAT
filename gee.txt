@@ -1,0 +1,702 @@
+Guide to Exporting Data from Google Earth Engine for Offline Processing on QGIS (follow this for large vector assets)																																										
+Guide to Viewing Google Earth Engine assets from QGIS (follow this for raster and small vector assets)																																										
+CoRE stack technical manual to understand details about these layers																																										
+Contact for further support: support@core-stack.org																																										
+																																										
+Layer Name	GEE asset link	GEE Code Snippet Samples	Raster/Vector File	File type and size	Style file url	License																																				
+																																										
+IndiaSAT v4: 2017-2024																																										
+LULC 2017 - 2018	LULC 2017 - 2018 GEE Link	"var lulc = ee.Image(""projects/corestack-trees/assets/LULC_v4/lulc_v4_2017_2018"");
+// legend class = {0:'Background', 1:'Built up', 2:'Kharif water', 3:'Kharif and rabi water', 4:'Kharif and rabi and zaid water', 5:'Crops', 6:'Trees', 7:'Barren land', 8:'Single Kharif Cropping', 9:'Single Non-Kharif Cropping', 10:'Double Cropping', 11:'Tripple/Annual/Perennial Cropping', 12:'Shrubs and Scrubs',13:'Orchard Plantation'}
+var palette = ['000000','ff0000','74ccf4','1ca3ec','0f5e9c','f1c232','38761d', 'A9A9A9', 'BAD93E', 'f59d22','FF9371','b3561d', 'a9a9a9','75fd71'];
+Map.addLayer(lulc, {bands:['predicted_label'], min: 0, max: 13, palette: palette}, 'LULC ');
+"	LULC_2017-2018																																							
+LULC 2018 - 2019	LULC 2018 - 2019 GEE Link		LULC_2018-2019																																							
+LULC 2019 - 2020	LULC 2019 - 2020 GEE Link		LULC_2019-2020																																							
+LULC 2020 - 2021	LULC 2020 - 2021 GEE Link		LULC_2020-2021																																							
+LULC 2021 - 2022	LULC 2021 - 2022 GEE Link		LULC_2021-2022																																							
+LULC 2022 - 2023	LULC 2022 - 2023 GEE Link		LULC_2022-2023																																							
+LULC 2023 - 2024	LULC 2023 - 2024 GEE Link		LULC_2023-2024																																							
+																																										
+IndiaSAT v3: 2017-2025																																										
+LULC 2017 - 2018	LULC 2017 - 2018 GEE Link	"var lulc = ee.Image(""projects/corestack-datasets/assets/datasets/LULC_v3_river_basin/pan_india_lulc_v3_2017_2018"");
+// legend class = {0:'Background', 1:'Built up', 2:'Kharif water', 3:'Kharif and rabi water', 4:'Kharif and rabi and zaid water', 5:'Crops', 6:'Trees', 7:'Barren land', 8:'Single Kharif Cropping', 9:'Single Non-Kharif Cropping', 10:'Double Cropping', 11:'Tripple/Annual/Perennial Cropping', 12:'Shrubs and Scrubs'}
+var palette = ['000000','ff0000','74ccf4','1ca3ec','0f5e9c','f1c232','38761d', 'A9A9A9', 'BAD93E', 'f59d22','FF9371','b3561d', 'a9a9a9'];
+Map.addLayer(lulc, {bands:['predicted_label'], min: 0, max: 12, palette: palette}, 'LULC ');
+"	LULC_2017-2018	tif (7.21 GB)	LULC_style	CC BY 4.0																																				
+LULC 2018 - 2019	LULC 2018 - 2019 GEE Link		LULC_2018-2019	tif (7.07 GB)																																						
+LULC 2019 - 2020	LULC 2019 - 2020 GEE Link		LULC_2019-2020	tif (7.49 GB)																																						
+LULC 2020 - 2021	LULC 2020 - 2021 GEE Link		LULC_2020-2021	tif (7.39 GB)																																						
+LULC 2021 - 2022	LULC 2021 - 2022 GEE Link		LULC_2021-2022	tif (7.36 GB)																																						
+LULC 2022 - 2023	LULC 2022 - 2023 GEE Link		LULC_2022-2023	tif (6.34 GB)																																						
+LULC 2023 - 2024	LULC 2023 - 2024 GEE Link		LULC_2023-2024	tif (6.57 GB)																																						
+LULC 2024 - 2025	LULC 2024 - 2025 GEE Link		LULC_2024-2025	tif(6.5 GB)																																						
+WRIS: 2005-2017																																										
+LULC 2005 - 2006	LULC_2005 - 2006_GEE_Link	"var lulc = ee.Image(""projects/ext-datasets/assets/datasets/WRIS/lulc250k_2005_2006_pan_india"");
+// legend class = {0:'Background',1:'Built Up', 2:'Cropland — Kharif',3:'Cropland — Rabi',4:'Cropland — Zaid',5:'Cropland — Double/Triple',6:'Fallow Land — Current Fallow',7:'Agriculture Plantation — Plantation',8:'Forest — Evergreen/Semi-Evergreen',9:'Forest — Deciduous',10:'Forest — Degraded/Scrub',11:'Forest — Littoral Swamp',12:'Natural — Grassland',13:'Other — Shifting Cultivation',14:'Wasteland',15:'Sandy Area — Rann',16:'Waterbodies — Max',17:'Waterbodies — Min',18:'Snow Covered / Glacial Area'}
+
+var palette = ['#D73027', '#FFE873', '#FFC247', '#FFE0A3', '#FF9E1B', '#D7CCC8', '#B5651D', '#006400', '#2E8B57', '#6B8E23', '#007F7F', '#F0C808', '#FF7043', '#9E9E9E', '#F2D8A7', '#2C7FB8', '#A6CEE3', '#E0F3F8'];
+Map.addLayer(lulc, {bands:['b1'], min: 0, max: 18, palette: palette}, 'LULC ');"	LULC_2005-2006	tif (214.7 MB)	wris_LULC_style	Published by India WRIS; Re-published here																																				
+LULC 2006 - 2007	LULC_2006 - 2007_GEE_Link		LULC_2006-2007	tif (210.5 MB)																																						
+LULC 2007 - 2008	LULC_2007 - 2008_GEE_Link		LULC_2007-2008	tif (208.6 MB)																																						
+LULC 2008 - 2009	LULC_2008 - 2009_GEE_Link		LULC_2008-2009	tif (214.1 MB)																																						
+LULC 2009 - 2010	LULC_2009 - 2010_GEE_Link		LULC_2009-2010	tif (211.4 MB)																																						
+LULC 2010 - 2011	LULC_2010 - 2011_GEE_Link		LULC_2010-2011	tif (215.6 MB)																																						
+LULC 2011 - 2012	LULC_2011 - 2012_GEE_Link		LULC_2011-2012	tif (214.5 MB)																																						
+LULC 2012 - 2013	LULC_2012 - 2013_GEE_Link		LULC_2012-2013	tif (205.9 MB)																																						
+LULC 2013 - 2014	LULC_2013 - 2014_GEE_Link		LULC_2013-2014	tif (200.9 MB)																																						
+LULC 2014 - 2015	LULC_2014 - 2015_GEE_Link		LULC_2014-2015	tif (198.8 MB)																																						
+LULC 2015 - 2016	LULC_2015 - 2016_GEE_Link		LULC_2015-2016	tif (195.7 MB)																																						
+LULC 2016 - 2017	LULC_2016 - 2017_GEE_Link		LULC_2016-2017	tif (190.9 MB)																																						
+LULC 2017 - 2018	LULC_2017 - 2018_GEE_Link		LULC_2017-2018	tif (177.4 MB)																																						
+																																										
+Terrain																																										
+Terrain Raster (SRTM)	Terrain_raster_(SRTM)_GEE_Link	"var terrain_raster_srtm = ee.Image(""projects/corestack-datasets/assets/datasets/terrain/pan_india_terrain_raster"");
+// legend class = ['V-shape river valleys, Deep narrow canyons', 'Lateral midslope incised drainages, Local valleys in plains', 'Upland incised drainages, Stream headwaters', 'U-shape valleys','Broad Flat Areas','Broad open slopes','Mesa tops','Upper Slopes','Local ridge/hilltops within broad valleys','Lateral midslope drainage divides, Local ridges in plains','Mountain tops, high ridges'];
+
+var palette = ['313695','4575b4','a50026','e0f3f8','fffc00','feb24c','f46d43','d73027','91bfdb','800000','4d0000'];
+Map.addLayer(terrain_raster_srtm, {bands:['constant'], min: 1, max: 11, palette: palette}, 'terrain_raster_srtm ');"	Terrain_raster_(SRTM)	tif (745.5 MB)	terrain_(SRTM)_style	CC BY 4.0																																				
+Terrain Raster (FABDEM)	Terrain_raster_(FABDEM)_GEE_Link	"var terrain_raster_fabdem = ee.Image(""projects/corestack-datasets/assets/datasets/terrain/pan_india_terrain_raster_fabdem"");
+// legend class = ['V-shape river valleys, Deep narrow canyons', 'Lateral midslope incised drainages, Local valleys in plains', 'Upland incised drainages, Stream headwaters', 'U-shape valleys','Broad Flat Areas','Broad open slopes','Mesa tops','Upper Slopes','Local ridge/hilltops within broad valleys','Lateral midslope drainage divides, Local ridges in plains','Mountain tops, high ridges'];
+
+var palette = ['313695','4575b4','a50026','e0f3f8','fffc00','feb24c','f46d43','d73027','91bfdb','800000','4d0000'];
+Map.addLayer(terrain_raster_fabdem, {bands:['constant'], min: 1, max: 11, palette: palette}, 'terrain_raster_fabdem ');"	Terrain_raster_(FABDEM)	tif (568.8 MB)	terrain_(FABDEM)_style	CC BY 4.0																																				
+Slope Percentage	Slope Percentage_(FABDEM)_GEE_Link	"var slope_percentage_fabdem = ee.Image('projects/ext-datasets/assets/datasets/slope_percentage_fabdem');
+var labels = ['0-3', '3-5', '5-7', '7-10', '10-25', '>25'];   // In percentage
+
+var colorPalette = ['ced4da', 'adb5bd', '6c757d', '495057', '343a40', '212529'];
+Map.addLayer(slope_percentage_fabdem, {bands:['slope'], min: 1, max: 11, palette: colorPalette}, 'terrain_raster_fabdem');"			slope_percentage_style																																					
+																																										
+Tree Characteristics																																										
+Canopy Cover Density and Canopy Height																																										
+Canopy Density 2017-2018	Canopy Density 2017 GEE Link	"var ccd_img = ee.ImageCollection(""projects/corestack-trees/assets/tree_characteristics/modal_ccd_2017"");
+// legend_class - {0:'Low_Density', 1:'High_Density', 2: 'Missing_Data'}
+var palette = ['FFA500', '007500', '000000'];
+Map.addLayer(ccd_img, {bands:['cc'], min: 0, max: 2, palette: palette}, 'Canopy Cover Density - ' + year);"	CCD_2017	tif (532.8 MB)	CCD_style	CC BY 4.0																																				
+Canopy Density 2018-2019	Canopy Density 2018 GEE Link		CCD_2018	tif (499.3 MB)																																						
+Canopy Density 2019-2020	Canopy Density 2019 GEE Link		CCD_2019	tif (540 MB)																																						
+Canopy Density 2020-2021	Canopy Density 2020 GEE Link		CCD_2020	tif (530.7 MB)																																						
+Canopy Density 2021-2022	Canopy Density 2021 GEE Link		CCD_2021	tif (552.9 MB)																																						
+Canopy Density 2022-2023	Canopy Density 2022 GEE Link																																									
+Canopy Density 2023-2024	Canopy Density 2023 GEE Link																																									
+																																										
+Canopy Height Distribution 2017-2018	Canopy Height 2017 GEE Link	"var canopy_height = ee.ImageCollection(""projects/corestack-datasets/assets/datasets/tree_health/modal_ch_2017"");
+// legend class = {0: 'Short Trees', 1:'Short Trees', 2:'Medium Height Trees', 3:'Medium Height Trees', 4:'Medium Height Trees', 5:'Medium Height Trees', 6:'Tall Trees', 7:'Tall Trees', 8:'Missing Data'}
+var palette =['FFA500', 'FFA500', 'DEE64C', 'DEE64C', 'DEE64C', 'DEE64C', '007500', '007500', '000000'];
+Map.addLayer(canopy_height, {bands:['ch_class'], min: 0, max: 8, palette: palette}, 'Canopy Height Distribution - ' + year);
+"	Canopy_height_2017	tif (327 MB)	Canopy_height_style	CC BY 4.0																																				
+Canopy Height Distribution 2018-2019	Canopy Height 2018 GEE Link		Canopy_height_2018	tif (293 MB)																																						
+Canopy Height Distribution 2019-2020	Canopy Height 2019 GEE Link		Canopy_height_2019	tif (336 MB)																																						
+Canopy Height Distribution 2020-2021	Canopy Height 2020 GEE Link		Canopy_height_2020	tif (327.3 MB)																																						
+Canopy Height Distribution 2021-2022	Canopy Height 2021 GEE Link		Canopy_height_2021	tif (354.6 MB)																																						
+Canopy Height Distribution 2022-2023	Canopy Height 2022 GEE Link																																									
+Canopy Height Distribution 2023-2024	Canopy Height 2023 GEE Link																																									
+																																										
+Tree Change Analysis																																										
+Tree Change Analysis (2017-2021)																																										
+Tree Cover Change to track improvement and degradation	Tree Cover Change GEE Link	"var overall_change = ee.ImageCollection(""projects/corestack-trees/assets/tree_characteristics/overall_change_2017_2022"");
+// legend class = {-2:'Tree Cover Loss', -1:'Degradation', 0:'No Change', 1:'Improvement', 2:'Tree Cover Gain', 3:'Partially Degraded', 4:'Partially Degraded', 5:'Missing Data'}
+var palette = ['FF0000', 'FFA500', 'FFFFFF', '8AFF8A', '007500', 'DEE64C', 'DEE64C', '000000'];
+Map.addLayer(overall_change, {min: -2, max: 5, palette: palette}, 'Overall Tree Cover Change (July 2017 - June 2022)');"	Tree_health_change	tif (803.3 MB)	Tree_cover_change_style	CC BY 4.0																																				
+LTP (Large Tree Patch) - STP (Small Tree Patch) Change to track fragmentation	LTP-STP Change GEE Link	"var ltp_change = ee.ImageCollection(""projects/corestack-datasets/assets/datasets/tree_health/final_ltp_stp_change_2017_2021"");
+// legend class = {0:'STP Intact', 1:'LTP Intact', 2:'Defragmentation', 3:'Fragmentation', 4:'Afforestation', 5:'Afforestation', 6:'Deforestation', 7:'Deforestation'}
+var palette = ['FFA500', 'FFFFFF', '8AFF8A', 'DEE64C', '007500', '007500', 'FF0000', 'FF0000'];
+Map.addLayer(ltp_change, {min: 0, max: 7, palette: palette}, 'LTP-STP Change (July 2017 - June 2022)');"	LTP-STP_change	tif (339.7 MB)	LTP-STP_style	CC BY 4.0																																				
+																																										
+Open ecosystems and degradation																																										
+Wasteland Atlas 2015	Wasteland_Atlas_2015_GEE_Link	"var wasteland_1516 = ee.Image(""projects/ext-datasets/assets/datasets/WRIS/wasteland_2015_2016_pan_india"");
+// legend class = {0:'Background',1:'Mining/ Industrial Wastelands', 2:'Scrub Land', 3:'Waterlogged Area', 4:'Degraded Land Under Plantation Crop', 5:'Sandy Area', 6:'Degraded Forest', 7:'Degraded Pastures/ Grazing Land',8:'Barren Rocky Area',8:'Gullied and Ravinous Land', 9:'Salt Affected Area', 11:'Shifting Cultivation', 12:'Snow Covered/ Glacial Area'}
+var palette = ['#000000', '#4B4B4B','#9DB55A','#2B83BA','#A1DAB4','#EED8AE','#2E7D32','#D9EF8B','#C3804B','#D7301F','#F1B6DA','#8C6BB1','#E6F2FF'];
+Map.addLayer(wasteland_1516, {bands:['b1'], min: 0, max: 12, palette: palette}, 'Wasteland_2015_2016');"	Wasteland_atlas_2015	tif (55.5 MB)	Wasteland_2015_style	Published by India WRIS; Re-published here																																				
+Wasteland Atlas 2008	Wasteland_Atlas_2008_GEE_Link	"var wasteland_0809 = ee.Image(""projects/ext-datasets/assets/datasets/WRIS/wasteland_2008_2009_pan_india"");
+// legend class = {0:'Background', 1:'Scrub Land', 2:'Waterlogged Area', 3:'Degraded Forest', 4:'Degraded Land Under Plantation Crop', 5:'Sandy Area', 6:'Mining/ Industrial Wastelands', 7:'Barren Rocky Area',8:'Gullied and Ravinous Land', 9:'Salt Affected Area', 10:'Degraded Pastures/ Grazing Land', 11:'Shifting Cultivation', 12:'Snow Covered/ Glacial Area'}
+var palette = ['#000000','#9DB55A','#2B83BA','#2E7D32','#A1DAB4','#EED8AE','#4B4B4B','#C3804B','#D7301F','#F1B6DA','#D9EF8B','#8C6BB1','#E6F2FF'];
+Map.addLayer(wasteland_0809, {bands:['b1'], min: 0, max: 12, palette: palette}, 'Wasteland_2008_2009');"	Wasteland_atlas_2008	tif (56 MB)	Wasteland_2008_style	Published by India WRIS; Re-published here																																				
+Land degradation (WRIS)	Land_degradation_(WRIS)_GEE_Link	"var land_degradation = ee.Image(""projects/ext-datasets/assets/datasets/WRIS/Land_degradation_pan_india"");
+// legend class = {0:'Background', 1: ""Others - Riverine Sands / Sea Ingress etc"", 2: ""Water Erosion - Sheet erosion - Slight"", 3: ""Anthropogenic - Mining and dump areas"", 4: ""Water Erosion - Sheet erosion - Moderate"", 5: ""Salinisation / Alkalisation - Sodic - Moderate"", 6: ""Wind Erosion - Sheet erosion - Slight"", 7: ""Water Erosion - Sheet erosion - Severe"", 8: ""Wind Erosion - Partially Stabilized Dunes"", 9: ""Salinisation / Alkalisation - Sodic - Slight"", 10: ""Wind Erosion - Un-Stabilized Dunes"", 11: ""Wind Erosion - Stabilized Dunes"", 12: ""Salinisation / Alkalisation - Saline - Slight"", 13: ""Water logging - Surface ponding - Permanent"", 14: ""Others - Barren rocky / Stony waste"", 15: ""Acidification - Acidic - Moderate"", 16: ""Acidification - Acidic - Severe"", 17: ""Anthropogenic - Industrial effluent affected areas"", 18: ""Water Erosion - Gullies"", 19: ""Salinisation / Alkalisation - Saline - Moderate"", 20: ""Salinisation / Alkalisation - Saline Sodic - Severe"", 21: ""Salinisation / Alkalisation - Saline Sodic - Slight"", 22: ""Salinisation / Alkalisation - Saline Sodic - Moderate"", 23: ""Water Erosion - Rills"", 24: ""Water logging - Surface ponding - Seasonal"", 25: ""Anthropogenic - Brick kiln"", 26: ""Others - Mass movement / mass wastage"", 27: ""Water logging - Subsurface waterlogged"", 28: ""Salinisation / Alkalisation - Sodic - Severe"", 29: ""Water Erosion - Ravines - Shallow"", 30: ""Salinisation / Alkalisation - Saline - Severe"", 31: ""Wind Erosion - Sheet erosion - Moderate"", 32: ""Wind Erosion - Sheet erosion - Severe"", 33: ""Salinisation / Alkalisation - Rann"", 34: ""Glacial - Frost Shattering"", 35: ""Water Erosion - Ravines - Deep"", 36: ""Glacial - Frost heaving"", 37: ""Data Not Available"" };
+
+var colorPalette = ['#000000', '#f1e9c9', '#fee8c8', '#636363', '#fdbb84', '#9e9ac8', '#fff7bc', '#e34a33', '#ffe082', '#dadaeb', '#fff3b0', '#c2b280', '#fde0dd', '#08519c', '#8d6e63', '#41ab5d', '#006d2c', '#b2df8a', '#99000d', '#fa9fb5', '#ad1f7b', '#f2b6d4', '#e377c2', '#b30000', '#6baed6', '#252525', '#b15928', '#3182bd', '#54278f', '#a50f15', '#c51b8a', '#fec44f', '#d95f0e', '#fff7fb', '#ccece6', '#67000d', '#99d8c9', '#d9d9d9'];
+Map.addLayer(land_degradation, {bands:['b1'], min: 0, max: 37, palette: colorPalette}, 'land_degradation');"	Land_degradation	tif (339.7 MB)	Land_degradation_style	Published by India WRIS; Re-published here																																				
+ONE Map - 2018	ONE_Map_2018_GEE_Link	"var ones_map = ee.Image(""projects/ext-datasets/assets/datasets/ONES/ones_map_2018"");
+// legend class = {0:'Background',1:'Open Agriculture', 2:'Bare / Rocky / Sparsely Vegetated', 3:'Built-Up', 4:'Cultivated Trees', 5:'Dune', 6:'Forest', 7:'Saline Flat',8:'Savanna Grassland',9:'Savanna Shrubland', 10:'Savanna Woodland', 11:'Water / Wetland'}
+var palette = ['#000000', '#ffb6c1','#f5f5dc','#ff0000','#800080','#f0e68c','#006400','#006400', '#b0c4de','#ffff00','#daa520','#adff2f','#000000'];
+Map.addLayer(ones_map, {bands:['l2LabelNum'], min: 0, max: 11, palette: palette}, 'ONES Map');"	NA																																							
+ONE Map - 2019	ONE_Map_2019_GEE_Link																																									
+ONE Map - 2020	ONE_Map_2020_GEE_Link																																									
+ONE Map - 2021	ONE_Map_2021_GEE_Link																																									
+ONE Map - 2022	ONE_Map_2022_GEE_Link																																									
+ONE Map - 2023	ONE_Map_2023_GEE_Link																																									
+ONE Map - 2024	ONE_Map_2024_GEE_Link																																									
+																																										
+Drainage layers																																										
+Drainage Lines	Drainage Lines GEE Link	"var drainage_lines = ee.FeatureCollection(""projects/corestack-datasets/assets/datasets/drainage-line/pan_india_drainage_lines"");
+var drainagePalette = ee.Dictionary({
+  1: '#f7fbff',
+  2: '#e4eff9',
+  3: '#d1e2f3',
+  4: '#bad6eb',
+  5: '#9ac8e0',
+  6: '#73b2d8',
+  7: '#529dcc',
+  8: '#3585bf',
+  9: '#1d6cb1',
+  10: '#08519c',
+  11: '#08306b'
+});
+
+var styledDrainage = drainage_lines.map(function(feature) {
+  var drainageOrderType = ee.Number(feature.get('ORDER'));
+  var color = drainagePalette.get(drainageOrderType, '#0b0c0c');
+
+  return feature.set('style', {
+    color: color,
+    width: 2
+  });
+});
+
+Map.addLayer(styledDrainage.style({styleProperty: 'style'}), {}, 'Drainage Lines');"	Drainage_lines	geojson (12.37GB)	Drainage_lines_style	CC BY 4.0																																				
+Stream Order Map	Stream Order Map GEE Link	"var stream_order = ee.Image(""projects/corestack-datasets/assets/datasets/Stream_Order_Raster_India"");
+// legend class = [1,2,3,4,5,6,7,8,9,10,11]    'It is the order id'
+var palette = ['f7fbff','e4eff9','d1e2f3','bad6eb' ,'9ac8e0','73b2d8','529dcc','3585bf','1d6cb1','08519c','08306b'];
+Map.addLayer(stream_order, {min: 0, max: 11, palette: palette}, 'Stream Order');"	Stream_Order_Map	tiff (256 MB)	Stream_order_style	CC BY 4.0																																				
+Distance to Upstream Drainage Line	Distance to Upstream Drainage Line	"// This must be an Image (distance raster), not a FeatureCollection
+var upstreamDL = ee.Image(
+  'projects/ext-datasets/assets/datasets/distance_to_nearest_upstream_DL_raster'
+);
+
+// Breakpoints in meters
+var breakpoints = [0, 60, 120, 240, 500, 1000, 2000];
+
+// 8 classes => 8 colors
+var colorPalette = [
+  '#0000FF', // 0: 0
+  '#00FFFF', // 1: (0, 60]
+  '#008000', // 2: (60, 120]
+  '#00FF00', // 3: (120, 240]
+  '#FFFF00', // 4: (240, 500]
+  '#FFA500', // 5: (500, 1000]
+  '#FF0000', // 6: (1000, 2000]
+  '#8B0000'  // 7: >2000
+];
+
+// Reclassify distance raster -> class raster 0..7 using where() [web:79]
+var customColorize = function(image) {
+  image = ee.Image(image);
+
+  var out = ee.Image(0)
+    .where(image.gt(breakpoints[0]).and(image.lte(breakpoints[1])), 1)
+    .where(image.gt(breakpoints[1]).and(image.lte(breakpoints[2])), 2)
+    .where(image.gt(breakpoints[2]).and(image.lte(breakpoints[3])), 3)
+    .where(image.gt(breakpoints[3]).and(image.lte(breakpoints[4])), 4)
+    .where(image.gt(breakpoints[4]).and(image.lte(breakpoints[5])), 5)
+    .where(image.gt(breakpoints[5]).and(image.lte(breakpoints[6])), 6)
+    .where(image.gt(breakpoints[6]), 7);
+
+  return out.rename('distance_class');
+};
+
+var distanceClass = customColorize(upstreamDL);
+
+Map.addLayer(
+  distanceClass,
+  {min: 0, max: 7, palette: colorPalette},
+  'Distance to Upstream (Classes)'
+);
+"	Distance to Upstream Drainage Line	tif (7.27 GB)	Distance_to_upstream_DL_style	CC BY 4.0																																				
+Catchment Area Singleflow	Catchment Area SingleFlow	"// Raster asset (Image)
+var catchment = ee.Image('projects/ext-datasets/assets/datasets/catchment_area_singleflow');
+
+// If you know the band name, select it. Otherwise this keeps the first band.
+var band = catchment.bandNames().get(0);
+var catchmentBand = catchment.select([band]);
+
+// Breakpoints in ha
+var breakpoints = [2, 50, 100, 200, 500, 1000, 2000];
+
+// 8 colors (class 0..7)
+var colorPalette = [
+  '#440154', '#472d7b', '#3b518b', '#2c718e',
+  '#23898e', '#20a486', '#5ec962', '#fde725'
+];
+
+// Reclassify into 0..7 using where() [web:79]
+var customColorize = function(image) {
+  image = ee.Image(image);
+
+  var out = ee.Image(0)
+    .where(image.lte(breakpoints[0]), 0)
+    .where(image.gt(breakpoints[0]).and(image.lte(breakpoints[1])), 1)
+    .where(image.gt(breakpoints[1]).and(image.lte(breakpoints[2])), 2)
+    .where(image.gt(breakpoints[2]).and(image.lte(breakpoints[3])), 3)
+    .where(image.gt(breakpoints[3]).and(image.lte(breakpoints[4])), 4)
+    .where(image.gt(breakpoints[4]).and(image.lte(breakpoints[5])), 5)
+    .where(image.gt(breakpoints[5]).and(image.lte(breakpoints[6])), 6)
+    .where(image.gt(breakpoints[6]), 7);
+
+  // keep mask from original raster
+  return out.rename('catchment_area_class').updateMask(image.mask());
+};
+
+var styledImage = customColorize(catchmentBand);
+
+var visParamsCustomRange = {
+  min: 0,
+  max: 7,
+  palette: colorPalette
+};
+
+Map.addLayer(styledImage, visParamsCustomRange, 'Catchment Area (ha classes)');
+Map.centerObject(catchment.geometry(), 6);
+"	Catchment_Area_Singleflow	tif (4.78 GB)	Catchment_singleflow_style	CC BY 4.0																																				
+Catchment Area Multiflow	Catchment Area Multiflow	"// Raster asset (Image)
+var catchment = ee.Image('projects/ext-datasets/assets/datasets/catchment_area_multiflow');
+
+// If you know the band name, select it. Otherwise this keeps the first band.
+var band = catchment.bandNames().get(0);
+var catchmentBand = catchment.select([band]);
+
+// Breakpoints in ha
+var breakpoints = [2, 50, 100, 200, 500, 1000, 2000];
+
+// 8 colors (class 0..7)
+var colorPalette = [
+  '#440154', '#472d7b', '#3b518b', '#2c718e',
+  '#23898e', '#20a486', '#5ec962', '#fde725'
+];
+
+// Reclassify into 0..7 using where() [web:79]
+var customColorize = function(image) {
+  image = ee.Image(image);
+
+  var out = ee.Image(0)
+    .where(image.lte(breakpoints[0]), 0)
+    .where(image.gt(breakpoints[0]).and(image.lte(breakpoints[1])), 1)
+    .where(image.gt(breakpoints[1]).and(image.lte(breakpoints[2])), 2)
+    .where(image.gt(breakpoints[2]).and(image.lte(breakpoints[3])), 3)
+    .where(image.gt(breakpoints[3]).and(image.lte(breakpoints[4])), 4)
+    .where(image.gt(breakpoints[4]).and(image.lte(breakpoints[5])), 5)
+    .where(image.gt(breakpoints[5]).and(image.lte(breakpoints[6])), 6)
+    .where(image.gt(breakpoints[6]), 7);
+
+  // keep mask from original raster
+  return out.rename('catchment_area_class').updateMask(image.mask());
+};
+
+var styledImage = customColorize(catchmentBand);
+
+var visParamsCustomRange = {
+  min: 0,
+  max: 7,
+  palette: colorPalette
+};
+
+Map.addLayer(styledImage, visParamsCustomRange, 'Catchment Area Multiflow (ha classes)');
+Map.centerObject(catchment.geometry(), 6);
+"	Catchment_Area_multiflow	tif (12.84 GB)	Catchment_multiflow_style	CC BY 4.0																																				
+Natural Depressions	Natural Depression	"var naturalDepression = ee.Image('projects/corestack-datasets/assets/datasets/Natural_depression_raster');
+
+// Breakpoints (meters)
+var breakpoints = [1, 3, 5, 10, 20, 50];
+
+// 7 colors for classes 0..6
+var colorPalette = [
+  '#ffffcc', '#a1dab4', '#2c7fb8',
+  '#253494', '#2e004f', '#67001f', '#990000'
+];
+
+var customColorize = function(image) {
+  image = ee.Image(image);
+
+  var out = ee.Image(0)
+    .where(image.lte(breakpoints[0]), 0)                               // <= 1
+    .where(image.gt(breakpoints[0]).and(image.lte(breakpoints[1])), 1) // (1, 3]
+    .where(image.gt(breakpoints[1]).and(image.lte(breakpoints[2])), 2) // (3, 5]
+    .where(image.gt(breakpoints[2]).and(image.lte(breakpoints[3])), 3) // (5, 10]
+    .where(image.gt(breakpoints[3]).and(image.lte(breakpoints[4])), 4) // (10, 20]
+    .where(image.gt(breakpoints[4]).and(image.lte(breakpoints[5])), 5) // (20, 50]
+    .where(image.gt(breakpoints[5]), 6);                               // > 50
+
+  // keep original mask so only valid pixels draw
+  return out.rename('depression_class').updateMask(image.mask());
+};
+
+var styledImage = customColorize(naturalDepression);
+
+var visParamsCustomRange = {
+  min: 0,
+  max: 6,
+  palette: colorPalette
+};
+
+Map.addLayer(styledImage, visParamsCustomRange, 'Natural Depression (classes)');
+Map.centerObject(naturalDepression.geometry(), 6);
+"	Natural Depression	tif (2.23 GB)	Natural_depression_style	CC BY 4.0																																				
+																																										
+Hydrological boundaries																																										
+River basin	Basin	"var basin = ee.FeatureCollection(""projects/ext-datasets/assets/datasets/Basin_pan_india"");
+Map.addLayer(basin)"	Basin	shp (1.5 MB)	Basin_style	Published by India WRIS; Re-published here																																				
+Sub-basin	Sub-basin	"var sub_basin = ee.FeatureCollection(""projects/ext-datasets/assets/datasets/CWC_sub_basin"");
+Map.addLayer(sub_basin)"	Sub-basin	geojson (73.8 MB)	Sub-basin_style																																					
+Watershed	Watershed	"var watershed = ee.FeatureCollection(""projects/corestack-datasets/assets/datasets/hydrological_boundaries/watersheds"");
+Map.addLayer(watershed)"	Watershed	geojson (460 MB)																																						
+Microwatershed boundaries v1	Microwatershed boundaries v1	"var mws = ee.FeatureCollection(""projects/corestack-datasets/assets/datasets/India_mws_UID_Merged"");
+Map.addLayer(mws)"	Microwatershed boundaries v1	geojson (6.35 GB)		CC BY 4.0																																				
+Microwatershed boundaries v2	India_mws_uid_gt_500	"var mws_gt_500 = ee.FeatureCollection(""projects/corestack-datasets/assets/datasets/hydrological_boundaries/microwatershed"");
+Map.addLayer(mws_gt_500)"	Microwatershed boundaries v2	geojson (5.37 GB)		CC BY 4.0																																				
+MWS Connectivity	Mws_connectivity	"var mws_connectivity = ee.FeatureCollection(
+  'projects/corestack-datasets/assets/datasets/India_mws_connectivity'
+);
+
+var styleDirectionalArrows = function(fc) {
+  // Filter out direction == 0
+  var filtered = fc.filter(ee.Filter.neq('direction', '0'));
+
+  // color map (strings are OK)
+  var directionColors = ee.Dictionary({
+    '1': '30123b', // NE
+    '2': '466be3', // E
+    '3': '28bceb', // SE
+    '4': '32f298', // S
+    '5': 'a4fc3c', // SW
+    '6': 'eecf3a', // W
+    '7': 'fb7e21', // NW
+    '8': 'd02f05'  // N
+  });
+
+  // map direction -> triangle shape
+  // NOTE: FeatureCollection.style supports triangle_up/down/left/right (not rotation) [web:91]
+  var directionShapes = ee.Dictionary({
+    '1': 'triangle_up',    // NE (approx)
+    '2': 'triangle_right', // E
+    '3': 'triangle_right', // SE (approx)
+    '4': 'triangle_down',  // S
+    '5': 'triangle_down',  // SW (approx)
+    '6': 'triangle_left',  // W
+    '7': 'triangle_left',  // NW (approx)
+    '8': 'triangle_up'     // N
+  });
+
+  return filtered.map(function(feature) {
+    var direction = ee.String(feature.get('direction'));
+
+    return feature.set('style', {
+      color: directionColors.get(direction),    // stroke color [web:91]
+      pointSize: 10,                            // marker size [web:91]
+      pointShape: directionShapes.get(direction),
+      width: 1
+    });
+  });
+};
+
+var styledArrows = styleDirectionalArrows(mws_connectivity);
+
+// Convert FC with per-feature style into an ee.Image for display [web:91]
+var styledImage = styledArrows.style({
+  styleProperty: 'style',
+  neighborhood: 12  // >= (max pointSize + width), helps avoid clipping [web:91]
+});
+
+Map.addLayer(styledImage, {}, 'MWS Connectivity (direction)');"	Mws_connectivity	geojson (55 MB)		CC BY 4.0																																				
+																																										
+Administrative boundaries																																										
+State	State	"var state = ee.FeatureCollection(""projects/ext-datasets/assets/datasets/State_pan_india"");
+Map.addLayer(state)"	State	geojson (39 MB)	State_style	Published by SHRUG and other sources; Re-published here																																				
+District	District	"var district = ee.FeatureCollection(""projects/ext-datasets/assets/datasets/District_pan_india"");
+Map.addLayer(district)"	District	geojson (29.7 MB)	District_style																																					
+Tehsil	Tehsil	"var tehsil = ee.FeatureCollection(""projects/ext-datasets/assets/datasets/SOI_tehsil"");
+Map.addLayer(tehsil)"	Tehsil	geojson (315.5 MB)	Tehsil_style																																					
+Panchayat	Panchayat	"var panchayat = ee.FeatureCollection(""projects/ext-datasets/assets/datasets/Panchayat_pan_india"");
+Map.addLayer(panchayat)"	Panchayat	geojson (825.4 MB)																																						
+Village	Village	"var village = ee.FeatureCollection(""projects/ext-datasets/assets/datasets/Village_pan_india"");
+Map.addLayer(village)"	Village	geojson (1.14 GB)																																						
+																																										
+Waterbodies Layers																																										
+Rivers	River	"var river = ee.FeatureCollection(""projects/ext-datasets/assets/datasets/River_pan_india"");
+Map.addLayer(river)"	River	geojson (592 MB)		Published by India WRIS; Re-published here																																				
+Canals	Canal	"var canal = ee.FeatureCollection(""projects/ext-datasets/assets/datasets/Canal_pan_india"");
+Map.addLayer(canal)"	Canal	geojson (47.2 MB)																																						
+Waterbodies Census	Waterbodies_census	"var waterbodiesCensus = ee.FeatureCollection(""projects/ext-datasets/assets/datasets/Waterbodies_census_pan_india"");
+Map.addLayer(waterbodiesCensus)"	Waterbodies_Census	geojson (6.39 GB)																																						
+First Census of Water Bodies			First Census of Water Bodies	geojson (3.57 GB)																																						
+Reservoir	Reservoir	"var reservoir = ee.FeatureCollection(""projects/ext-datasets/assets/datasets/Reservoir_water_pan_india"");
+Map.addLayer(reservoir)"	Reservoir	geojson (45.6 MB)																																						
+Reservoir stations	Reservoir_stations	"var reservoir_station = ee.FeatureCollection(""projects/ext-datasets/assets/datasets/Reservoir_Stations_pan_india"");
+Map.addLayer(reservoir_station)"	Reservoir_stations	geojson (373 KB)																																						
+																																										
+Groundwater Layers																																										
+Ground Levels in Dugwells	Ground Levels in Dugwells	"var dugwells = ee.FeatureCollection(""projects/ext-datasets/assets/datasets/GWL_in_dugwells"");
+Map.addLayer(dugwells)"	Ground Levels in Dugwells	geojson (59 MB)		Published by CGWB; Re-published here																																				
+Ground Levels in Borewells	Ground Levels in Borewells	"var borewells = ee.FeatureCollection(""projects/ext-datasets/assets/datasets/GWL_in_borewells"");
+Map.addLayer(borewells)"	Ground Levels in Borewells	geojson (7.2 MB)																																						
+Stage of Groundwater Extraction	Stage of Groundwater Extraction	"var soge = ee.FeatureCollection(""projects/ext-datasets/assets/datasets/SOGE_vector_2020"");
+var sogePaletteDict = ee.Dictionary({
+  ""Safe"": ""#cfe2f3"",
+  ""Semi-Critical"": ""#0000ff"",
+  ""Critical"": ""#f5de17"",
+  ""Over Exploited"": ""#ff0000"",
+  ""Saline"": ""#1a9c0e"",
+  ""Hilly Area"": ""#ffffff"",
+  ""No Data"": ""#d3d3d3""
+});
+
+
+var styledSoge = soge.map(function(feature) {
+  var sogeClass = feature.get('class');
+  var color = sogePaletteDict.get(sogeClass, '#d3d3d3');
+
+  return feature.set('style', {
+    color: '#000000',
+    fillColor: color,
+    width: 1
+  });
+});
+
+
+Map.addLayer(styledSoge.style({styleProperty: 'style'}), {}, 'SOGE Vector');"	Stage of Groundwater Extraction	geojson (258.6 MB)	SOGE_style	Published by CGWB; Re-published here																																				
+																																										
+Geological and geohydrological layers																																										
+Aquifers	Aquifer	"var aquifer = ee.FeatureCollection(""projects/ext-datasets/assets/datasets/Aquifer_vector"");
+var aquiferPalette = ee.Dictionary({
+  'Alluvium': '#fffdb5',
+  'Laterite': '#f3a425',
+  'Basalt': '#99ecf1',
+  'Sandstone': '#a5f8c5',
+  'Shale': '#f57c99',
+  'Limestone': '#e8d52e',
+  'Granite': '#3c92f2',
+  'Schist': '#d5db21',
+  'Quartzite': '#cf7ff4',
+  'Charnockite': '#f4dbff',
+  'Khondalite': '#50c02b',
+  'Basement Gneissic Complex': '#ffe1b5',
+  'Gneiss': '#e4cff1',
+  'Intrusive': '#57d2ff'
+});
+
+var styledAquifer = aquifer.map(function(feature) {
+  var aquiferType = feature.get('aquifer');
+  var color = aquiferPalette.get(aquiferType, '#d3d3d3');
+  
+  return feature.set('style', {
+    color: '#000000',
+    fillColor: color,
+    width: 1
+  });
+});
+
+Map.addLayer(styledAquifer.style({styleProperty: 'style'}), {}, 'Aquifer Vector');"	Aquifer	geojson (101 MB)	Aquifer_style	Published by CGWB; Re-published here																																				
+Lithology	Lithology	"var lithology = ee.FeatureCollection(""projects/ext-datasets/assets/datasets/Lithology_pan_india"");
+Map.addLayer(lithology)"	Lithology	geojson (5.22 GB)																																						
+Lineament	Lineament	"var lineament = ee.Image(""projects/ext-datasets/assets/datasets/Lineament_pan_india"");
+var maskedLineament = lineament.updateMask(lineament.neq(0));
+//legend class = {0:'No Lineament', 1:'Lineament'}
+Map.addLayer(maskedLineament, {min:0, max:1, palette: ['0000ff']}, 'Lineament');"	Lineament	tif (6.7 MB)		Published by Bhuvan; Re-published here																																				
+																																										
+Climatic and biophysical zones																																										
+Agro-Ecological Zone	AEZ	"var aez = ee.FeatureCollection('projects/ext-datasets/assets/datasets/Agro_Ecological_Zones');
+
+var aezPaletteDict = ee.Dictionary({
+  ""WESTERN HIMALAYAS  COLD ARID ECO-REGION"": ""#E6194B"",
+  ""WESTERN PLAIN  KACHCHH AND PART OF KATHIAWAR PENINSULA HOT ARID ECO-REGION"": ""#3CB44B"",
+  ""KARNATAKA PLATEAU (RAYALSEEMA AS INCLUSION)"": ""#0082C8"",
+  ""NORTHERN PLAIN (AND CENTRAL HIGHLANDS) INCLUDING ARAVALLIS  HOT SEMI-ARID EGO-REGION"": ""#86A6BD"",
+  ""CENTRAL HIGHLANDS ( MALWA )  GUJARAT PLAIN AND KATHIAWAR PENINSULA  SEMI-ARID ECO-REGION"": ""#911EB4"",
+  ""DECCAN PLATU  HOT SEMI-ARID ECO-REGION"": ""#00CED1"",
+  ""EASTERN HIMALAYAS  WARM PERHUMID ECO-REGION"": ""#F032E6"",
+  ""NORTH EASTERN HILLS (PURVACHAL)  WARM PERHUMID ECO-REGION"": ""#FFD700"",
+  ""EASTERN COASTAL PLAIN  HOT SUBHUMID TO SEMI-ARID EGO-REGION"": ""#005F6A"",
+  ""WESTERN GHATS AND COASTAL PLAIN  HOT HUMID-PERHUMID ECO-REGION"": ""#FABEBE"",
+  ""ISLANDS  OF ANDAMAN-NICOBAR  AND LAKSHADWEEP  HOT  HUMID  TO PERHUMID ISLAND ECO REGION"": ""#AA6E28"",
+  ""DECCAN PLATEAU  (TELANGANA) AND EASTERN GHATS  HOT SEMI ARID ECO-REGION"": ""#800000"",
+  ""EASTERN GHATS AND TAMIL NADU UPLANDS AND DECCAN (K ARNATAKA) PLATEAU  HOT SEMI-ARID ECO-REGION"": ""#87CEFA"",
+  ""NORTHERN PLAIN  HOT SUBHUMID (DRY) ECO-REGION"": ""#FFD8B1"",
+  ""CENTRAL HIGHLANDS (MALWA AND BUNDELKHAND)  HOT SUBHUMID (DRY) ECO-REGION"": ""#000080"",
+  ""EASTERN PLATEAU (CHHATTISGARH REGION)"": ""#B22222"",
+  ""EASTERN PLATEAU (CHHOTANAGPUR) AND EASTERN GHATS  HOT SUBHUMID ECO-REGION"": ""#FF69B4"",
+  ""EASTERN PLAIN  HOT SUBAUMID (MOIST) ECO-REGION"": ""#4B0082"",
+  ""WESTERN HIMALAYA  WARM SUBHUMID (TO HUMID WITH INCLUSION OF PERHUMID) ECO-REGION"": ""#FF7F50"",
+  ""ASSAM AND BENGAL PLAIN  HOT SUBHUMID  TO HUMID  (INCLUSION  OF PERHUMID) ECO-REGION"": ""#228B22""
+});
+
+// Optional: declare a layer ref so you can remove it later
+var aezLayer = null;
+
+var loadLayer = function() {
+  // Style each polygon using physio_reg
+  var styledAEZ = aez.map(function(feature) {
+    var aezClass = ee.String(feature.get('physio_reg'));
+
+    var color = ee.String(aezPaletteDict.get({
+      key: aezClass,
+      defaultValue: '#d3d3d3'
+    }));
+
+    return feature.set('style', {
+      color: '#000000',       // outline
+      width: 1,
+      fillColor: color,
+      fillOpacity: 0.6
+    });
+  });
+
+  // Convert styled FC -> image for display [web:91]
+  var styledImage = styledAEZ.style({
+    styleProperty: 'style',
+    neighborhood: 3
+  });
+
+  aezLayer = Map.addLayer(styledImage, {}, 'Agro-Ecological Zone');
+  Map.centerObject(aez, 5);
+};
+
+loadLayer();
+"	AEZs	shp (4.8 MB)	AEZs	Published by various sources; Re-published here																																				
+Agro-Climatic Zone	ACZ	"var acz = ee.FeatureCollection('projects/ext-datasets/assets/datasets/Agro_Climatic_Zones');
+
+var aczPaletteDict = ee.Dictionary({
+  'Western Dry Region': '#E6194B',
+  'West Coast Plains & Ghat Region': '#3CB44B',
+  'Island region': '#0082C8',
+  'Western Plateau and Hills Region': '#F58231',
+  'Southern Plateau and Hills Region': '#911EB4',
+  'Gujarat Plains & Hills Region': '#46F0F0',
+  'Central Plateau & Hills Region': '#F032E6',
+  'Trans Gangetic Plain Region': '#D2F53C',
+  'Western Himalayan Region': '#008080',
+  'Upper Gangetic Plain Region': '#FABEBE',
+  'East Coast Plains & Hills Region': '#AA6E28',
+  'Eastern Plateau & Hills Region': '#800000',
+  'Middle Gangetic Plain Region': '#AFFFAC',
+  'Lower Gangetic Plain Region': '#FFD8B1',
+  'Eastern Himalayan Region': '#000080'
+});
+
+var aczLayer = null;
+
+// Load button action
+var loadLayer = function() {
+  // Style features
+  var styledACZ = acz.map(function(feature) {
+    var aczClass = ee.String(feature.get('regionname'));
+
+    var fill = ee.String(aczPaletteDict.get({
+      key: aczClass,
+      defaultValue: '#d3d3d3'
+    }));
+
+    return feature.set('style', {
+      color: '#000000',
+      width: 1,
+      fillColor: fill,
+      fillOpacity: 0.6
+    });
+  });
+
+  // style() returns an Image suitable for Map.addLayer() [web:91]
+  var styledImage = styledACZ.style({
+    styleProperty: 'style',
+    neighborhood: 3
+  });
+
+  aczLayer = Map.addLayer(styledImage, {}, 'Agro-Climatic Zone');
+  Map.centerObject(acz, 5);
+};
+
+// Example call
+loadLayer();
+"	ACZs	shp (5.4 MB)	ACZs	Published by various sources; Re-published here																																				
+Biogeographic Zone	Biogeographic	"var biogeographicZone = ee.FeatureCollection(
+  'projects/ext-datasets/assets/datasets/Biogeographic_Zone_pan_india'
+);
+
+var biogeographicPaletteDict = ee.Dictionary({
+  'Coasts': '#F227F5',
+  'Deccan Peninsula': '#23D9D9',
+  'Desert': '#3ED699',
+  'Gangetic Plain': '#24E319',
+  'Himalaya': '#E3DC19',
+  'Islands': '#E36A19',
+  'North-East': '#BC2E15',
+  'Semi-Arid': '#0C65F2',
+  'Trans-Himalaya': '#BFF759',
+  'Western Ghats': '#0A2D8C'
+});
+
+var biogeographicLayer = null;
+
+// Button click function to load layer
+var loadLayer = function() {
+  // clearMap(); // keep if you already have it in your app
+
+  var styledBiogeo = biogeographicZone.map(function(feature) {
+    var biogeoClass = ee.String(feature.get('biogeozone'));
+
+    var fill = ee.String(biogeographicPaletteDict.get({
+      key: biogeoClass,
+      defaultValue: '#d3d3d3'
+    }));
+
+    return feature.set('style', {
+      color: '#000000',
+      width: 1,
+      fillColor: fill,
+      fillOpacity: 0.6
+    });
+  });
+
+  var styledImage = styledBiogeo.style({
+    styleProperty: 'style',
+    neighborhood: 3
+  });
+
+  biogeographicLayer = Map.addLayer(styledImage, {}, 'Biogeographic Zone');
+  Map.centerObject(biogeographicZone, 5);
+};
+
+loadLayer();
+"	Biogeographic	goejson (12.7 MB)	Biogeographic_style	Published by various sources; Re-published here																																				
+																																										
+WRI restoration opportunities atlas																																										
+Restoration opportunities	Restoration	"var restoration = ee.Image(""projects/corestack-datasets/assets/datasets/WRI/LandscapeRestorationOpportunities"");
+// legend class = {0:'Protection', 1:'Wide-scale Restoration', 2:'Mosaic Restoration', 3:'Excluded Areas'}
+var res_palette = ['1a9850','d73027','fee08b','cccccc'];
+Map.addLayer(restoration, {min: 0, max: 3, palette: res_palette}, 'Restoration');"	Restoration	tif (71.2 MB)	Restoration_style	Published by WRI India; Re-published here																																				
+																																										
+Industry																																										
+Land Conflict Watch	LCW	"var lcw = ee.FeatureCollection(""projects/ext-datasets/assets/datasets/lcw_conflict_pan_india"");
+Map.addLayer(lcw)"	LCW	geojson(431 kb)		Published by Land Conflict Watch; Re-published here																																				
+Mining	Mining	"var mining = ee.FeatureCollection(""projects/ext-datasets/assets/datasets/Mining_data_pan_india"");
+Map.addLayer(mining)"	Mining	geojson(487 kb)		Published by Pande, et al (2020); Re-published here																																				
+Industries	Industries	"var industry = ee.FeatureCollection(""projects/ext-datasets/assets/datasets/Factory_CSR_pan_india"");
+Map.addLayer(industry)"	Industries	geojson(19.4 MB)		Published by ASI; Re-published here																																				
+																																										
+Restoration and Regeneration																																										
+Green Credits (GoI)	Green Credit	"var green_credit = ee.FeatureCollection(""projects/ext-datasets/assets/datasets/Green_credit_pan_india"");
+Map.addLayer(green_credit)"	Green Credit	geojson(504 kb)		Published by Green Credits registry; Re-published here																																				
+Natural farming organizations (Consortium for Agroecological Transformations)	Natural farming organizations	"var natural_farming = ee.FeatureCollection(""projects/ext-datasets/assets/datasets/Agroecological_space_pan_india"");
+Map.addLayer(natural_farming)"	Natural Farming	geojson(2.7 MB)		Published by the Consortium for Agroecological Transformation; Re-published here																																				
+Facilities Proximity																																										
+Advanced Health Facilities	Advanced Health Facilities	"var advance_health = ee.FeatureCollection(""projects/corestack-datasets/assets/facilities/advanced_health"");
+Map.addLayer(advance_health)"	Advanced Health	geojson(805 KB)																																						
+Agri Support Infrastructure	Agri Support Infrastructure	"var agri_support_infra = ee.FeatureCollection(""projects/corestack-datasets/assets/facilities/agri_support_infra"");
+Map.addLayer(agri_support_infra)"	Agri Support Infrastructure	geojson(374 KB)																																						
+APMC Access Facilities	APMC Access Facilities	"var apmc_access = ee.FeatureCollection(""projects/corestack-datasets/assets/facilities/apmc_access"");
+Map.addLayer(apmc_access)"	APMC Access	geojson(19.3 MB)																																						
+Cooperative Facilities	Cooperative Facilities	"var cooperative = ee.FeatureCollection(""projects/corestack-datasets/assets/facilities/cooperative"");
+Map.addLayer(cooperative)"	Cooperative	geojson(1.1 MB)																																						
+Essential Education Facilities	Essential Education Facilities	"var essential_education = ee.FeatureCollection(""projects/corestack-datasets/assets/facilities/essential_education"");
+Map.addLayer(essential_education)"	Essential Education	geojson(589.7 MB)																																						
+Essential Health Facilities	Essential Health Facilities	"var essential_health = ee.FeatureCollection(""projects/corestack-datasets/assets/facilities/essential_health"");
+Map.addLayer(essential_health)"	Essential Health	geojson(27.7 MB)																																						
+Financial Inclusion Facilities	Financial Inclusion Facilities	"var financial_inclusion = ee.FeatureCollection(""projects/corestack-datasets/assets/facilities/financial_inclusion"");
+Map.addLayer(financial_inclusion)"	Financial Inclusion	geojson(461.6 MB)																																						
+Food Security Facilities	Food Security Facilities	"var food_security = ee.FeatureCollection(""projects/corestack-datasets/assets/facilities/food_security"");
+Map.addLayer(food_security)"	Food Security	geojson(59.3 MB)																																						
+Higher Education Facilities	Higher Education Facilities	"var higher_education = ee.FeatureCollection(""projects/corestack-datasets/assets/facilities/higher_education"");
+Map.addLayer(higher_education)"	Higher Education	geojson(44.3 MB)																																						
+Livestock Facilities	Livestock Facilities	"var livestock = ee.FeatureCollection(""projects/corestack-datasets/assets/facilities/livestock"");
+Map.addLayer(livestock)"	Livestock	geojson(3.8 MB)																																						
+Post Harvest Facilities	Post Harvest Facilities	"var post_harvest = ee.FeatureCollection(""projects/corestack-datasets/assets/facilities/post_harvest"");
+Map.addLayer(post_harvest)"	Post Harvest	geojson(8.8 MB)																																						
+Pan India Facilities	Pan India Facilities	"var pan_india_facilties = ee.FeatureCollection(""projects/corestack-datasets/assets/datasets/pan_india_facilities"");
+Map.addLayer(pan_india_facilties)"	Pan India Facilities	geojson(4.23 GB)										

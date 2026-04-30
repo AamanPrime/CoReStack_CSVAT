@@ -8,33 +8,40 @@
  *   4. Geometry helpers (place → bounding box for GEE)
  */
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { Loader } from '@googlemaps/js-api-loader';
+import { setOptions, importLibrary } from '@googlemaps/js-api-loader';
 
 const MAPS_KEY = import.meta.env.VITE_GOOGLE_MAPS_KEY || '';
 
-// ─── Script Loader (via @googlemaps/js-api-loader for async loading) ───
+// ─── Script Loader (new functional API — @googlemaps/js-api-loader v2+) ───
+// setOptions() configures the key; importLibrary() injects the Maps script
+// and returns the named library. All must use the loader's importLibrary,
+// not window.google.maps.importLibrary, until the script is injected.
 
 let mapsLoaded = false;
 let mapsLoadPromise = null;
 
-const loader = new Loader({
-  apiKey: MAPS_KEY,
-  version: 'weekly',
-  libraries: ['places', 'geometry'],
+// Configure the loader once (idempotent — must be called before importLibrary)
+setOptions({
+  key: MAPS_KEY,
+  v: 'weekly',
 });
 
 export function loadGoogleMaps() {
   if (mapsLoaded && window.google?.maps) return Promise.resolve();
   if (mapsLoadPromise) return mapsLoadPromise;
 
-  mapsLoadPromise = loader.importLibrary('maps').then(() => {
-    // Also ensure places and geometry are loaded
-    return Promise.all([
-      loader.importLibrary('places'),
-      loader.importLibrary('geometry'),
-    ]);
-  }).then(() => {
+  // Use the loader's importLibrary() — this injects the Maps script on first call.
+  // Do NOT call window.google.maps.importLibrary() here; google doesn't exist yet.
+  mapsLoadPromise = Promise.all([
+    importLibrary('maps'),
+    importLibrary('places'),
+    importLibrary('geometry'),
+    importLibrary('marker'),
+  ]).then(() => {
     mapsLoaded = true;
+  }).catch(err => {
+    mapsLoadPromise = null; // Allow retry on failure
+    throw err;
   });
 
   return mapsLoadPromise;
@@ -83,6 +90,7 @@ export function MapView({
         center: defaultCenter,
         zoom: center ? zoom : 5,
         mapTypeId: 'hybrid',
+        mapId: 'DEMO_MAP_ID', // Required for AdvancedMarkerElement
         mapTypeControl: false,
         streetViewControl: false,
         fullscreenControl: false,
@@ -293,19 +301,20 @@ export function MapView({
       const latLng = e.latLng;
       vertices.push({ lat: latLng.lat(), lng: latLng.lng() });
 
-      // Add vertex marker
-      const marker = new window.google.maps.Marker({
+      // Add vertex marker using AdvancedMarkerElement
+      const markerDiv = document.createElement('div');
+      markerDiv.style.width = '12px';
+      markerDiv.style.height = '12px';
+      markerDiv.style.borderRadius = '50%';
+      markerDiv.style.backgroundColor = '#f59e0b';
+      markerDiv.style.border = '2px solid #ffffff';
+      markerDiv.style.boxSizing = 'border-box';
+
+      const marker = new window.google.maps.marker.AdvancedMarkerElement({
         position: latLng,
         map,
-        icon: {
-          path: window.google.maps.SymbolPath.CIRCLE,
-          scale: 6,
-          fillColor: '#f59e0b',
-          fillOpacity: 1,
-          strokeColor: '#ffffff',
-          strokeWeight: 2,
-        },
-        clickable: false,
+        content: markerDiv,
+        gmpClickable: false,
       });
       dr.markers.push(marker);
 
@@ -359,21 +368,22 @@ export function MapView({
     mapInstance.current.panTo(center);
     mapInstance.current.setZoom(zoom);
 
-    // Update/create marker
+    // Update/create marker using AdvancedMarkerElement
     if (markerRef.current) {
-      markerRef.current.setPosition(center);
-    } else if (window.google?.maps) {
-      markerRef.current = new window.google.maps.Marker({
+      markerRef.current.position = center;
+    } else if (window.google?.maps?.marker) {
+      const centerMarkerDiv = document.createElement('div');
+      centerMarkerDiv.style.width = '16px';
+      centerMarkerDiv.style.height = '16px';
+      centerMarkerDiv.style.borderRadius = '50%';
+      centerMarkerDiv.style.backgroundColor = '#22c55e';
+      centerMarkerDiv.style.border = '2px solid #ffffff';
+      centerMarkerDiv.style.boxSizing = 'border-box';
+
+      markerRef.current = new window.google.maps.marker.AdvancedMarkerElement({
         position: center,
         map: mapInstance.current,
-        icon: {
-          path: window.google.maps.SymbolPath.CIRCLE,
-          scale: 8,
-          fillColor: '#22c55e',
-          fillOpacity: 1,
-          strokeColor: '#ffffff',
-          strokeWeight: 2,
-        },
+        content: centerMarkerDiv,
       });
     }
   }, [center, zoom, isMapReady]);
@@ -602,56 +612,60 @@ export function MapView({
 export function usePlacesAutocomplete() {
   const [predictions, setPredictions] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
-  const serviceRef = useRef(null);
   const sessionTokenRef = useRef(null);
   const geocoderRef = useRef(null);
+  const placesLibRef = useRef(null);
 
   useEffect(() => {
     loadGoogleMaps().then(() => {
       if (window.google?.maps?.places) {
-        serviceRef.current =
-          new window.google.maps.places.AutocompleteService();
+        placesLibRef.current = window.google.maps.places;
         geocoderRef.current = new window.google.maps.Geocoder();
-        sessionTokenRef.current =
-          new window.google.maps.places.AutocompleteSessionToken();
+        sessionTokenRef.current = new window.google.maps.places.AutocompleteSessionToken();
       }
     });
   }, []);
 
-  const search = useCallback((query) => {
-    if (!query || query.length < 2 || !serviceRef.current) {
+  const search = useCallback(async (query) => {
+    if (!query || query.length < 2 || !placesLibRef.current?.AutocompleteSuggestion) {
       setPredictions([]);
       return;
     }
 
     setIsLoading(true);
 
-    serviceRef.current.getPlacePredictions(
-      {
+    try {
+      const request = {
         input: query,
-        componentRestrictions: { country: 'in' }, // India only
-        types: ['locality', 'sublocality', 'administrative_area_level_3'], // Villages/towns
+        includedRegionCodes: ['in'], // India only
+        includedPrimaryTypes: ['locality', 'sublocality', 'administrative_area_level_3'],
         sessionToken: sessionTokenRef.current,
-      },
-      (results, status) => {
-        setIsLoading(false);
-        if (
-          status === window.google.maps.places.PlacesServiceStatus.OK &&
-          results
-        ) {
-          setPredictions(
-            results.map((r) => ({
-              place_id: r.place_id,
-              description: r.description,
-              main_text: r.structured_formatting?.main_text || r.description,
-              secondary_text: r.structured_formatting?.secondary_text || '',
-            })),
-          );
-        } else {
-          setPredictions([]);
-        }
-      },
-    );
+      };
+
+      const response = await placesLibRef.current.AutocompleteSuggestion.fetchAutocompleteSuggestions(request);
+
+      if (response && response.suggestions) {
+        setPredictions(
+          response.suggestions.map((s) => {
+            const placePrediction = s.placePrediction;
+            return {
+              place_id: placePrediction.placeId,
+              description: placePrediction.text.text,
+              main_text: placePrediction.text.text,
+              // Fallback to empty string for secondary text as text.text usually contains the full formatted address
+              secondary_text: '',
+            };
+          })
+        );
+      } else {
+        setPredictions([]);
+      }
+    } catch (error) {
+      console.warn("Places search error (new API):", error);
+      setPredictions([]);
+    } finally {
+      setIsLoading(false);
+    }
   }, []);
 
   const getPlaceDetails = useCallback(async (placeId) => {
