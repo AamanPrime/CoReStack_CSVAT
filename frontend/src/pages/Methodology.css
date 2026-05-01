@@ -1,0 +1,236 @@
+/* ─── Methodology Page ─── */
+
+.methodology-container {
+  padding: 2rem 2.5rem;
+  max-width: 960px;
+  margin: 0 auto;
+  color: var(--text-primary);
+  overflow-y: auto;
+  max-height: calc(100vh - 60px);
+  font-size: 1rem;
+  line-height: 1.75;
+}
+
+/* ── Typography ── */
+.meth-title {
+  color: var(--accent-teal);
+  margin-bottom: 0.5rem;
+  font-size: 2rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.meth-subtitle {
+  color: var(--text-secondary);
+  margin-bottom: 2.5rem;
+  line-height: 1.75;
+  font-size: 1rem;
+}
+
+.meth-section {
+  margin-bottom: 3rem;
+}
+
+.meth-section-title {
+  padding-bottom: 0.6rem;
+  margin-bottom: 1.25rem;
+  font-size: 1.25rem;
+  font-weight: 700;
+  border-bottom-width: 2px;
+  border-bottom-style: solid;
+}
+
+.meth-subsection {
+  margin-bottom: 1.5rem;
+}
+
+.meth-subsection-title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 0.6rem;
+  margin-top: 0.25rem;
+}
+
+.meth-p {
+  line-height: 1.8;
+  margin-bottom: 0.85rem;
+  font-size: 0.97rem;
+}
+
+.meth-ul {
+  padding-left: 1.6rem;
+  line-height: 1.9;
+  margin-bottom: 0.85rem;
+  font-size: 0.97rem;
+}
+
+.meth-ol {
+  padding-left: 1.6rem;
+  line-height: 1.9;
+  margin-bottom: 0.85rem;
+  font-size: 0.97rem;
+}
+
+/* ── Cards ── */
+.meth-card {
+  background: var(--glass, rgba(255,255,255,0.03));
+  border: 1px solid var(--border, #334155);
+  border-radius: 12px;
+  padding: 1.25rem;
+}
+
+/* ── Execution mode grid ── */
+.meth-mode-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 1rem;
+  margin: 1.25rem 0;
+}
+
+/* ── Formula grid ── */
+.meth-formula-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin: 1rem 0;
+}
+
+/* ── Formula box ── */
+.meth-formula-box {
+  background: var(--glass, rgba(255,255,255,0.03));
+  border: 1px solid var(--border, #334155);
+  padding: 0.9rem 1.1rem;
+  border-radius: 8px;
+  font-family: "Fira Code", "JetBrains Mono", monospace;
+  font-size: 0.92rem;
+  color: var(--text-primary);
+  text-align: center;
+  letter-spacing: 0.02em;
+  white-space: pre-line;
+}
+
+.meth-formula-box.small {
+  padding: 0.6rem 0.8rem;
+  font-size: 0.87rem;
+}
+
+/* ── Warning box ── */
+.meth-warning {
+  background: rgba(245, 158, 11, 0.07);
+  border: 1px solid rgba(245, 158, 11, 0.25);
+  border-radius: 8px;
+  padding: 0.85rem 1.1rem;
+  margin-top: 0.85rem;
+  font-size: 0.9rem;
+  line-height: 1.7;
+  color: var(--text-secondary);
+}
+
+/* ── Table ── */
+.meth-table-wrap {
+  overflow-x: auto;
+  margin: 0.85rem 0;
+  border-radius: 8px;
+}
+
+.meth-table {
+  width: 100%;
+  border-collapse: collapse;
+  border: 1px solid var(--border, #334155);
+  font-size: 0.9rem;
+}
+
+.meth-table th {
+  padding: 0.55rem 0.85rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  background: var(--glass, rgba(255,255,255,0.03));
+  font-size: 0.82rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-bottom: 1px solid var(--border, #334155);
+  text-align: left;
+}
+
+.meth-table td {
+  padding: 0.55rem 0.85rem;
+  border-bottom: 1px solid var(--border, #334155);
+  vertical-align: top;
+  line-height: 1.6;
+}
+
+.meth-table td:first-child {
+  font-weight: 500;
+}
+
+/* ── Footer ── */
+.meth-footer {
+  text-align: center;
+  padding: 2.5rem 0 1rem;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+/* ════════════════════════════════════════
+   MOBILE  (≤ 640px)
+   ════════════════════════════════════════ */
+@media (max-width: 640px) {
+  .methodology-container {
+    padding: 1.25rem 1rem;
+    font-size: 0.97rem;
+    max-height: none;        /* let page scroll naturally on mobile */
+  }
+
+  .meth-title {
+    font-size: 1.5rem;
+  }
+
+  .meth-subtitle {
+    font-size: 0.95rem;
+    margin-bottom: 1.75rem;
+  }
+
+  .meth-section-title {
+    font-size: 1.1rem;
+  }
+
+  .meth-subsection-title {
+    font-size: 0.97rem;
+  }
+
+  .meth-p,
+  .meth-ul,
+  .meth-ol {
+    font-size: 0.93rem;
+  }
+
+  /* Stack all grids to single column on mobile */
+  .meth-mode-grid,
+  .meth-formula-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .meth-formula-box {
+    font-size: 0.85rem;
+  }
+
+  .meth-table th,
+  .meth-table td {
+    font-size: 0.82rem;
+    padding: 0.45rem 0.6rem;
+  }
+
+  .meth-card {
+    padding: 1rem;
+  }
+}
+
+/* ════════════════════════════════════════
+   TABLET  (641px – 900px)
+   ════════════════════════════════════════ */
+@media (min-width: 641px) and (max-width: 900px) {
+  .meth-mode-grid {
+    grid-template-columns: 1fr 1fr;  /* 2-col on tablet */
+  }
+}

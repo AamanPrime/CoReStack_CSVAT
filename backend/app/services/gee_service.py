@@ -429,3 +429,65 @@ def fetch_corestack_lulc_all_years(geometry: dict) -> tuple[list, float]:
             pixel_area_ha = result["pixel_area_ha"]
 
     return extracted, pixel_area_ha
+
+
+# ─── Admin Boundary Candidates (for client-side reverse geocoding) ───
+
+# CoRE Stack pan-India admin FeatureCollections on GEE
+ADMIN_ASSETS = {
+    "state":    "projects/ext-datasets/assets/datasets/State_pan_india",
+    "district": "projects/ext-datasets/assets/datasets/District_pan_india",
+    "tehsil":   "projects/ext-datasets/assets/datasets/SOI_tehsil",
+}
+
+# Parent-level property name candidates (used to narrow district/tehsil by parent name).
+# We try each property in order and use the first one found on the actual features.
+PARENT_FILTER_PROPS = {
+    # When filtering districts by state name, try these property names on the district FC:
+    "district": ["state_name", "STATE_NAME", "st_nm", "st_name", "State", "STATE"],
+    # When filtering tehsils by district name, try these on the tehsil FC:
+    "tehsil":   ["dist_name", "DISTRICT", "dt_name", "district_name", "District", "DIST_NM"],
+}
+
+
+def fetch_admin_candidates(
+    level: str,
+    bbox: list[float],
+) -> dict:
+    """Return bbox-filtered admin boundary features for one hierarchy level.
+
+    Backend work: one GEE filterBounds call (spatial-indexed, fast).
+    Returns a tiny GeoJSON FeatureCollection (~3-20 features, few KB).
+    All intersection area math is done client-side in the browser with turf.js.
+
+    CoRE Stack GEE assets use KML-export format — features store only their own
+    name in 'Name' property with no parent admin reference. All levels therefore
+    use bbox-only filtering; the tight village bbox (~0.05°×0.05°) naturally
+    returns only 1-5 candidates per level.
+
+    Args:
+        level: 'state' | 'district' | 'tehsil'
+        bbox:  [minLng, minLat, maxLng, maxLat] in EPSG:4326
+
+    Returns:
+        GeoJSON FeatureCollection dict (geometry + all original properties
+        so the browser can discover the name property at runtime).
+    """
+    _init_ee()
+
+    if level not in ADMIN_ASSETS:
+        raise ValueError(f"Unknown admin level: {level!r}. Must be one of {list(ADMIN_ASSETS)}")
+
+    min_lng, min_lat, max_lng, max_lat = bbox
+    region = ee.Geometry.Rectangle([min_lng, min_lat, max_lng, max_lat])
+
+    fc = ee.FeatureCollection(ADMIN_ASSETS[level]).filterBounds(region)
+
+    result = fc.getInfo()  # Returns GeoJSON FeatureCollection dict (tiny payload)
+    logger.info(
+        "admin_candidates level=%s bbox=%s → %d features",
+        level, bbox, len((result or {}).get("features", [])),
+    )
+    return result or {"type": "FeatureCollection", "features": []}
+
+

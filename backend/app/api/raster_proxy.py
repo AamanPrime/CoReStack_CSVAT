@@ -383,3 +383,38 @@ async def wms_tile_proxy(
             },
         )
 
+
+# ─── Admin Boundary Candidates (hierarchical drill-down) ───
+
+@router.get("/admin-candidates")
+async def get_admin_candidates(
+    level: str = Query(..., description="'state' | 'district' | 'tehsil'"),
+    bbox: str = Query(..., description="minLng,minLat,maxLng,maxLat in EPSG:4326"),
+):
+    """Return bbox-filtered admin boundary features for one hierarchy level.
+
+    CoRE Stack GEE assets use KML-export format with no parent admin references,
+    so all 3 levels use bbox-only filtering. A tight village bbox (~0.05°×0.05°)
+    returns only 1-5 candidates per level — all intersection math is done
+    client-side in the browser via turf.js.
+    """
+    import asyncio
+    from app.services.gee_service import fetch_admin_candidates
+
+    try:
+        parts = [float(x.strip()) for x in bbox.split(",")]
+        if len(parts) != 4:
+            raise ValueError("bbox must have exactly 4 values")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid bbox: {e}")
+
+    if level not in ("state", "district", "tehsil"):
+        raise HTTPException(status_code=400, detail="level must be 'state', 'district', or 'tehsil'")
+
+    try:
+        result = await asyncio.to_thread(fetch_admin_candidates, level, parts)
+        return result
+    except Exception as e:
+        logger.error("admin_candidates error: %s", e)
+        raise HTTPException(status_code=500, detail=f"Admin candidate lookup failed: {e}")
+
