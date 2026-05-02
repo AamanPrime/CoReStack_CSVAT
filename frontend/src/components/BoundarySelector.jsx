@@ -1,6 +1,9 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { computeAreaHectares, usePlacesAutocomplete } from './GoogleMapsIntegration';
 import { getActiveLocations, getVillageGeometries } from '../services/api';
+import { resolveAdminHierarchy } from '../services/adminResolver';
+
+const MAX_AREA_HA = 20000; // Maximum boundary area allowed for analysis
 
 export default function BoundarySelector({ onBoundarySelect, onMapUpdate }) {
   const [activeTab, setActiveTab] = useState('corestack');
@@ -36,6 +39,7 @@ export default function BoundarySelector({ onBoundarySelect, onMapUpdate }) {
   const [editedGeojson, setEditedGeojson] = useState(null);
   const { predictions, isLoading: placesLoading, search: searchPlaces, getPlaceDetails, clearPredictions } = usePlacesAutocomplete();
   const debounceRef = useRef(null);
+  const [resolvingLocation, setResolvingLocation] = useState(false);
 
   useEffect(() => {
     if (activeTab === 'corestack' && !csLocations) {
@@ -127,20 +131,36 @@ export default function BoundarySelector({ onBoundarySelect, onMapUpdate }) {
     // Don't call onBoundarySelect yet — wait for user to confirm/edit
   };
 
-  const handleConfirmBoundary = () => {
+  const handleConfirmBoundary = async () => {
     const geojson = editedGeojson || selectedPlace?.geojson;
     if (!geojson) return;
 
     const area = computeAreaHectares(geojson);
+    if (area > MAX_AREA_HA) {
+      alert(`Boundary too large: ${area.toLocaleString('en-IN', { maximumFractionDigits: 0 })} ha.\nMaximum allowed is ${MAX_AREA_HA.toLocaleString('en-IN')} ha.\nPlease select a smaller area.`);
+      return;
+    }
+
     const name = selectedPlace?.name || 'Custom Area';
+
+    // Resolve admin hierarchy via hierarchical drill-down (client-side turf.js + tiny GEE queries)
+    setResolvingLocation(true);
+    let adminFields = { state: '', district: '', tehsil: '' };
+    try {
+      adminFields = await resolveAdminHierarchy(geojson);
+    } catch (e) {
+      console.warn('[BoundarySelector] Admin resolution failed, using empty fields:', e.message);
+    } finally {
+      setResolvingLocation(false);
+    }
 
     onBoundarySelect({
       type: 'geojson',
       boundary_geojson: geojson,
       village_name: name,
-      state: '',
-      district: '',
-      tehsil: '',
+      state: adminFields.state,
+      district: adminFields.district,
+      tehsil: adminFields.tehsil,
       area_hectares: area,
       source: 'places',
       editMode,
@@ -355,17 +375,28 @@ export default function BoundarySelector({ onBoundarySelect, onMapUpdate }) {
               {/* Confirm Button */}
               <button
                 onClick={handleConfirmBoundary}
-                disabled={editMode === 'draw' && !editedGeojson}
+                disabled={(editMode === 'draw' && !editedGeojson) || resolvingLocation}
                 style={{
                   width: '100%', marginTop: '0.6rem', padding: '0.55rem',
                   borderRadius: '8px', border: 'none', fontSize: '0.8rem',
-                  fontWeight: 600, cursor: 'pointer',
-                  background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-                  color: '#fff', opacity: (editMode === 'draw' && !editedGeojson) ? 0.5 : 1,
-                  transition: 'opacity 0.2s',
+                  fontWeight: 600, cursor: resolvingLocation ? 'wait' : 'pointer',
+                  background: resolvingLocation
+                    ? 'linear-gradient(135deg, #6b7280 0%, #4b5563 100%)'
+                    : 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                  color: '#fff',
+                  opacity: ((editMode === 'draw' && !editedGeojson) || resolvingLocation) ? 0.7 : 1,
+                  transition: 'all 0.2s',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem',
                 }}
               >
-                 Confirm Boundary & Analyze
+                {resolvingLocation ? (
+                  <>
+                    <span className="spinner" style={{ width: 12, height: 12, borderWidth: 2, borderColor: 'rgba(255,255,255,0.3)', borderTopColor: '#fff' }}></span>
+                    Resolving location…
+                  </>
+                ) : (
+                  ' Confirm Boundary & Analyze'
+                )}
               </button>
             </div>
           )}
@@ -391,17 +422,22 @@ export default function BoundarySelector({ onBoundarySelect, onMapUpdate }) {
               Upload a GeoJSON/JSON polygon for any Indian village.
               IndiaSAT LULC v3 (10m) covers all of India — no location selection needed.
             </div>
-            <input type="file" accept=".json,.geojson" onChange={(e) => {
+            <input type="file" accept=".json,.geojson" onChange={async (e) => {
               const file = e.target.files[0];
               if (file) {
                 const reader = new FileReader();
-                reader.onload = ev => {
+                reader.onload = async ev => {
                   try {
                     const geojson = JSON.parse(ev.target.result);
                     const polygon = geojson.type === 'FeatureCollection'
                       ? geojson.features[0].geometry
                       : geojson.geometry || geojson;
                     const area = computeAreaHectares(polygon);
+                    if (area > MAX_AREA_HA) {
+                      alert(`Boundary too large: ${area.toLocaleString('en-IN', { maximumFractionDigits: 0 })} ha.\nMaximum allowed is ${MAX_AREA_HA.toLocaleString('en-IN')} ha.\nPlease upload a smaller boundary.`);
+                      e.target.value = ''; // reset file input
+                      return;
+                    }
                     const name = geojson.features?.[0]?.properties?.name
                       || geojson.features?.[0]?.properties?.vill_name
                       || geojson.properties?.name
@@ -415,13 +451,25 @@ export default function BoundarySelector({ onBoundarySelect, onMapUpdate }) {
                       if (onMapUpdate) onMapUpdate({ lat: avgLat, lng: avgLng }, polygon);
                     } catch {}
                     setSelectedVillageName(name);
+
+                    // Resolve admin hierarchy (hierarchical drill-down, client-side max-area)
+                    setResolvingLocation(true);
+                    let adminFields = { state: '', district: '', tehsil: '' };
+                    try {
+                      adminFields = await resolveAdminHierarchy(polygon);
+                    } catch (err) {
+                      console.warn('[BoundarySelector] Admin resolution failed:', err.message);
+                    } finally {
+                      setResolvingLocation(false);
+                    }
+
                     onBoundarySelect({
                       type: 'geojson',
                       boundary_geojson: polygon,
                       village_name: name,
-                      state: '',
-                      district: '',
-                      tehsil: '',
+                      state: adminFields.state,
+                      district: adminFields.district,
+                      tehsil: adminFields.tehsil,
                       area_hectares: area,
                       source: 'upload',
                     });

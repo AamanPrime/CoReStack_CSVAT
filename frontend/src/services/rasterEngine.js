@@ -232,257 +232,6 @@ def compute_raster_analytics(extracted_data, pixel_area_ha):
     }
 `;
 
-// ─── MWS water aggregation Python code ───
-const WATER_MWS_PYTHON = `
-try:
-    from shapely.geometry import shape as shapely_shape
-    HAS_SHAPELY = True
-except ImportError:
-    HAS_SHAPELY = False
-
-def _bbox(coords_list):
-    xs, ys = [], []
-    for ring in coords_list:
-        for c in ring: xs.append(c[0]); ys.append(c[1])
-    return [min(xs), min(ys), max(xs), max(ys)]
-
-def _bbox_overlap(b1, b2):
-    ix0, iy0 = max(b1[0], b2[0]), max(b1[1], b2[1])
-    ix1, iy1 = min(b1[2], b2[2]), min(b1[3], b2[3])
-    if ix0 >= ix1 or iy0 >= iy1: return 0.0
-    inter = (ix1 - ix0) * (iy1 - iy0)
-    mws_area = (b2[2] - b2[0]) * (b2[3] - b2[1])
-    return inter / mws_area if mws_area > 0 else 0.0
-
-def compute_intersections(village_geojson, mws_features):
-    intersections = []
-    if HAS_SHAPELY:
-        village_shape = shapely_shape(village_geojson)
-        if not village_shape.is_valid: village_shape = village_shape.buffer(0)
-        for feat in mws_features:
-            geom = feat.get('geometry')
-            props = feat.get('properties', {})
-            if not geom: continue
-            mws_shape = shapely_shape(geom)
-            if not mws_shape.is_valid: mws_shape = mws_shape.buffer(0)
-            if not village_shape.intersects(mws_shape): continue
-            overlap = village_shape.intersection(mws_shape)
-            if overlap.is_empty: continue
-            frac = overlap.area / mws_shape.area if mws_shape.area > 0 else 0
-            uid = str(props.get('uid', '') or props.get('mws_uid', '') or props.get('UID', ''))
-            intersections.append({'mws_uid': uid, 'overlap_fraction': round(frac, 6)})
-    else:
-        vtype = village_geojson.get('type', '')
-        v_coords = village_geojson['coordinates'][0] if vtype == 'MultiPolygon' else village_geojson['coordinates']
-        v_bbox = _bbox(v_coords)
-        for feat in mws_features:
-            geom = feat.get('geometry')
-            props = feat.get('properties', {})
-            if not geom: continue
-            gtype = geom.get('type', '')
-            m_coords = geom['coordinates'][0] if gtype == 'MultiPolygon' else geom['coordinates']
-            frac = _bbox_overlap(v_bbox, _bbox(m_coords))
-            if frac <= 0: continue
-            uid = str(props.get('uid', '') or props.get('mws_uid', '') or props.get('UID', ''))
-            intersections.append({'mws_uid': uid, 'overlap_fraction': round(frac, 6)})
-    return intersections
-
-def build_uid_lookup(records):
-    lookup = {}
-    for rec in records:
-        uid = str(rec.get('uid', '') or rec.get('mws_uid', '') or rec.get('UID', ''))
-        if uid: lookup[uid] = dict(rec)
-    return lookup
-
-def weighted_aggregate(intersections, data_by_uid, key, mode='sum'):
-    total_weight = 0.0
-    weighted_sum = 0.0
-    for ix in intersections:
-        uid = ix['mws_uid']
-        frac = ix['overlap_fraction']
-        val = data_by_uid.get(uid, {}).get(key)
-        if val is None: continue
-        try: val = float(val)
-        except: continue
-        weighted_sum += val * frac
-        total_weight += frac
-    if total_weight == 0: return None
-    return round(weighted_sum, 4) if mode == 'sum' else round(weighted_sum / total_weight, 4)
-
-def aggregate_water_mws(village_geojson, mws_features, water_records, years):
-    if hasattr(village_geojson, 'to_py'): village_geojson = village_geojson.to_py()
-    if hasattr(mws_features, 'to_py'): mws_features = mws_features.to_py()
-    if hasattr(water_records, 'to_py'): water_records = water_records.to_py()
-    if hasattr(years, 'to_py'): years = years.to_py()
-    intersections = compute_intersections(village_geojson, mws_features)
-    if not intersections: return []
-    data_by_uid = build_uid_lookup(water_records)
-    results = []
-    for year in sorted(int(y) for y in years):
-        fy = f"{year-1}-{year}"
-        kharif = weighted_aggregate(intersections, data_by_uid, f'kharif_area_in_ha_{fy}', 'sum')
-        rabi = weighted_aggregate(intersections, data_by_uid, f'rabi_area_in_ha_{fy}', 'sum')
-        zaid = weighted_aggregate(intersections, data_by_uid, f'zaid_area_in_ha_{fy}', 'sum')
-        total = weighted_aggregate(intersections, data_by_uid, f'total_area_in_ha_{fy}', 'sum')
-        results.append({
-            'fiscal_year': f'20{str(year-1)[-2:]}-{str(year)[-2:]}',
-            'kharif_ha': round(kharif or 0.0, 2),
-            'rabi_ha': round(rabi or 0.0, 2),
-            'zaid_ha': round(zaid or 0.0, 2),
-            'total_water_ha': round(total or ((kharif or 0) + (rabi or 0) + (zaid or 0)), 2),
-        })
-    return results
-`;
-
-/**
- * Run raster analytics: backend extracts pixels, browser computes ALL stats.
- */
-export async function runRasterAnalytics(boundary, selectedLayers, selectedYears, onProgress) {
-  const { state, district, tehsil, boundary_geojson: villageGeojson } = boundary;
-  const villageName = boundary.village_name || boundary.name || 'Village';
-
-  // Step 1: Backend extracts raw pixel data from GEE IndiaSAT LULC v3 (all years)
-  onProgress?.('Extracting pixel data from GEE IndiaSAT LULC v3 (all years)…');
-  const extractResp = await fetch(`${API_BASE}/api/v1/raster/extract`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      village_geojson: villageGeojson,
-    }),
-  });
-
-  if (!extractResp.ok) {
-    const errText = await extractResp.text();
-    throw new Error(`Pixel extraction failed (${extractResp.status}): ${errText}`);
-  }
-
-  const extractResult = await extractResp.json();
-  if (extractResult.status !== 'ok' || !extractResult.data?.length) {
-    throw new Error('No pixel data could be extracted from rasters.');
-  }
-
-  const pixelAreaHa = extractResult.pixel_area_ha;
-  onProgress?.(`Extracted ${extractResult.years_extracted} years of data. Loading Python WASM for computation…`);
-
-  // Step 3: Load Pyodide for client-side computation
-  const { loadPyodide, deepConvertPyodide } = await import('./pyodideEngine');
-  const pyodide = await loadPyodide(onProgress);
-
-  // Step 4: Run ALL analytics computation in Pyodide (browser-side)
-  onProgress?.('Running raster analytics computation (Python WASM — 100% client-side)…');
-  await pyodide.runPythonAsync(RASTER_ANALYTICS_PYTHON);
-
-  pyodide.globals.set('extracted_data', pyodide.toPy(extractResult.data));
-  pyodide.globals.set('pixel_area_ha', pixelAreaHa);
-
-  const rawResult = await pyodide.runPythonAsync(`
-compute_raster_analytics(extracted_data, pixel_area_ha)
-  `);
-
-  // Convert Pyodide result → plain JS
-  let pyResult = typeof deepConvertPyodide === 'function'
-    ? deepConvertPyodide(rawResult)
-    : (rawResult?.toJs?.({ dict_converter: Object.fromEntries }) ?? rawResult);
-  pyResult = JSON.parse(JSON.stringify(pyResult, (_k, v) =>
-    v instanceof Map ? Object.fromEntries(v) : v
-  ));
-
-  if (pyResult.status !== 'ok') {
-    throw new Error('Client-side raster computation failed');
-  }
-
-  onProgress?.('Building report…');
-
-  // Step 6: Transform into standard CSVAT report schema
-  const results = {
-    village_name: villageName,
-    state, district, tehsil,
-    data_source: pyResult.data_source || 'CoRE Stack Raster (10m)',
-    compute_mode: 'client_raster_wasm',
-    years: selectedYears,
-    area_hectares: boundary.area_hectares || 0,
-  };
-
-  if (pyResult.cropping_intensity?.length > 0) {
-    results.cropping_intensity = {
-      village_name: villageName,
-      data: pyResult.cropping_intensity.map(r => ({
-        year: r.fiscal_year, fiscal_year: r.fiscal_year,
-        single_crop_ha: r.single_crop_ha, double_crop_ha: r.double_crop_ha,
-        triple_crop_ha: r.triple_crop_ha, total_cropped_ha: r.total_cropped_ha,
-        cropping_intensity: r.intensity_index,
-      })),
-      source: pyResult.data_source,
-      processing: pyResult.processing,
-    };
-  }
-
-  // Surface water: always use pixel-level raster data (no MWS vector fallback)
-  if (pyResult.surface_water?.length > 0) {
-    results.surface_water = {
-      village_name: villageName,
-      data: pyResult.surface_water.map(r => ({
-        year: r.fiscal_year, fiscal_year: r.fiscal_year,
-        kharif_ha: r.kharif_ha, rabi_ha: r.rabi_ha,
-        zaid_ha: r.zaid_ha, total_water_ha: r.total_water_ha,
-      })),
-      source: 'IndiaSAT LULC v3 Raster (10m)',
-      processing: 'Client-side raster class extraction (Pyodide WASM)',
-    };
-  }
-
-  if (pyResult.vegetation?.length > 0) {
-    const vegData = pyResult.vegetation;
-    const first = vegData[0], last = vegData[vegData.length - 1];
-    results.vegetation = {
-      village_name: villageName,
-      start_year: first.fiscal_year, end_year: last.fiscal_year,
-      tree_cover_start_ha: first.tree_cover_ha,
-      tree_cover_end_ha: last.tree_cover_ha,
-      net_change_ha: +(last.tree_cover_ha - first.tree_cover_ha).toFixed(2),
-      yearly_data: vegData.map(v => ({ year: v.fiscal_year, tree_cover_ha: v.tree_cover_ha })),
-      source: pyResult.data_source,
-    };
-  }
-
-  if (pyResult.vegetation_analysis && Object.keys(pyResult.vegetation_analysis).length > 0) {
-    const va = pyResult.vegetation_analysis;
-    results.vegetation = {
-      ...results.vegetation,
-      start_year: va.start_year, end_year: va.end_year,
-      tree_cover_start_ha: va.tree_cover_start_ha,
-      tree_cover_end_ha: va.tree_cover_end_ha,
-      net_change_ha: va.net_change_ha,
-      afforestation_ha: va.afforestation_ha,
-      deforestation_ha: va.deforestation_ha,
-      tree_cover_loss_ha: va.deforestation_ha,
-      tree_cover_gain_ha: va.afforestation_ha,
-      degraded_land_ha: va.degraded_land_ha,
-      transitions: va.transitions?.map(t => ({
-        from_class: t.from_class, to_label: t.to_label,
-        to_class: t.to_class, area_ha: t.area_ha,
-      })) || [],
-    };
-  }
-
-  if (pyResult.crop_intensity_change?.length > 0) {
-    results.crop_intensity_change = pyResult.crop_intensity_change;
-  }
-
-  if (pyResult.raw_histograms) {
-    results.raw_histograms = pyResult.raw_histograms;
-    console.log('[Raster WASM] Raw histograms:', pyResult.raw_histograms);
-  }
-
-  const hasCropData = results.cropping_intensity?.data?.length > 0;
-  const hasWaterData = results.surface_water?.data?.length > 0;
-  if (!hasCropData && !hasWaterData) {
-    throw new Error('No raster data could be processed.');
-  }
-
-  onProgress?.('Raster analytics complete! (computation: 100% client-side)');
-  return results;
-}
 
 // ─── Helpers ───
 
@@ -507,28 +256,31 @@ export async function checkRasterAvailability(state, district, tehsil) {
   }
 }
 
+
+
 /**
- * Run raster analytics via 100% CLIENT-SIDE tiled TIFF pipeline.
+ * Run raster analytics via 100% CLIENT-SIDE full-TIFF pipeline.
  *
- * Instead of calling backend /extract (which uses rasterio on the server),
- * this downloads GeoTIFFs directly in the browser, parses them with
- * geotiff.js, masks with turf.js, stores in IndexedDB, and feeds the
- * same pixel data into the existing Pyodide analytics pipeline.
+ * Downloads ONE full-village GeoTIFF per fiscal year from GEE,
+ * reads the REAL affine transform from TIFF metadata (not approximated),
+ * masks with Pyodide numpy (vectorised ray-casting — zero OOM risk),
+ * and feeds pixel data into the existing Pyodide analytics pipeline.
  *
+ * Zero tile-seam error. Zero per-pixel JS object allocation.
  * The backend only provides signed GEE download URLs — zero TIFF storage.
  */
 export async function runTiledRasterAnalytics(boundary, selectedLayers, selectedYears, onProgress) {
   const { state, district, tehsil, boundary_geojson: villageGeojson } = boundary;
   const villageName = boundary.village_name || boundary.name || 'Village';
 
-  // Step 1: 100% client-side tiled TIFF extraction
-  onProgress?.('Starting client-side tiled TIFF extraction (geotiff.js)…');
-  const { runTiledExtraction } = await import('./tileEngine');
+  // Step 1: 100% client-side full-TIFF extraction (numpy masking in Pyodide)
+  onProgress?.('Starting client-side full-TIFF extraction (geotiff.js + numpy)…');
+  const { runFullExtraction } = await import('./fullTiffEngine');
 
-  const extractResult = await runTiledExtraction(villageGeojson, villageName, onProgress);
+  const extractResult = await runFullExtraction(villageGeojson, villageName, onProgress);
 
   if (extractResult.status !== 'ok' || !extractResult.data?.length) {
-    throw new Error('No pixel data could be extracted from tiles.');
+    throw new Error('No pixel data could be extracted.');
   }
 
   const pixelAreaHa = extractResult.pixel_area_ha;
@@ -566,8 +318,8 @@ compute_raster_analytics(extracted_data, pixel_area_ha)
   const results = {
     village_name: villageName,
     state, district, tehsil,
-    data_source: 'IndiaSAT LULC v3 (10m, client-tiled)',
-    compute_mode: 'client_raster_tiled',
+    data_source: 'IndiaSAT LULC v3 (10m, full-TIFF)',
+    compute_mode: 'client_raster_full',
     years: selectedYears,
     area_hectares: boundary.area_hectares || 0,
   };
@@ -581,8 +333,8 @@ compute_raster_analytics(extracted_data, pixel_area_ha)
         triple_crop_ha: r.triple_crop_ha, total_cropped_ha: r.total_cropped_ha,
         cropping_intensity: r.intensity_index,
       })),
-      source: 'IndiaSAT LULC v3 (10m, client-tiled)',
-      processing: '100% client-side (geotiff.js + Pyodide WASM)',
+      source: 'IndiaSAT LULC v3 (10m, full-TIFF)',
+      processing: '100% client-side (geotiff.js + numpy WASM)',
     };
   }
 
@@ -595,8 +347,8 @@ compute_raster_analytics(extracted_data, pixel_area_ha)
         kharif_ha: r.kharif_ha, rabi_ha: r.rabi_ha,
         zaid_ha: r.zaid_ha, total_water_ha: r.total_water_ha,
       })),
-      source: 'IndiaSAT LULC v3 Raster (10m, client-tiled)',
-      processing: '100% client-side (geotiff.js + Pyodide WASM)',
+      source: 'IndiaSAT LULC v3 Raster (10m, full-TIFF)',
+      processing: '100% client-side (geotiff.js + numpy WASM)',
     };
   }
 
@@ -610,7 +362,7 @@ compute_raster_analytics(extracted_data, pixel_area_ha)
       tree_cover_end_ha: last.tree_cover_ha,
       net_change_ha: +(last.tree_cover_ha - first.tree_cover_ha).toFixed(2),
       yearly_data: vegData.map(v => ({ year: v.fiscal_year, tree_cover_ha: v.tree_cover_ha })),
-      source: 'IndiaSAT LULC v3 (10m, client-tiled)',
+      source: 'IndiaSAT LULC v3 (10m, full-TIFF)',
     };
   }
 
@@ -646,9 +398,9 @@ compute_raster_analytics(extracted_data, pixel_area_ha)
   const hasCropData = results.cropping_intensity?.data?.length > 0;
   const hasWaterData = results.surface_water?.data?.length > 0;
   if (!hasCropData && !hasWaterData) {
-    throw new Error('No raster data could be processed from tiles.');
+    throw new Error('No raster data could be processed.');
   }
 
-  onProgress?.('Tiled raster analytics complete! (100% client-side — zero server storage)');
+  onProgress?.('Full-TIFF raster analytics complete! (100% client-side — zero seam error)');
   return results;
 }

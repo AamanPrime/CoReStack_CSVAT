@@ -35,6 +35,9 @@ class Settings(BaseSettings):
     GEE_SERVICE_ACCOUNT: str = ""
     GEE_KEY_FILE: str = ""
 
+    # Google Maps (for static map proxy)
+    GOOGLE_MAPS_KEY: str = ""
+
     # GeoServer (for MWS geometry downloads)
     GEOSERVER_BASE_URL: str = ""
 

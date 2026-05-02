@@ -1,37 +1,41 @@
 import React from 'react';
+import './Methodology.css';
+
 
 export default function Methodology() {
   return (
-    <div className="methodology-container" style={{ padding: '2rem 2.5rem', maxWidth: '900px', margin: '0 auto', color: 'var(--text-primary)', overflowY: 'auto', maxHeight: 'calc(100vh - 60px)' }}>
-      <h1 style={{ color: 'var(--accent-teal)', marginBottom: '0.5rem', fontSize: '1.8rem' }}>Methodology &amp; Scientific Transparency</h1>
-      <p style={{ color: 'var(--text-secondary)', marginBottom: '2rem', lineHeight: '1.7', fontSize: '0.95rem' }}>
+    <div className="methodology-container">
+      <h1 className="meth-title">Methodology &amp; Scientific Transparency</h1>
+      <p className="meth-subtitle">
         This page details how CSVAT computes socio-ecological metrics for a village boundary.
         Every number in the report is either directly measured from classified satellite imagery
-        or derived through documented spatial analytics — no AI-generated estimates.
+        or derived through documented spatial analytics.
       </p>
 
       {/* ─── 1. Data Sources ─── */}
       <Section num="1" title="Data Sources" color="var(--accent-green)">
-        <p style={pStyle}>CSVAT uses IndiaSAT LULC v3 classified satellite imagery as its primary data source, accessed directly from Google Earth Engine:</p>
+        <p className="meth-p">CSVAT uses IndiaSAT LULC v3 classified satellite imagery as its primary data source, accessed directly from Google Earth Engine:</p>
 
         <ComparisonTable />
 
         <SubSection title="IndiaSAT LULC v3 via GEE (Primary — 10m Resolution)">
-          <ul style={ulStyle}>
+          <ul className="meth-ul">
             <li><strong>Provider:</strong> Foundation for Ecological Security (FES) / CoRE Stack, published as GEE assets.</li>
             <li><strong>Satellite Source:</strong> Multi-temporal Sentinel-2 imagery, classified using IndiaSAT algorithms.</li>
             <li><strong>GEE Assets:</strong> <code>projects/corestack-datasets/assets/datasets/LULC_v3_river_basin/</code></li>
-            <li><strong>Coverage:</strong> Any Indian village — requires a boundary GeoJSON polygon (from CoRE Stack registry or user upload).</li>
+            <li><strong>Coverage:</strong> Any Indian village — requires a boundary GeoJSON polygon (from CoRE Stack registry, Places Search, or user upload).</li>
             <li><strong>Classes:</strong> 13 land cover classes (0–12): Built-up, Water (Class 2/3/4), Crops (Single/Double/Triple), Trees, Barren, Scrub, etc.</li>
-            <li><strong>CRS:</strong> Downloaded in <strong>EPSG:4326</strong> at 10m scale — same coordinate system as the village boundary GeoJSON, eliminating any CRS reprojection.</li>
-            <li><strong>Processing:</strong> 100% client-side. Village boundary is split into ~1 km² spatial tiles. Each tile's GeoTIFF is downloaded via a signed GEE URL, parsed with <code>geotiff.js</code>, and masked using <code>turf.booleanPointInPolygon</code>.</li>
-            <li><strong>Storage:</strong> Raw TIFF tiles are cached in browser <strong>IndexedDB</strong> for instant re-analysis. Auto-cleanup purges tiles from the 6th oldest village onward.</li>
-            <li><strong>Temporal Range:</strong> agricultural years 2017-18 through 2024-25.</li>
+            <li><strong>CRS:</strong> Downloaded in <strong>EPSG:4326</strong> — same coordinate system as the village boundary GeoJSON, eliminating CRS reprojection errors.</li>
+            <li><strong>Processing:</strong> 100% client-side. The backend generates a single signed GEE download URL for the full village bbox per fiscal year. The browser downloads one contiguous GeoTIFF, parses it with <code>geotiff.js</code>, and masks pixels using <code>turf.booleanPointInPolygon</code>.</li>
+            <li><strong>Memory Safety:</strong> Years are processed <strong>one at a time</strong> — each GeoTIFF ArrayBuffer is explicitly freed after analytics are extracted, preventing browser OOM crashes.</li>
+            <li><strong>Adaptive Resolution:</strong> The backend auto-selects scale (10m → 20m → 30m…) based on the bounding box size to stay under GEE's 48 MB per-request limit. Resolution used is logged in the browser console.</li>
+            <li><strong>Storage:</strong> No caching — each GeoTIFF is downloaded, processed, and discarded in sequence.</li>
+            <li><strong>Temporal Range:</strong> Agricultural years 2017-18 through 2024-25.</li>
           </ul>
         </SubSection>
 
         <SubSection title="CoRE Stack Vector API (MWS Path &amp; Server Path)">
-          <ul style={ulStyle}>
+          <ul className="meth-ul">
             <li><strong>Provider:</strong> CoRE Stack REST APIs — pre-computed analytics per Micro-Watershed (MWS).</li>
             <li><strong>Data Products:</strong> <code>croppingIntensity_annual</code>, <code>surfaceWaterBodies_annual</code> (with <code>kharif_area_in_ha</code>, <code>rabi_area_in_ha</code>, <code>zaid_area_in_ha</code> per agricultural year), change detection layers.</li>
             <li><strong>Coverage:</strong> Active tehsils only — requires CoRE Stack boundary selection (not available for uploaded GeoJSON boundaries).</li>
@@ -40,7 +44,7 @@ export default function Methodology() {
         </SubSection>
 
         <SubSection title="MODIS/JRC GEE Fallback (500m — Low Resolution)">
-          <ul style={ulStyle}>
+          <ul className="meth-ul">
             <li><strong>Triggered when:</strong> User explicitly selects "🌐 Use GEE" in the fallback dialog — only when CoRE Stack has no data for the selected tehsil.</li>
             <li><strong>LULC:</strong> MODIS MCD12Q1 (500m, IGBP classification — 17 land cover classes).</li>
             <li><strong>Water:</strong> JRC Global Surface Water v1.4 (30m — permanent vs. seasonal classification).</li>
@@ -56,45 +60,69 @@ export default function Methodology() {
 
       {/* ─── 2. Boundary Selection ─── */}
       <Section num="2" title="Boundary Selection &amp; Village Identification" color="var(--accent-blue)">
-        <p style={pStyle}>Villages are identified through two methods:</p>
-        <ul style={ulStyle}>
+        <p className="meth-p">Villages are identified through three methods:</p>
+        <ul className="meth-ul">
           <li><strong>CoRE Stack Registry:</strong> State → District → Tehsil → Village hierarchy. Village polygons are fetched as GeoJSON from the CoRE Stack API with verified administrative boundaries. Supports all three execution modes (High Accuracy Raster, MWS Vector, Server).</li>
-          <li><strong>GeoJSON Upload (Pan-India):</strong> Users can upload any village boundary GeoJSON file. This mode bypasses CoRE Stack location selection and routes directly to the High Accuracy Raster path, enabling analysis for <em>any</em> Indian village — no tehsil registration required.</li>
+          <li><strong>Places Search (Google Maps):</strong> Search any location in India by name. The polygon for the selected place is confirmed and optionally edited before analysis. Administrative metadata (State, District, Tehsil) is resolved automatically via GEE — see Section 2a below.</li>
+          <li><strong>GeoJSON Upload (Pan-India):</strong> Upload any village boundary as a <code>.geojson</code> or <code>.json</code> file. Enables analysis for <em>any</em> Indian village — no CoRE Stack tehsil registration required. Admin metadata is resolved automatically.</li>
         </ul>
-        <p style={pStyle}>
-          For CoRE Stack boundaries, either pixel-level raster analysis or MWS vector aggregation can be used.
-          For uploaded boundaries, analytics are computed entirely from raster pixel data via GEE — no MWS intersection is available.
+        <p className="meth-p">
+          For CoRE Stack boundaries, all three execution modes are available.
+          For custom boundaries (Places Search or upload), analytics are computed exclusively via the High Accuracy Raster path.
         </p>
+
+        <SubSection title="2a. Automatic Admin Hierarchy Resolution (Custom Boundaries)">
+          <p className="meth-p">
+            Custom boundaries do not carry State / District / Tehsil metadata. CSVAT resolves these
+            automatically using CoRE Stack's own pan-India administrative boundary assets on GEE:
+          </p>
+          <MetricsTable rows={[
+            ['State', 'projects/ext-datasets/assets/datasets/State_pan_india', 'GEE FeatureCollection', 'KML-export format, Name property'],
+            ['District', 'projects/ext-datasets/assets/datasets/District_pan_india', 'GEE FeatureCollection', 'KML-export format, Name property'],
+            ['Tehsil', 'projects/ext-datasets/assets/datasets/SOI_tehsil', 'GEE FeatureCollection', 'SOI format, TEHSIL property'],
+          ]} />
+          <p className="meth-p"><strong>Algorithm (3-round bbox drill-down):</strong></p>
+          <ol className="meth-ol">
+            <li>The browser computes the bounding box of the custom polygon using <code>turf.bbox()</code>.</li>
+            <li>For each level (State, District, Tehsil): backend calls <code>FeatureCollection.filterBounds(bbox)</code> on GEE — returns only the ~1-5 overlapping admin features as a tiny GeoJSON (<strong>few KB</strong>, not the full 315 MB dataset).</li>
+            <li>Browser runs <code>turf.intersect(customPolygon, candidateFeature)</code> for each candidate and computes <code>turf.area()</code> of the intersection.</li>
+            <li>The admin unit with the <strong>maximum intersection area</strong> is selected — correct even when the custom boundary straddles two tehsils.</li>
+          </ol>
+          <p className="meth-p" style={{ fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
+            Total browser download: ~70-260 KB across all 3 rounds. All intersection math is client-side (turf.js).
+            If any round fails (non-India polygon, network error), that field defaults to blank — the report still renders correctly.
+          </p>
+        </SubSection>
       </Section>
 
       {/* ─── 3. Spatial Processing (MWS Path) ─── */}
       <Section num="3" title="Spatial Processing (MWS &amp; Server Path Only)" color="var(--accent-amber)">
-        <p style={pStyle}>
+        <p className="meth-p">
           This section applies only to the <strong>MWS Vector</strong> and <strong>Server</strong> paths.
           The High Accuracy Raster path skips this step — it works directly with individual pixels inside the village boundary.
         </p>
-        <p style={pStyle}>
+        <p className="meth-p">
           Village boundaries rarely align with MWS boundaries. CSVAT handles this geometric mismatch
           through polygon intersection and fractional overlap computation.
         </p>
 
         <SubSection title="Step 1: Polygon Intersection">
-          <p style={pStyle}>For each MWS polygon M<sub>i</sub> overlapping the village polygon V:</p>
+          <p className="meth-p">For each MWS polygon M<sub>i</sub> overlapping the village polygon V:</p>
           <FormulaBox>
             f<sub>i</sub> = Area(V ∩ M<sub>i</sub>) / Area(M<sub>i</sub>)
           </FormulaBox>
-          <p style={pStyle}>
+          <p className="meth-p">
             Where f<sub>i</sub> is the <strong>overlap fraction</strong> — the proportion of MWS <em>i</em> that
             falls within the village. Computed using Shapely (Python WASM via Pyodide client-side, or Python on the server).
           </p>
         </SubSection>
 
         <SubSection title="Step 2: Weighted Aggregation">
-          <p style={pStyle}>
+          <p className="meth-p">
             MWS-level values are aggregated to village-level using overlap fractions as weights.
           </p>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', margin: '1rem 0' }}>
-            <div style={formulaCardStyle}>
+          <div className="meth-formula-grid">
+            <div className="meth-card">
               <div style={{ fontWeight: 700, color: 'var(--accent-green)', marginBottom: '0.5rem', fontSize: '0.85rem' }}>
                 Area Metrics (Extensive)
               </div>
@@ -106,7 +134,7 @@ export default function Methodology() {
               </p>
             </div>
 
-            <div style={formulaCardStyle}>
+            <div className="meth-card">
               <div style={{ fontWeight: 700, color: 'var(--accent-blue)', marginBottom: '0.5rem', fontSize: '0.85rem' }}>
                 Index Metrics (Intensive)
               </div>
@@ -121,7 +149,7 @@ export default function Methodology() {
         </SubSection>
 
         <SubSection title="Example">
-          <p style={pStyle}>
+          <p className="meth-p">
             A village overlaps 3 MWS polygons with overlap fractions 0.8, 0.3, and 0.15.
             If single-crop areas are 50 ha, 40 ha, and 60 ha respectively:
           </p>
@@ -135,10 +163,10 @@ export default function Methodology() {
       <Section num="4" title="Analytics Metrics" color="var(--accent-teal)">
 
         <SubSection title="4.1 Cropping Intensity">
-          <p style={pStyle}>Measures how many crop cycles occur per year on agricultural land.</p>
+          <p className="meth-p">Measures how many crop cycles occur per year on agricultural land.</p>
           
           <SubSection title="LULC Crop Classes (IndiaSAT v3)">
-            <p style={pStyle}>
+            <p className="meth-p">
               Crop intensity is classified using specific raster pixel classes from the IndiaSAT LULC dataset:
             </p>
             <MetricsTable rows={[
@@ -162,7 +190,7 @@ export default function Methodology() {
               NSA = Single + Double + Triple{"\n"}
               Intensity Index = GCA / NSA
             </FormulaBox>
-            <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '0.5rem' }}>
+            <p className="meth-p" style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '0.5rem' }}>
               The Gross Cropped Area (GCA) counts each crop cycle separately.
               The Net Sown Area (NSA) is the total physical area.
               An intensity of 2.0 means on average every hectare is cropped twice per year.
@@ -172,7 +200,7 @@ export default function Methodology() {
         </SubSection>
 
         <SubSection title="4.2 Surface Water Bodies">
-          <p style={pStyle}>
+          <p className="meth-p">
             Seasonal water body coverage aligned with Indian agricultural seasons.
             CSVAT uses exclusively <strong>pixel-level calculation from the IndiaSAT LULC v3 raster</strong>
             in the High Accuracy path — no MWS vector fallback is applied.
@@ -187,7 +215,7 @@ export default function Methodology() {
           </SubSection>
 
           <SubSection title="Cumulative Seasonal Aggregation Formula">
-            <p style={pStyle}>
+            <p className="meth-p">
               Water classes are <strong>cumulative</strong> — a higher class includes all lower seasons.
               This means Kharif water includes all water present during the monsoon period (Classes 2+3+4):
             </p>
@@ -197,7 +225,7 @@ export default function Methodology() {
               Zaid water area    = (Class 4 pixels) × pixel_area_ha{"\n"}
               Total unique water = (Class 2 + Class 3 + Class 4 pixels) × pixel_area_ha
             </FormulaBox>
-            <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '0.5rem' }}>
+            <p className="meth-p" style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '0.5rem' }}>
               Total water is the unique area (not summed across seasons — avoids double counting).
               This matches how CoRE Stack MWS API provides <code>kharif_area_in_ha</code>,
               <code>rabi_area_in_ha</code>, and <code>zaid_area_in_ha</code> separately.
@@ -218,21 +246,21 @@ export default function Methodology() {
         </SubSection>
 
         <SubSection title="4.3 Vegetation &amp; Tree Cover Change">
-          <p style={pStyle}>Tree cover change detection between the analysis start and end years.</p>
+          <p className="meth-p">Tree cover change detection between the analysis start and end years.</p>
           <MetricsTable rows={[
             ['Tree Cover Loss', 'Total tree cover lost over analysis period', 'ha', 'Pixel count / Weighted sum'],
             ['Tree Cover Gain', 'Total tree cover gained over analysis period', 'ha', 'Pixel count / Weighted sum'],
             ['Net Change', 'Tree Cover Gain − Tree Cover Loss', 'ha', 'Derived'],
             ['Degraded Land', 'Tree Cover → Barren + Tree Cover → Scrub', 'ha', 'Derived'],
           ]} />
-          <p style={{ ...pStyle, fontSize: '0.82rem' }}>
+          <p className="meth-p" style={{ fontSize: '0.82rem' }}>
             <strong>Transition classes tracked:</strong> Tree Cover → Tree Cover (stable), Tree Cover → Barren,
             Tree Cover → Built Up, Tree Cover → Farm, Tree Cover → Scrub Land.
           </p>
         </SubSection>
 
         <SubSection title="4.4 Crop Intensity Change Detection">
-          <p style={pStyle}>
+          <p className="meth-p">
             Tracks how land transitions between cropping intensity classes over time:
           </p>
           <MetricsTable rows={[
@@ -246,7 +274,7 @@ export default function Methodology() {
 
       {/* ─── 5. Limitations ─── */}
       <Section num="5" title="Limitations &amp; Known Constraints" color="var(--accent-red)">
-        <ul style={ulStyle}>
+        <ul className="meth-ul">
           <li>
             <strong>10m Minimum Pixel Size:</strong> Water bodies or crop patches smaller than
             100 m² (one 10m pixel) will not be captured in the raster path. No sub-pixel correction is applied.
@@ -259,7 +287,7 @@ export default function Methodology() {
           <li>
             <strong>MODIS/JRC GEE Fallback (significant):</strong> When user explicitly selects the
             low-resolution GEE path, MODIS (500m) and JRC (30m) data cannot directly measure:
-            <ul style={{ ...ulStyle, marginTop: '0.3rem' }}>
+            <ul className="meth-ul" style={{ marginTop: '0.3rem' }}>
               <li>Single/double/triple cropping — estimated from pixel class ratios</li>
               <li>Kharif/Rabi/Zaid water split — estimated from JRC permanent/seasonal classes</li>
               <li>Tree cover transition types — only net NDVI change, not transition matrices</li>
@@ -278,38 +306,37 @@ export default function Methodology() {
 
       {/* ─── 6. Execution Modes ─── */}
       <Section num="6" title="Execution Modes" color="var(--accent-purple, #8b5cf6)">
-        <p style={pStyle}>CSVAT supports three execution paths. Uploaded GeoJSON boundaries are restricted to the High Accuracy Raster path. CoRE Stack boundaries support all three:</p>
+        <p className="meth-p">CSVAT supports three execution paths. Uploaded GeoJSON boundaries are restricted to the High Accuracy Raster path. CoRE Stack boundaries support all three:</p>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.75rem', margin: '1rem 0' }}>
-          <div style={{ ...formulaCardStyle, borderColor: '#10b981' }}>
+        <div className="meth-mode-grid">
+          <div className="meth-card" style={{ borderColor: '#10b981' }}>
             <div style={{ fontWeight: 700, color: '#10b981', marginBottom: '0.5rem', fontSize: '0.9rem' }}>⚡ High Accuracy Raster</div>
-            <ul style={{ ...ulStyle, fontSize: '0.78rem' }}>
-              <li><strong>100% browser-side</strong> — server never stores TIFF data</li>
-              <li>Village bbox split into ~1 km² tiles</li>
-              <li>Backend signs GEE download URLs only</li>
-              <li>Browser downloads GeoTIFFs in EPSG:4326 at 10m</li>
+            <ul className="meth-ul" style={{ fontSize: '0.78rem' }}>
+              <li><strong>100% browser-side</strong> — server signs GEE URLs only, zero raster data on server</li>
+              <li>One <strong>full-village GeoTIFF</strong> per fiscal year</li>
+              <li>Years processed <strong>one at a time</strong> — ArrayBuffer freed after each year</li>
+              <li><strong>Adaptive resolution</strong>: 10m default</li>
               <li>Parsed with <code>geotiff.js</code>, masked with <code>turf.booleanPointInPolygon</code></li>
-              <li>Tiles cached in IndexedDB</li>
-              <li>Analytics in Pyodide (Python WASM)</li>
-              <li>Surface water: <strong>pixel-level only</strong> — Classes 2+3+4 (no MWS fallback)</li>
-              <li><strong>Pan-India</strong> — works for any boundary (upload or CoRE Stack)</li>
-              <li><strong>Privacy:</strong> all geospatial data stays in your browser</li>
+              <li>Analytics via <strong>Pyodide (NumPy)</strong> — fast pixel histogram in Python WASM</li>
+              <li>Surface water: <strong>pixel-level only</strong> — Classes 2+3+4</li>
+              <li><strong>Pan-India</strong> — works for any boundary (upload, Places Search, or CoRE Stack)</li>
+              
             </ul>
           </div>
-          <div style={formulaCardStyle}>
+          <div className="meth-card">
             <div style={{ fontWeight: 700, color: '#8b5cf6', marginBottom: '0.5rem', fontSize: '0.9rem' }}>⚡ MWS Vector</div>
-            <ul style={{ ...ulStyle, fontSize: '0.78rem' }}>
+            <ul className="meth-ul" style={{ fontSize: '0.78rem' }}>
               <li>Fetches pre-aggregated MWS data from CoRE Stack API</li>
               <li>Village-MWS polygon intersection + weighted aggregation</li>
               <li>Pyodide (Python WASM) computes intersection client-side</li>
-              <li>Faster — no raster tile downloads</li>
+              <li>Faster — no GeoTIFF downloads or pixel processing</li>
               <li>Surface water comes from <code>surfaceWaterBodies_annual</code> layer (CoRE Stack pre-computed)</li>
               <li>CoRE Stack boundaries only (active tehsils)</li>
             </ul>
           </div>
-          <div style={formulaCardStyle}>
+          <div className="meth-card">
             <div style={{ fontWeight: 700, color: '#3b82f6', marginBottom: '0.5rem', fontSize: '0.9rem' }}>🖥️ Server</div>
-            <ul style={{ ...ulStyle, fontSize: '0.78rem' }}>
+            <ul className="meth-ul" style={{ fontSize: '0.78rem' }}>
               <li>Same computation logic as MWS Vector</li>
               <li>Dispatched to backend Celery workers</li>
               <li>Pipeline: MWS intersection → GEE fallback (if MWS unavailable)</li>
@@ -320,27 +347,28 @@ export default function Methodology() {
           </div>
         </div>
 
-        <SubSection title="High Accuracy Tiled Pipeline — Step by Step">
-          <ol style={{ ...ulStyle, fontSize: '0.82rem' }}>
-            <li><strong>Tile Grid:</strong> The village bounding box is split into a grid of ~1 km² tiles using <code>@turf/turf</code>. Small villages (&lt;1 km²) get a single tile.</li>
-            <li><strong>URL Signing:</strong> For each tile × agricultural year, the backend calls <code>image.getDownloadURL()</code> with the tile's bbox, <code>EPSG:4326</code>, and <code>scale=10</code>. It returns a signed GEE URL — no TIFF data touches the server.</li>
-            <li><strong>Download:</strong> The browser downloads up to 4 tiles concurrently. Raw <code>ArrayBuffer</code>s are stored in IndexedDB for caching.</li>
-            <li><strong>Parse:</strong> Each tile is parsed with <code>geotiff.js</code>. The affine transform is computed from the tile bbox + image dimensions.</li>
-            <li><strong>Mask:</strong> For every pixel, the center coordinate (lng, lat) is tested against the village polygon using <code>turf.booleanPointInPolygon</code>. Only pixels inside the boundary are counted.</li>
-            <li><strong>Merge:</strong> Pixel histograms from all tiles are combined into a single year result.</li>
-            <li><strong>Analytics:</strong> The merged histogram feeds into the Pyodide analytics engine — cropping intensity (Classes 8/9/10/11), water (Classes 2/3/4 cumulative), vegetation (Class 6 transitions).</li>
+        <SubSection title="High Accuracy Full-Village Pipeline — Step by Step">
+          <ol className="meth-ol" style={{ fontSize: '0.82rem' }}>
+            <li><strong>Bbox Computation:</strong> <code>turf.bbox(villagePolygon)</code> gives the bounding box. The backend uses this to request a single contiguous GeoTIFF covering the full village extent.</li>
+            <li><strong>Adaptive Scale Selection:</strong> The backend computes the approximate download size at 10m. If it exceeds GEE's 48 MB hard limit, it steps up to 20m, 30m, etc. until within budget. The chosen resolution is logged to the browser console.</li>
+            <li><strong>URL Signing:</strong> Backend calls <code>image.getDownloadURL()</code> for the full bbox at the selected scale in <code>EPSG:4326</code>. Returns a signed GEE URL — no TIFF data touches the server.</li>
+            <li><strong>Sequential Year Loop:</strong> For each fiscal year (2017-18 … 2024-25), the browser downloads one GeoTIFF, processes it fully, then <strong>nulls the ArrayBuffer</strong> before the next year begins — preventing accumulation of large buffers in RAM.</li>
+            <li><strong>Parse:</strong> <code>geotiff.js</code> decodes the TIFF. The affine transform is derived from the bbox + image dimensions to map pixel indices to geographic coordinates.</li>
+            <li><strong>Mask:</strong> For every pixel, the center <code>(lng, lat)</code> is tested with <code>turf.booleanPointInPolygon</code>. Only pixels inside the village boundary are retained.</li>
+            <li><strong>Analytics (Pyodide NumPy):</strong> Masked pixel array is passed to a Python WASM environment. <code>numpy.bincount</code> produces the class histogram instantly. Cropping intensity, water areas, and vegetation metrics are computed from the histogram.</li>
+            <li><strong>Memory Release:</strong> After each year, the TIFF ArrayBuffer and Pyodide globals are explicitly cleared (<code>pyodide.runPython("del pixels")</code> + <code>buffer = null</code>) before moving to the next year.</li>
           </ol>
         </SubSection>
 
         <SubSection title="Server Pipeline — Strategy Flow">
-          <ol style={{ ...ulStyle, fontSize: '0.82rem' }}>
+          <ol className="meth-ol" style={{ fontSize: '0.82rem' }}>
             <li><strong>Strategy A — MWS Intersection:</strong> Fetch CoRE Stack tehsil data + MWS geometries. Run polygon intersection and weighted aggregation. If successful, return results. <em>(Primary path)</em></li>
             <li><strong>Strategy B — GEE Fallback:</strong> Only triggered if CoRE Stack returns no data for the tehsil, or user explicitly selects GEE. Uses MODIS/JRC at lower resolution. <em>(Fallback only)</em></li>
           </ol>
           
         </SubSection>
 
-        <p style={{ ...pStyle, fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+        <p className="meth-p" style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
           All modes use the same GCA/NSA intensity formula and cumulative water class aggregation.
           The report's data source label (e.g., "IndiaSAT LULC v3" vs "CoRE Stack MWS Vector") indicates which source was used for each section.
         </p>
@@ -348,17 +376,17 @@ export default function Methodology() {
 
       {/* ─── 7. Village Storyboard ─── */}
       <Section num="7" title="Village Storyboard" color="var(--accent-teal)">
-        <p style={pStyle}>
+        <p className="meth-p">
           The <strong>Village Storyboard</strong> is a narrative-driven, scroll-based map experience that appears below
           the analytics report for villages that have an associated story in the CSVAT database.
           It is inspired by the Terraso Story Map format.
         </p>
 
         <SubSection title="How It Works">
-          <ul style={ulStyle}>
+          <ul className="meth-ul">
             <li><strong>Story Data Source:</strong> Village narratives are stored in the CSVAT PostgreSQL database (<code>village_stories</code> table), seeded from structured story objects covering demographics, economy, cultural context, and environmental chapters.</li>
             <li><strong>Chapter Structure:</strong> The storyboard merges database content with live analytics:
-              <ul style={{ ...ulStyle, marginTop: '0.3rem', marginBottom: '0.3rem' }}>
+              <ul className="meth-ul" style={{ marginTop: '0.3rem', marginBottom: '0.3rem' }}>
                 <li><strong>Dynamic LLM Chapters:</strong> The first several chapters are generated by an LLM (Qwen 2.5 14B) running on the backend. This AI processes structured census and location data to create vivid, village-specific narratives and selects appropriate map actions.</li>
                 <li><strong>Static Analytics Slides:</strong> The final 4 sequence slides (e.g. Cropping, Water, Vegetation) are strictly deterministic. They are generated directly from the live spatial analytics calculated for that village, ensuring no AI hallucinations occur regarding core data.</li>
               </ul>
@@ -369,7 +397,7 @@ export default function Methodology() {
         </SubSection>
 
         <SubSection title="Sticky TOC Navigation">
-          <p style={pStyle}>
+          <p className="meth-p">
             A floating table-of-contents (TOC) navigation bar tracks active chapter progress.
             Clicking a TOC dot scrolls directly to that chapter. The TOC appears only when
             the storyboard section is visible in the viewport.
@@ -377,7 +405,7 @@ export default function Methodology() {
         </SubSection>
 
         <SubSection title="Data Fallback">
-          <p style={pStyle}>
+          <p className="meth-p">
             If no village story exists in the database for the selected village, the storyboard
             section is not rendered. The analytics report sections (cropping, water, vegetation) are
             always shown regardless of storyboard availability.
@@ -387,7 +415,7 @@ export default function Methodology() {
 
 
 
-      <div style={{ textAlign: 'center', padding: '2rem 0 1rem', color: 'var(--text-muted)', fontSize: '0.78rem' }}>
+      <div className="meth-footer">
         CSVAT — CoRE Stack Village Analytics Tool · Last updated April 2026
       </div>
     </div>
@@ -396,25 +424,10 @@ export default function Methodology() {
 
 // ─── Reusable Sub-Components ───
 
-const pStyle = { lineHeight: '1.7', marginBottom: '0.75rem', fontSize: '0.9rem' };
-const ulStyle = { paddingLeft: '1.5rem', lineHeight: '1.8', marginBottom: '0.75rem', fontSize: '0.9rem' };
-const formulaCardStyle = {
-  background: 'var(--glass, rgba(255,255,255,0.03))',
-  border: '1px solid var(--border, #334155)',
-  borderRadius: '10px',
-  padding: '1rem',
-};
-
 function Section({ num, title, color, children }) {
   return (
-    <section style={{ marginBottom: '2.5rem' }}>
-      <h2 style={{
-        borderBottom: `2px solid ${color}`,
-        paddingBottom: '0.5rem',
-        marginBottom: '1rem',
-        color: color,
-        fontSize: '1.2rem',
-      }}>
+    <section className="meth-section">
+      <h2 className="meth-section-title" style={{ color, borderBottomColor: color }}>
         {num}. {title}
       </h2>
       {children}
@@ -424,10 +437,8 @@ function Section({ num, title, color, children }) {
 
 function SubSection({ title, children }) {
   return (
-    <div style={{ marginBottom: '1.25rem' }}>
-      <h3 style={{ fontSize: '0.95rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '0.5rem' }}>
-        {title}
-      </h3>
+    <div className="meth-subsection">
+      <h3 className="meth-subsection-title">{title}</h3>
       {children}
     </div>
   );
@@ -435,18 +446,7 @@ function SubSection({ title, children }) {
 
 function FormulaBox({ children, small }) {
   return (
-    <div style={{
-      background: 'var(--glass, rgba(255,255,255,0.03))',
-      border: '1px solid var(--border, #334155)',
-      padding: small ? '0.6rem' : '0.85rem 1rem',
-      borderRadius: '8px',
-      fontFamily: '"Fira Code", "JetBrains Mono", monospace',
-      fontSize: small ? '0.82rem' : '0.9rem',
-      color: 'var(--text-primary)',
-      textAlign: 'center',
-      letterSpacing: '0.02em',
-      whiteSpace: 'pre-line',
-    }}>
+    <div className={`meth-formula-box${small ? ' small' : ''}`}>
       {children}
     </div>
   );
@@ -454,16 +454,7 @@ function FormulaBox({ children, small }) {
 
 function WarningBox({ children }) {
   return (
-    <div style={{
-      background: 'rgba(245, 158, 11, 0.06)',
-      border: '1px solid rgba(245, 158, 11, 0.2)',
-      borderRadius: '8px',
-      padding: '0.75rem 1rem',
-      marginTop: '0.75rem',
-      fontSize: '0.82rem',
-      lineHeight: '1.6',
-      color: 'var(--text-secondary)',
-    }}>
+    <div className="meth-warning">
       <span style={{ fontWeight: 600, color: '#f59e0b' }}>⚠️ Important: </span>
       {children}
     </div>
@@ -471,17 +462,14 @@ function WarningBox({ children }) {
 }
 
 function ComparisonTable() {
-  const cellStyle = { padding: '0.5rem 0.75rem', borderBottom: '1px solid var(--border, #334155)', fontSize: '0.82rem' };
-  const headerStyle = { ...cellStyle, fontWeight: 600, color: 'var(--text-primary)', background: 'var(--glass, rgba(255,255,255,0.03))' };
-
   return (
-    <div style={{ overflowX: 'auto', margin: '1rem 0' }}>
-      <table style={{ width: '100%', borderCollapse: 'collapse', border: '1px solid var(--border, #334155)', borderRadius: '8px' }}>
+    <div className="meth-table-wrap">
+      <table className="meth-table">
         <thead>
           <tr>
-            <th style={headerStyle}>Attribute</th>
-            <th style={{ ...headerStyle, color: '#10b981' }}>⚡ High Accuracy Raster</th>
-            <th style={{ ...headerStyle, color: '#8b5cf6' }}>⚡ MWS Vector / 🖥️ Server</th>
+            <th>Attribute</th>
+            <th style={{ color: '#10b981' }}>⚡ High Accuracy Raster</th>
+            <th style={{ color: '#8b5cf6' }}>⚡ MWS Vector / 🖥️ Server</th>
           </tr>
         </thead>
         <tbody>
@@ -494,12 +482,12 @@ function ComparisonTable() {
             ['Surface Water Source', 'Pixel-level only (no MWS fallback)', 'surfaceWaterBodies_annual layer'],
             ['Tree Cover', 'Full pixel transition matrix (Class 6)', 'Weighted aggregation'],
             ['Coverage', 'Any village with boundary GeoJSON (pan-India)', 'Active tehsils only'],
-            ['Processing location', 'Browser (Pyodide WASM + geotiff.js)', 'Browser (Pyodide) or Server (Python/Celery)'],
+            ['Processing location', 'Browser (Pyodide NumPy + geotiff.js) — sequential year-by-year', 'Browser (Pyodide) or Server (Python/Celery)'],
           ].map(([attr, raster, mws], i) => (
             <tr key={i}>
-              <td style={{ ...cellStyle, fontWeight: 500 }}>{attr}</td>
-              <td style={cellStyle}>{raster}</td>
-              <td style={cellStyle}>{mws}</td>
+              <td style={{ fontWeight: 500 }}>{attr}</td>
+              <td>{raster}</td>
+              <td>{mws}</td>
             </tr>
           ))}
         </tbody>
@@ -509,27 +497,24 @@ function ComparisonTable() {
 }
 
 function MetricsTable({ rows }) {
-  const cellStyle = { padding: '0.4rem 0.6rem', borderBottom: '1px solid var(--border, #334155)', fontSize: '0.82rem' };
-  const headerStyle = { ...cellStyle, fontWeight: 600, color: 'var(--text-primary)', background: 'var(--glass, rgba(255,255,255,0.03))', fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.03em' };
-
   return (
-    <div style={{ overflowX: 'auto', margin: '0.75rem 0' }}>
-      <table style={{ width: '100%', borderCollapse: 'collapse', border: '1px solid var(--border, #334155)' }}>
+    <div className="meth-table-wrap">
+      <table className="meth-table">
         <thead>
           <tr>
-            <th style={headerStyle}>Metric</th>
-            <th style={headerStyle}>Description</th>
-            <th style={headerStyle}>Unit</th>
-            <th style={headerStyle}>Method</th>
+            <th>Metric</th>
+            <th>Description</th>
+            <th>Unit</th>
+            <th>Method</th>
           </tr>
         </thead>
         <tbody>
           {rows.map(([metric, desc, unit, agg], i) => (
             <tr key={i}>
-              <td style={{ ...cellStyle, fontWeight: 500 }}>{metric}</td>
-              <td style={cellStyle}>{desc}</td>
-              <td style={{ ...cellStyle, textAlign: 'center' }}>{unit}</td>
-              <td style={cellStyle}>{agg}</td>
+              <td style={{ fontWeight: 500 }}>{metric}</td>
+              <td>{desc}</td>
+              <td style={{ textAlign: 'center' }}>{unit}</td>
+              <td>{agg}</td>
             </tr>
           ))}
         </tbody>

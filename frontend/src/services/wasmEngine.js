@@ -560,24 +560,24 @@ export async function runAnalyticsPipeline(boundaryInfo, selectedLayers, selecte
   const sortedYears = [...selectedYears].sort((a, b) => a - b);
 
   if (computePath === 'raster_tiled') {
-    // ─── TILED RASTER PATH (100% Client-Side — no server TIFF storage) ───
+    // ─── FULL-TIFF RASTER PATH (100% Client-Side — zero seam error) ───
     const { runTiledRasterAnalytics } = await import('./rasterEngine');
 
-    onProgress?.('Starting 100% client-side tiled TIFF pipeline…');
+    onProgress?.('Starting 100% client-side full-TIFF pipeline…');
 
     try {
       const tiledResults = await runTiledRasterAnalytics(
         boundary, selectedLayers, sortedYears, onProgress
       );
       tiledResults.area_hectares = boundary.area_hectares || 0;
-      tiledResults.compute_mode = 'client_raster_tiled';
-      onProgress?.('Tiled raster analytics complete!');
+      tiledResults.compute_mode = 'client_raster_full';
+      onProgress?.('Full-TIFF raster analytics complete!');
       return tiledResults;
     } catch (err) {
       if (err instanceof MWSUnavailableError) throw err;
-      console.error('[CSVAT] Tiled raster pipeline error:', err);
+      console.error('[CSVAT] Full-TIFF raster pipeline error:', err);
       throw new MWSUnavailableError(
-        `Client-side tiled processing failed: ${err.message}. Would you like to use GEE instead?`,
+        `Client-side processing failed: ${err.message}. Would you like to use GEE instead?`,
         boundary,
       );
     }

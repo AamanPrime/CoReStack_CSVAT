@@ -9,28 +9,13 @@
  */
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { getCustomSlides, createCustomSlide, updateCustomSlide, deleteCustomSlide } from '../services/api';
+import { loadGoogleMaps } from './GoogleMapsIntegration';
 
-const MAPS_KEY = import.meta.env.VITE_GOOGLE_MAPS_KEY || '';
-
-// Load Google Maps script
-let mapsLoadPromise = null;
-function loadMaps() {
-  if (window.google?.maps) return Promise.resolve();
-  if (mapsLoadPromise) return mapsLoadPromise;
-  mapsLoadPromise = new Promise((resolve, reject) => {
-    const s = document.createElement('script');
-    s.src = `https://maps.googleapis.com/maps/api/js?key=${MAPS_KEY}&libraries=places&v=weekly`;
-    s.async = true;
-    s.onload = () => resolve();
-    s.onerror = reject;
-    document.head.appendChild(s);
-  });
-  return mapsLoadPromise;
-}
+const API_BASE = (import.meta.env.VITE_API_BASE || '').replace(/\/$/, '');
 
 function getStaticMapUrl(lat, lng, zoom = 14) {
-  if (!MAPS_KEY || lat == null || lng == null) return null;
-  return `https://maps.googleapis.com/maps/api/staticmap?center=${lat},${lng}&zoom=${zoom}&size=1280x900&maptype=satellite&key=${MAPS_KEY}`;
+  if (lat == null || lng == null) return null;
+  return `${API_BASE}/api/v1/maps/static?center=${lat},${lng}&zoom=${zoom}&size=1280x900&maptype=satellite`;
 }
 
 /**
@@ -43,7 +28,7 @@ function MapPicker({ lat, lng, zoom, onChange }) {
 
   useEffect(() => {
     let cancelled = false;
-    loadMaps().then(() => {
+    loadGoogleMaps().then(() => {
       if (cancelled || !mapRef.current) return;
       const map = new window.google.maps.Map(mapRef.current, {
         center: { lat: lat || 20.5937, lng: lng || 78.9629 },
