@@ -34,6 +34,12 @@ import '../styles/StoryMap.css';
 import { generateCSV } from '../services/wasmEngine';
 import SlideEditor from './SlideEditor';
 import { getCustomSlides, getVillageStory } from '../services/api';
+import {
+  runStoryboardPipeline,
+  buildTemplateSlides,
+  fetchCachedStoryboard,
+  saveStoryboardToDb,
+} from '../services/storyboardEngine';
 
 ChartJS.register(
   CategoryScale, LinearScale, BarElement, LineElement,
@@ -62,10 +68,35 @@ function getStaticMapUrl(center, zoom = 14, size = '1280x900', heading = 0) {
  * Shows ONE chapter at a time. Scroll-snap within the panel.
  * Background image changes per chapter with cross-fade transition.
  */
-function StorySlides({ slides, villageName }) {
+function StorySlides({ slides, villageName, onSlideEdit, ciData, swData }) {
   const scrollRef = useRef(null);
   const cardRefs = useRef([]);
   const [activeIdx, setActiveIdx] = React.useState(0);
+  
+  // Inline editing state
+  const [editingIdx, setEditingIdx] = useState(-1);
+  const [editTitle, setEditTitle] = useState('');
+  const [editNarrative, setEditNarrative] = useState('');
+  const [editImageUrl, setEditImageUrl] = useState('');
+
+  const startEdit = (idx, slide) => {
+    setEditingIdx(idx);
+    setEditTitle(slide.title.replace(/^[\p{Emoji_Presentation}\s]+/u, '')); // Strip leading emoji for editing
+    setEditNarrative(slide.narrative);
+    setEditImageUrl(slide.imageUrl || '');
+  };
+
+  const saveEdit = (idx, slide) => {
+    // Preserve the original emoji icon if it exists
+    const iconMatch = slide.title.match(/^([\p{Emoji_Presentation}\s]+)/u);
+    const prefix = iconMatch ? iconMatch[1] : '';
+    const fullTitle = `${prefix}${editTitle}`.trim();
+
+    if (onSlideEdit) {
+      onSlideEdit(idx, { title: fullTitle, narrative: editNarrative, imageUrl: editImageUrl || null });
+    }
+    setEditingIdx(-1);
+  };
 
   useEffect(() => {
     const scrollRoot = scrollRef.current;
@@ -128,23 +159,140 @@ function StorySlides({ slides, villageName }) {
             ref={(el) => setCardRef(el, idx)}
             data-idx={idx}
             className={`ts-snap-page`}
+            style={{ position: 'relative' }}
           >
             <div className={`ts-card ${idx === activeIdx ? 'ts-card--visible' : ''}`}>
-              <div className="ts-card-chapter">Chapter {idx + 1}</div>
-              <h3 className="ts-card-title">
-                {slide.icon && <span className="ts-card-icon">{slide.icon}</span>} {slide.title}
-              </h3>
-              {slide.imageUrl && (
-                <img
-                  className="ts-card-image"
-                  src={slide.imageUrl}
-                  alt={slide.title}
-                  loading="lazy"
-                  onError={(e) => { e.target.style.display = 'none'; }}
-                />
+              <div className="ts-card-chapter" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span>Chapter {idx + 1}</span>
+                {idx === activeIdx && editingIdx !== idx && (
+                  <button className="ts-inline-edit-btn" onClick={() => startEdit(idx, slide)}>✏️ Edit</button>
+                )}
+              </div>
+              
+              {editingIdx === idx ? (
+                <div className="ts-inline-editor">
+                  <input 
+                    type="text" 
+                    value={editTitle} 
+                    onChange={(e) => setEditTitle(e.target.value)} 
+                    className="ts-inline-input"
+                    placeholder="Slide Title"
+                  />
+                  <textarea 
+                    value={editNarrative} 
+                    onChange={(e) => setEditNarrative(e.target.value)} 
+                    className="ts-inline-textarea"
+                    rows={8}
+                    placeholder="Slide narrative..."
+                  />
+                  <input
+                    type="text"
+                    value={editImageUrl}
+                    onChange={(e) => setEditImageUrl(e.target.value)}
+                    className="ts-inline-input"
+                    placeholder="Image URL (optional)"
+                  />
+                  <div className="ts-inline-actions">
+                    <button onClick={() => setEditingIdx(-1)}>Cancel</button>
+                    <button onClick={() => saveEdit(idx, slide)} style={{ background: '#3b82f6', color: 'white', border: 'none' }}>Save</button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <h3 className="ts-card-title">
+                    {slide.icon && <span className="ts-card-icon">{slide.icon}</span>} {slide.title.replace(/^[\p{Emoji_Presentation}\s]+/u, '')}
+                  </h3>
+                  {slide.imageUrl && (
+                    <img
+                      className="ts-card-image"
+                      src={slide.imageUrl}
+                      alt={slide.title}
+                      loading="lazy"
+                      onError={(e) => { e.target.style.display = 'none'; }}
+                    />
+                  )}
+                  <p className="ts-card-narrative" style={{ whiteSpace: 'pre-line' }}>{slide.narrative}</p>
+                </>
               )}
-              <p className="ts-card-narrative" style={{ whiteSpace: 'pre-line' }}>{slide.narrative}</p>
             </div>
+
+            {/* Right side LULC Bar Chart */}
+            {slide.show_lulc_data && ciData && ciData.length > 0 && (
+              <div 
+                className={`ts-card ${idx === activeIdx ? 'ts-card--visible' : ''}`}
+                style={{ 
+                  position: 'absolute', 
+                  right: '5%', 
+                  width: '40%', 
+                  maxWidth: '500px',
+                  background: 'rgba(0, 0, 0, 0.85)'
+                }}
+              >
+                <h4 style={{ color: '#fff', marginTop: 0, marginBottom: '1rem', fontFamily: 'Inter', fontSize: '1.2rem' }}>
+                  LULC: Agricultural Intensity
+                </h4>
+                <div style={{ height: '300px' }}>
+                  <Bar
+                    data={{
+                      labels: ciData.map(d => d.year),
+                      datasets: [
+                        { label: 'Single Crop', data: ciData.map(d => d.single_crop_ha), backgroundColor: 'rgba(74, 222, 128, 0.8)' },
+                        { label: 'Double Crop', data: ciData.map(d => d.double_crop_ha), backgroundColor: 'rgba(96, 165, 250, 0.8)' },
+                        { label: 'Triple Crop', data: ciData.map(d => d.triple_crop_ha), backgroundColor: 'rgba(251, 191, 36, 0.8)' },
+                      ],
+                    }}
+                    options={{
+                      responsive: true,
+                      maintainAspectRatio: false,
+                      plugins: { legend: { labels: { color: '#fff' } } },
+                      scales: {
+                        x: { stacked: true, ticks: { color: '#ccc' }, grid: { display: false } },
+                        y: { stacked: true, ticks: { color: '#ccc' }, grid: { color: 'rgba(255,255,255,0.1)' } }
+                      }
+                    }}
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Right side Water Bar Chart */}
+            {slide.show_water_data && swData && swData.length > 0 && (
+              <div 
+                className={`ts-card ${idx === activeIdx ? 'ts-card--visible' : ''}`}
+                style={{ 
+                  position: 'absolute', 
+                  right: '5%', 
+                  width: '40%', 
+                  maxWidth: '500px',
+                  background: 'rgba(0, 0, 0, 0.85)'
+                }}
+              >
+                <h4 style={{ color: '#fff', marginTop: 0, marginBottom: '1rem', fontFamily: 'Inter', fontSize: '1.2rem' }}>
+                  Surface Water Footprint
+                </h4>
+                <div style={{ height: '300px' }}>
+                  <Bar
+                    data={{
+                      labels: swData.map(d => d.year),
+                      datasets: [
+                        { label: 'Kharif', data: swData.map(d => d.kharif_ha ?? d.seasonal_monsoon_ha ?? 0), backgroundColor: 'rgba(20, 184, 166, 0.8)' },
+                        { label: 'Rabi', data: swData.map(d => d.rabi_ha ?? d.seasonal_winter_ha ?? 0), backgroundColor: 'rgba(59, 130, 246, 0.8)' },
+                        { label: 'Zaid', data: swData.map(d => d.zaid_ha ?? d.perennial_ha ?? 0), backgroundColor: 'rgba(147, 197, 253, 0.8)' },
+                      ],
+                    }}
+                    options={{
+                      responsive: true,
+                      maintainAspectRatio: false,
+                      plugins: { legend: { labels: { color: '#fff' } } },
+                      scales: {
+                        x: { stacked: true, ticks: { color: '#ccc' }, grid: { display: false } },
+                        y: { stacked: true, ticks: { color: '#ccc' }, grid: { color: 'rgba(255,255,255,0.1)' } }
+                      }
+                    }}
+                  />
+                </div>
+              </div>
+            )}
           </div>
         ))}
       </div>
@@ -282,18 +430,43 @@ async function downloadReportAsHTML(results, storySlides, villageName) {
     `;
   }).join('');
 
-  const cardsHTML = (storySlides || []).map((slide, idx) => `
-    <div class="ts-snap-page" data-idx="${idx}">
-      <div class="ts-card">
+  // 6. Build HTML for each slide, embedding any rendered chart canvases from the live DOM
+  const livePages = document.querySelectorAll('.ts-storyboard .ts-snap-page');
+
+  const cardsHTML = (storySlides || []).map((slide, idx) => {
+    let chartHtml = '';
+    const livePage = livePages[idx];
+    if (livePage) {
+      const canvas = livePage.querySelector('canvas');
+      if (canvas) {
+        try {
+          const imgData = canvas.toDataURL('image/png');
+          const title = slide.show_lulc_data ? 'LULC: Agricultural Intensity' : 'Surface Water Footprint';
+          chartHtml = `
+            <div class="ts-card ts-card--visible" style="position: absolute; right: 5%; width: 40%; max-width: 500px; background: rgba(0, 0, 0, 0.85); display: flex; flex-direction: column;">
+              <h4 style="color: #fff; margin-top: 0; margin-bottom: 1rem; font-family: Inter, sans-serif; font-size: 1.2rem;">${title}</h4>
+              <img src="${imgData}" style="width: 100%; height: auto; object-fit: contain;" alt="${title} Chart"/>
+            </div>
+          `;
+        } catch (e) {
+          console.warn('Failed to export storyboard canvas:', e);
+        }
+      }
+    }
+
+    return `
+    <div class="ts-snap-page" data-idx="${idx}" style="position: relative;">
+      <div class="ts-card ts-card--visible">
         <div class="ts-card-chapter">Chapter ${idx + 1}</div>
         <h3 class="ts-card-title">
-          ${slide.icon ? `<span class="ts-card-icon">${slide.icon}</span>` : ''} ${slide.title || ''}
+          ${slide.icon ? `<span class="ts-card-icon">${slide.icon}</span>` : ''} ${(slide.title || '').replace(/^[\p{Emoji_Presentation}\s]+/u, '')}
         </h3>
         ${slide.imageUrl ? `<img class="ts-card-image" src="${slide.imageUrl}" alt="${slide.title || ''}" loading="lazy" onerror="this.style.display='none'"/>` : ''}
         <p class="ts-card-narrative" style="white-space: pre-line;">${slide.narrative || ''}</p>
       </div>
+      ${chartHtml}
     </div>
-  `).join('');
+  `}).join('');
 
   const dotsHTML = (storySlides || []).map((_, idx) => `
     <button class="ts-dot" data-dot-idx="${idx}" title="Chapter ${idx + 1}"></button>
@@ -752,6 +925,7 @@ function generateStorySlides(results, ciData, swData, center) {
       mapUrl: getStaticMapUrl(center, 15, '1280x900', 90),
       imageUrl: 'https://images.unsplash.com/photo-1574943320219-553eb213f72d?w=600&h=300&fit=crop',
       mapZoom: 15,
+      show_lulc_data: true,
     });
   }
 
@@ -769,6 +943,7 @@ function generateStorySlides(results, ciData, swData, center) {
       mapUrl: getStaticMapUrl(center, 14, '1280x900', 180),
       imageUrl: 'https://images.unsplash.com/photo-1470071459604-3b5ec3a7fe05?w=600&h=300&fit=crop',
       mapZoom: 14,
+      show_water_data: true,
     });
   }
 
@@ -994,6 +1169,182 @@ export default function ReportViewer({
     // Default: generated + custom
     return [...generated, ...customSlides];
   }, [storySlides, dbSlides, customSlides]);
+
+  // Track inline session edits to any slide (AI, Custom, or Template)
+  const [slideOverrides, setSlideOverrides] = useState({});
+
+
+
+  // ─── AI Storyboard Pipeline ───
+  // Convert to string to handle IDs like "ananthapur_amadagur.2"
+  const villageId = boundary?.village_id != null
+    ? String(boundary.village_id)
+    : boundary?.id != null ? String(boundary.id) : null;
+
+  // CoReStack = has a villageId AND is not upload/places/search
+  const isCoReStack = !!villageId
+    && boundary?.source !== 'upload'
+    && boundary?.source !== 'places'
+    && boundary?.source !== 'search';
+
+  const [aiSlides, setAiSlides] = useState(null);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [genProgress, setGenProgress] = useState('');
+  const [genError, setGenError] = useState(null);
+
+  const handleSlideEdit = useCallback((idx, updatedData) => {
+    setSlideOverrides(prev => ({
+      ...prev,
+      [idx]: { ...prev[idx], ...updatedData }
+    }));
+
+    if (aiSlides?.slides && aiSlides.slides[idx]) {
+      const newAiSlides = { ...aiSlides };
+      newAiSlides.slides = [...aiSlides.slides];
+      const baseSlide = newAiSlides.slides[idx];
+
+      let newTitle = updatedData.title || baseSlide.title;
+      const emojiMatch = newTitle.match(/^([\p{Emoji_Presentation}\s]+)/u);
+      let emoji = baseSlide.emoji;
+      if (emojiMatch) {
+         emoji = emojiMatch[1].trim();
+         newTitle = newTitle.replace(emojiMatch[0], '').trim();
+      }
+
+      let newContent = baseSlide.content;
+      let newInsight = baseSlide.insight;
+      if (updatedData.narrative) {
+        const parts = updatedData.narrative.split('\n\n💡 ');
+        newContent = parts[0].trim();
+        newInsight = parts.length > 1 ? parts[1].trim() : '';
+      }
+
+      newAiSlides.slides[idx] = {
+        ...baseSlide,
+        title: newTitle,
+        emoji: emoji,
+        content: newContent,
+        insight: newInsight,
+        image_url: updatedData.imageUrl !== undefined ? updatedData.imageUrl : baseSlide.image_url,
+      };
+
+      setAiSlides(newAiSlides);
+      
+      if (villageId) {
+        console.log('[StoryboardDB] Persisting manual slide edit to DB...');
+        saveStoryboardToDb(villageId, newAiSlides, boundary, results).catch(console.error);
+      }
+    }
+  }, [aiSlides, villageId, boundary, results]);
+
+  // Map action → satellite map bg URL (mirrors original slide behavior)
+  const SLIDE_MAP_ACTIONS = {
+    1: { zoom: 13, heading: 0 },
+    2: { zoom: 13, heading: 180 },
+    3: { zoom: 14, heading: 0 },
+    4: { zoom: 14, heading: 90 },
+    5: { zoom: 15, heading: 0 },   // show_lulc_latest
+    6: { zoom: 15, heading: 45 },  // show_lulc_latest
+    7: { zoom: 15, heading: 90 },  // show_lulc_oldest
+    8: { zoom: 14, heading: 270 }, // show_water
+    9: { zoom: 15, heading: 135 },
+    10: { zoom: 14, heading: 0 },
+    11: { zoom: 13, heading: 270 },
+    12: { zoom: 14, heading: 180 },
+    13: { zoom: 13, heading: 0 },
+  };
+
+  const triggerAiStoryboard = useCallback(async (force = false) => {
+    if (!results) return;
+    console.group('%c[Storyboard] Pipeline', 'color:#a78bfa;font-weight:bold');
+    console.log('  village_id:', villageId, '| isCoReStack:', isCoReStack, '| source:', boundary?.source, '| force:', force);
+
+    // Non-CoReStack (search / upload / places) — handle fallbacks
+    if (!isCoReStack) {
+      console.log(`  [skip] 4-slide classic static template for ${boundary?.source} boundary`); console.groupEnd();
+      setAiSlides(null); // Triggers fallback to allSlides (generateStorySlides)
+      return;
+    }
+
+    setIsGenerating(true);
+    setGenError(null);
+    setGenProgress('Checking cache…');
+
+    try {
+      // 1. Cache check
+      if (!force) {
+        console.log('  [1] Checking cache for village_id:', villageId);
+        const cached = await fetchCachedStoryboard(villageId);
+        console.log('  [1] cache:', cached ? cached.slides?.length + ' slides' : 'miss');
+        if (cached?.slides?.length > 0) {
+          console.log('  ✅ Cache hit'); console.groupEnd();
+          setAiSlides(cached);
+          setIsGenerating(false); setGenProgress('');
+          return;
+        }
+      }
+
+      // 2. Run Groq LLM pipeline
+      console.log('  [2] Running Groq pipeline…');
+      const story = await runStoryboardPipeline({
+        results, boundary,
+        onProgress: (msg) => { console.log('  [pipeline]', msg); setGenProgress(msg); },
+      });
+      console.log('  [2] Got', story?.slides?.length, 'slides');
+
+      // 3. Save to DB
+      console.log('  [3] Saving to DB…');
+      await saveStoryboardToDb(villageId, story, boundary, results);
+      console.log('  [3] Saved'); console.groupEnd();
+
+      setAiSlides(story);
+    } catch (err) {
+      console.error('[Storyboard] ❌', err); console.groupEnd();
+      setGenError(err.message);
+    } finally {
+      setIsGenerating(false); setGenProgress('');
+    }
+  }, [results, boundary, isCoReStack, villageId]);
+
+  // Auto-trigger once when results are ready
+  useEffect(() => {
+    console.log('[Storyboard] Auto-trigger — results:', !!results, '| villageId:', villageId, '| source:', boundary?.source);
+    if (results) triggerAiStoryboard(false);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ─── Final slide list: AI slides take priority, apply overrides ───
+  const finalSlidesWithOverrides = useMemo(() => {
+    let baseSlides = allSlides;
+
+    if (aiSlides?.slides?.length > 0) {
+      console.log('[Storyboard] Using AI slides:', aiSlides.slides.length);
+      baseSlides = aiSlides.slides.map(s => {
+        const mapCfg = SLIDE_MAP_ACTIONS[s.slide_number] || { zoom: 14, heading: 0 };
+        return {
+          title: `${s.emoji} ${s.title}`,
+          icon: s.emoji,
+          narrative: `${s.content}\n\n💡 ${s.insight}`,
+          mapUrl: getStaticMapUrl(mapCenter, mapCfg.zoom, '1280x900', mapCfg.heading),
+          imageUrl: s.image_url || null,
+          isAiGenerated: true,
+          show_lulc_data: [5, 6].includes(s.slide_number),
+          show_water_data: [8].includes(s.slide_number),
+        };
+      });
+    } else {
+      console.log('[Storyboard] Falling back to allSlides:', allSlides.length);
+    }
+
+    // Apply any inline session edits the user made
+    return baseSlides.map((slide, idx) => {
+      const override = slideOverrides[idx];
+      if (override) {
+        return { ...slide, ...override };
+      }
+      return slide;
+    });
+  }, [aiSlides, allSlides, mapCenter, slideOverrides]);
 
   return (
     <div className="report-viewer-overlay">
@@ -1352,7 +1703,7 @@ export default function ReportViewer({
             style={{ background: 'linear-gradient(135deg, #8b5cf6, #6366f1)' }}
             onClick={async () => {
               try {
-                await downloadReportAsHTML(results, allSlides, village_name);
+                await downloadReportAsHTML(results, finalSlidesWithOverrides, village_name);
               } catch (err) {
                 console.error('HTML export failed:', err);
                 alert('HTML export failed.');
@@ -1368,13 +1719,61 @@ export default function ReportViewer({
 
         {/* ─── TERRASO FULLSCREEN SLIDE STORYBOARD ─── */}
         <div style={{ position: 'relative' }}>
-          <StorySlides slides={allSlides} villageName={village_name} />
-          <button
-            className="ts-edit-btn"
-            onClick={() => setShowSlideEditor(true)}
-          >
-            ✏️ Edit Story
-          </button>
+          {/* Action bar */}
+          <div className="storyboard-action-bar">
+            {aiSlides && (
+              <button
+                className="storyboard-action-btn storyboard-edit-btn"
+                onClick={() => setShowSlideEditor(true)}
+                title="Edit storyboard slides"
+              >
+                ✏️ Edit Story
+              </button>
+            )}
+            {isCoReStack && (
+              <button
+                className="storyboard-action-btn storyboard-regen-btn"
+                onClick={() => triggerAiStoryboard(true)}
+                disabled={isGenerating}
+                title="Regenerate storyboard from scratch"
+              >
+                {isGenerating ? '⏳ Generating…' : '🔄 Regenerate'}
+              </button>
+            )}
+            {!aiSlides && !isGenerating && (
+              <button
+                className="storyboard-action-btn storyboard-edit-btn"
+                onClick={() => setShowSlideEditor(true)}
+                title="Edit story slides"
+              >
+                ✏️ Edit Story
+              </button>
+            )}
+          </div>
+
+          {/* Full-screen loading placeholder */}
+          {isGenerating ? (
+            <div style={{ height: '80vh', width: '100%', background: '#0f172a', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#fff' }}>
+              <div className="storyboard-gen-spinner" style={{ width: '48px', height: '48px', borderTopColor: '#3b82f6', borderRightColor: '#3b82f6', marginBottom: '1.5rem', borderWidth: '4px' }} />
+              <h3 style={{ fontFamily: 'Inter', fontWeight: 600, fontSize: '1.5rem', margin: '0 0 0.5rem 0' }}>Loading Storyboard</h3>
+              <p style={{ color: '#94a3b8', margin: 0 }}>{genProgress || 'Please wait while we fetch the village narrative...'}</p>
+            </div>
+          ) : genError ? (
+            <div style={{ height: '80vh', width: '100%', background: '#0f172a', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#ef4444' }}>
+              <span style={{ fontSize: '3rem', marginBottom: '1rem' }}>⚠️</span>
+              <h3 style={{ fontFamily: 'Inter', fontWeight: 600, margin: '0 0 0.5rem 0' }}>Storyboard generation failed</h3>
+              <p style={{ color: '#fca5a5', margin: 0 }}>{genError}</p>
+              <button className="btn btn-primary" style={{ marginTop: '1.5rem' }} onClick={() => triggerAiStoryboard(true)}>Retry Generation</button>
+            </div>
+          ) : (
+            <StorySlides 
+              slides={finalSlidesWithOverrides} 
+              villageName={village_name} 
+              onSlideEdit={handleSlideEdit} 
+              ciData={ciData}
+              swData={swData}
+            />
+          )}
         </div>
 
       </div>{/* end .report-viewer-scroll */}

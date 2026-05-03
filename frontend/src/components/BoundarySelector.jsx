@@ -101,7 +101,8 @@ export default function BoundarySelector({ onBoundarySelect, onMapUpdate }) {
       if (onMapUpdate) onMapUpdate({ lat: avgLat, lng: avgLng }, geojson);
     } catch {}
     setSelectedVillageName(name);
-    onBoundarySelect({ type: 'geojson', boundary_geojson: geojson, village_name: name, state: csSelectedState, district: csSelectedDistrict, tehsil: csSelectedTehsil, area_hectares: area, source: 'corestack' });
+    const villageId = feature.properties?.vill_ID || feature.properties?.village_id || feature.id || null;
+    onBoundarySelect({ type: 'geojson', boundary_geojson: geojson, village_name: name, village_id: villageId, state: csSelectedState, district: csSelectedDistrict, tehsil: csSelectedTehsil, area_hectares: area, source: 'corestack' });
   }, [csSelectedState, csSelectedDistrict, csSelectedTehsil, onBoundarySelect, onMapUpdate]);
 
   // ─── Places Search Handlers ───
@@ -422,7 +423,32 @@ export default function BoundarySelector({ onBoundarySelect, onMapUpdate }) {
               Upload a GeoJSON/JSON polygon for any Indian village.
               IndiaSAT LULC v3 (10m) covers all of India — no location selection needed.
             </div>
-            <input type="file" accept=".json,.geojson" onChange={async (e) => {
+
+            {resolvingLocation ? (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.75rem', padding: '1.5rem 0' }}>
+                <span className="spinner" style={{ width: 28, height: 28, borderWidth: 3, borderColor: 'rgba(139, 92, 246, 0.2)', borderTopColor: '#8b5cf6' }}></span>
+                <span style={{ fontSize: '0.85rem', color: '#6d28d9', fontWeight: 600 }}>Resolving administrative boundaries...</span>
+                <span style={{ fontSize: '0.7rem', color: '#94a3b8' }}>This may take a few seconds</span>
+              </div>
+            ) : selectedVillageName ? (
+              <div style={{ padding: '1rem', background: '#fff', borderRadius: '8px', border: '1px solid #e2e8f0', textAlign: 'left', marginTop: '0.5rem', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+                <div style={{ fontSize: '0.7rem', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px', fontWeight: 600 }}>Active Custom Boundary</div>
+                <div style={{ fontSize: '0.9rem', fontWeight: 700, color: '#1e293b', marginBottom: '0.75rem' }}>{selectedVillageName}</div>
+                <button 
+                  onClick={() => {
+                    setSelectedVillageName('');
+                    onBoundarySelect(null);
+                    onMapUpdate(null, null, null);
+                  }}
+                  style={{ width: '100%', fontSize: '0.8rem', padding: '0.4rem', border: '1px solid #cbd5e1', borderRadius: '6px', background: '#f8fafc', color: '#475569', cursor: 'pointer', fontWeight: 500, transition: 'all 0.2s' }}
+                  onMouseOver={(e) => { e.target.style.background = '#f1f5f9'; e.target.style.color = '#0f172a'; }}
+                  onMouseOut={(e) => { e.target.style.background = '#f8fafc'; e.target.style.color = '#475569'; }}
+                >
+                  Clear & Upload Another
+                </button>
+              </div>
+            ) : (
+              <input type="file" accept=".json,.geojson" onChange={async (e) => {
               const file = e.target.files[0];
               if (file) {
                 const reader = new FileReader();
@@ -480,6 +506,7 @@ export default function BoundarySelector({ onBoundarySelect, onMapUpdate }) {
                 reader.readAsText(file);
               }
             }} style={{ display: 'block', margin: '0 auto', fontSize: '0.8rem' }}/>
+            )}
           </div>
         </div>
       )}

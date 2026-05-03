@@ -38,6 +38,9 @@ class Settings(BaseSettings):
     # Google Maps (for static map proxy)
     GOOGLE_MAPS_KEY: str = ""
 
+    # Groq LLM (for storyboard slide generation)
+    GROQ_API_KEY: str = ""
+
     # GeoServer (for MWS geometry downloads)
     GEOSERVER_BASE_URL: str = ""
 

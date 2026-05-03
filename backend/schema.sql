@@ -97,3 +97,21 @@ CREATE TABLE IF NOT EXISTS custom_slides (
 );
 
 CREATE INDEX IF NOT EXISTS idx_slides_village ON custom_slides (village_name);
+
+-- 6. Village Storyboard Slides table (AI-generated, on-demand, cached by village_id)
+CREATE TABLE IF NOT EXISTS village_storyboard_slides (
+    id              VARCHAR(36) PRIMARY KEY,
+    village_id      VARCHAR(128) NOT NULL UNIQUE,
+    village_name    VARCHAR(255) NOT NULL,
+    state           VARCHAR(255),
+    district        VARCHAR(255),
+    tehsil          VARCHAR(255),
+    total_area      VARCHAR(100),
+    slides          JSON NOT NULL DEFAULT '[]',
+    created_at      TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at      TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_storyboard_village_id ON village_storyboard_slides (village_id);
+CREATE INDEX IF NOT EXISTS idx_storyboard_village_name ON village_storyboard_slides (village_name);
+
