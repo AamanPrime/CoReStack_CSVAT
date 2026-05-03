@@ -119,7 +119,7 @@ class TestAggregation:
         """Single MWS with fraction=1.0 → value unchanged.
 
         aggregate_mws_metric() uses overlap_area_ha as the weight for
-        weighted_average (area-weighted mean).  overlap_fraction is used
+        weighted_average (area-weighted mean). overlap_fraction is used
         only by weighted_sum.
         """
         intersections = [{"mws_uid": "MWS_001", "overlap_fraction": 1.0, "overlap_area_ha": 50.0}]
