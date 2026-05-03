@@ -116,8 +116,13 @@ class TestAggregation:
     """Test weighted aggregation of MWS metrics."""
 
     def test_weighted_average_single_mws(self, service):
-        """Single MWS with fraction=1.0 → value unchanged."""
-        intersections = [{"mws_uid": "MWS_001", "overlap_fraction": 1.0}]
+        """Single MWS with fraction=1.0 → value unchanged.
+
+        aggregate_mws_metric() uses overlap_area_ha as the weight for
+        weighted_average (area-weighted mean).  overlap_fraction is used
+        only by weighted_sum.
+        """
+        intersections = [{"mws_uid": "MWS_001", "overlap_fraction": 1.0, "overlap_area_ha": 50.0}]
         mws_data = {"MWS_001": {"metric_a": 42.5}}
 
         result = service.aggregate_mws_metric(
@@ -126,38 +131,38 @@ class TestAggregation:
         assert result == pytest.approx(42.5, abs=0.01)
 
     def test_weighted_average_two_mws(self, service):
-        """Two MWS with equal fractions → simple average."""
+        """Two MWS with equal overlap areas → simple average."""
         intersections = [
-            {"mws_uid": "A", "overlap_fraction": 0.5},
-            {"mws_uid": "B", "overlap_fraction": 0.5},
+            {"mws_uid": "A", "overlap_fraction": 0.5, "overlap_area_ha": 25.0},
+            {"mws_uid": "B", "overlap_fraction": 0.5, "overlap_area_ha": 25.0},
         ]
         mws_data = {"A": {"val": 10.0}, "B": {"val": 20.0}}
 
         result = service.aggregate_mws_metric(
             intersections, mws_data, "val", "weighted_average"
         )
-        # (10*0.5 + 20*0.5) / (0.5+0.5) = 15.0
+        # (10*25 + 20*25) / (25+25) = 15.0
         assert result == pytest.approx(15.0, abs=0.01)
 
     def test_weighted_average_unequal_fractions(self, service):
-        """Unequal fractions → properly weighted."""
+        """Unequal overlap areas → properly area-weighted."""
         intersections = [
-            {"mws_uid": "A", "overlap_fraction": 0.8},
-            {"mws_uid": "B", "overlap_fraction": 0.2},
+            {"mws_uid": "A", "overlap_fraction": 0.8, "overlap_area_ha": 80.0},
+            {"mws_uid": "B", "overlap_fraction": 0.2, "overlap_area_ha": 20.0},
         ]
         mws_data = {"A": {"val": 100.0}, "B": {"val": 0.0}}
 
         result = service.aggregate_mws_metric(
             intersections, mws_data, "val", "weighted_average"
         )
-        # (100*0.8 + 0*0.2) / (0.8+0.2) = 80.0
+        # (100*80 + 0*20) / (80+20) = 80.0
         assert result == pytest.approx(80.0, abs=0.01)
 
     def test_weighted_sum(self, service):
-        """Weighted sum for area metrics."""
+        """Weighted sum for area metrics uses overlap_fraction (not area)."""
         intersections = [
-            {"mws_uid": "A", "overlap_fraction": 0.6},
-            {"mws_uid": "B", "overlap_fraction": 0.4},
+            {"mws_uid": "A", "overlap_fraction": 0.6, "overlap_area_ha": 60.0},
+            {"mws_uid": "B", "overlap_fraction": 0.4, "overlap_area_ha": 40.0},
         ]
         mws_data = {"A": {"area": 100.0}, "B": {"area": 50.0}}
 
@@ -169,7 +174,7 @@ class TestAggregation:
 
     def test_missing_data_returns_none(self, service):
         """If no MWS have the metric → return None."""
-        intersections = [{"mws_uid": "A", "overlap_fraction": 1.0}]
+        intersections = [{"mws_uid": "A", "overlap_fraction": 1.0, "overlap_area_ha": 10.0}]
         mws_data = {"A": {"other_metric": 42}}
 
         result = service.aggregate_mws_metric(
@@ -184,7 +189,7 @@ class TestCroppingIntensityAggregation:
     def test_cropping_intensity_format(self, service):
         """Output matches expected schema with year, areas, and intensity."""
         intersections = [
-            {"mws_uid": "MWS_001", "overlap_fraction": 1.0},
+            {"mws_uid": "MWS_001", "overlap_fraction": 1.0, "overlap_area_ha": 100.0},
         ]
         mws_data = {
             "MWS_001": {
@@ -213,7 +218,7 @@ class TestSurfaceWaterAggregation:
     def test_surface_water_format(self, service):
         """Output matches expected schema."""
         intersections = [
-            {"mws_uid": "MWS_001", "overlap_fraction": 0.5},
+            {"mws_uid": "MWS_001", "overlap_fraction": 0.5, "overlap_area_ha": 50.0},
         ]
         mws_data = {
             "MWS_001": {
@@ -240,7 +245,7 @@ class TestVegetationAggregation:
     def test_vegetation_net_change(self, service):
         """Net change calculated correctly."""
         intersections = [
-            {"mws_uid": "MWS_001", "overlap_fraction": 1.0},
+            {"mws_uid": "MWS_001", "overlap_fraction": 1.0, "overlap_area_ha": 100.0},
         ]
         mws_data = {
             "MWS_001": {
