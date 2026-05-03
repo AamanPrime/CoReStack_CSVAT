@@ -171,4 +171,45 @@ export async function deleteCustomSlide(slideId) {
   return data;
 }
 
+// ─── Storyboard (AI-generated cached slides) ─────────────────────────────────
+
+/**
+ * Fetch cached storyboard slides for a CoReStack village.
+ * Returns null (not throws) on 404.
+ */
+export async function getStoryboardSlides(villageId) {
+  try {
+    const { data } = await api.get(`/storyboard/${villageId}`);
+    return data;
+  } catch (err) {
+    if (err.response?.status === 404) return null;
+    throw err;
+  }
+}
+
+/**
+ * Save (upsert) storyboard slides for a village.
+ */
+export async function saveStoryboardSlides(villageId, payload) {
+  const { data } = await api.post(`/storyboard/${villageId}`, payload);
+  return data;
+}
+
+/**
+ * Patch specific slides in the cached storyboard (for the slide editor).
+ */
+export async function patchStoryboardSlides(villageId, slideUpdates) {
+  const { data } = await api.patch(`/storyboard/${villageId}/slides`, { slides: slideUpdates });
+  return data;
+}
+
+/**
+ * Delete ALL storyboard slides from DB (full reset).
+ */
+export async function clearStoryboardDb() {
+  const { data } = await api.delete('/storyboard/');
+  return data;
+}
+
 export default api;
+

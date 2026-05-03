@@ -14,6 +14,7 @@
 
 // Backend API base URL
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000';
+let shapelyLoadPromise = null;
 
 // ─── Custom Error for MWS Unavailable ───
 
@@ -43,6 +44,39 @@ async function fetchTehsilData(state, district, tehsil) {
   if (!resp.ok) throw new Error(`Tehsil data fetch failed: ${resp.status}`);
   const json = await resp.json();
   return json.data;
+}
+
+async function ensureShapelyAvailable(pyodide) {
+  if (!shapelyLoadPromise) {
+    shapelyLoadPromise = (async () => {
+      try {
+        await pyodide.loadPackage('shapely');
+        return true;
+      } catch (loadPackageError) {
+        console.warn(
+          'Pyodide shapely package load failed; trying micropip fallback:',
+          loadPackageError?.message || loadPackageError,
+        );
+      }
+
+      try {
+        await pyodide.loadPackage('micropip');
+        await pyodide.runPythonAsync(`
+import micropip
+await micropip.install('shapely')
+        `);
+        return true;
+      } catch (micropipError) {
+        console.warn(
+          'Shapely not available, using bounding-box intersection fallback:',
+          micropipError?.message || micropipError,
+        );
+        return false;
+      }
+    })();
+  }
+
+  return shapelyLoadPromise;
 }
 
 async function tryMWSAnalytics(boundary, selectedLayers, selectedYears, onProgress) {
@@ -93,20 +127,7 @@ async function tryMWSAnalytics(boundary, selectedLayers, selectedYears, onProgre
 
   // Install shapely in Pyodide (for spatial intersection)
   onProgress?.('Installing spatial analysis library…');
-  try {
-    await pyodide.runPythonAsync(`
-import micropip
-await micropip.install('shapely')
-    `);
-  } catch (e) {
-    console.warn('Shapely install via micropip failed, trying loadPackage:', e.message);
-    try {
-      await pyodide.loadPackage('shapely');
-    } catch {
-      // shapely may not be available in Pyodide — fall back to bbox intersection
-      console.warn('Shapely not available, using bounding-box intersection fallback');
-    }
-  }
+  await ensureShapelyAvailable(pyodide);
 
   // 3. Register the MWS analytics Python code
   onProgress?.('Running spatial intersection & aggregation (Python WASM)…');
@@ -811,7 +832,7 @@ ${vg.transitions ? `<h3 style="margin-top:1.5rem;font-size:1.1rem;color:var(--he
 <tbody>${vg.transitions.map(t=>`<tr><td>${t.from ?? t.from_class ?? (t.label ? t.label.split('→')[0]?.trim() : '')}</td><td>${t.to ?? t.to_label ?? (t.label ? t.label.split('→')[1]?.trim() : '')}</td><td>${t.area_ha}</td></tr>`).join('')}</tbody></table>` : ''}
 ${vg.yearly_data?.length ? `<div class="cc"><canvas id="vgChart"></canvas></div>` : ''}
 <p class="nar">Vegetation analysis tracks tree cover changes and land degradation.</p></div>` : ''}
-${results.crop_intensity_change ? `<div class="sec"><h2>🔄 Cropping Intensity Change Detection</h2>
+${results.crop_intensity_change ? `<div class="sec"><h2> Cropping Intensity Change Detection</h2>
 <div class="cc" style="height:320px"><canvas id="cicChart"></canvas></div>
 <table><thead><tr><th>Transition</th><th>Area (ha)</th></tr></thead>
 <tbody>${results.crop_intensity_change.map(t=>`<tr><td>${t.label ?? t.category ?? ''}</td><td>${t.area_ha}</td></tr>`).join('')}</tbody></table></div>` : ''}

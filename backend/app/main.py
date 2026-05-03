@@ -8,7 +8,7 @@ import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api import auth, boundaries, layers, jobs, gee, analytics, corestack, raster_proxy, village_stories, custom_slides, maps_proxy
+from app.api import auth, boundaries, layers, jobs, gee, analytics, corestack, raster_proxy, village_stories, custom_slides, maps_proxy, overpass_proxy, storyboard
 from app.config import get_settings
 
 logger = logging.getLogger(__name__)
@@ -20,7 +20,7 @@ async def lifespan(app: FastAPI):
     """Create database tables on startup."""
     try:
         from app.database import engine, Base
-        from app.models import Job, CachedBoundary, VillageStory, CustomSlide  # noqa: F401 — register models
+        from app.models import Job, CachedBoundary, VillageStory, CustomSlide, VillageStoryboardSlide  # noqa: F401 — register models
 
         Base.metadata.create_all(bind=engine)
         logger.info("Database tables created/verified.")
@@ -62,6 +62,9 @@ app.include_router(raster_proxy.router)
 app.include_router(village_stories.router)
 app.include_router(custom_slides.router)
 app.include_router(maps_proxy.router)
+app.include_router(overpass_proxy.router)
+app.include_router(overpass_proxy.legacy_router)
+app.include_router(storyboard.router)
 
 
 @app.get("/", tags=["Health"])

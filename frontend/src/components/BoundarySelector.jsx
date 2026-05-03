@@ -30,6 +30,7 @@ export default function BoundarySelector({ onBoundarySelect, onMapUpdate }) {
   const [csSelectedDistrict, setCsSelectedDistrict] = useState('');
   const [csSelectedTehsil, setCsSelectedTehsil] = useState('');
   const [csVillages, setCsVillages] = useState([]);
+  const [csLoading, setCsLoading] = useState(false);
   const [selectedVillageName, setSelectedVillageName] = useState('');
 
   // ─── Places Search State ───
@@ -40,6 +41,7 @@ export default function BoundarySelector({ onBoundarySelect, onMapUpdate }) {
   const { predictions, isLoading: placesLoading, search: searchPlaces, getPlaceDetails, clearPredictions } = usePlacesAutocomplete();
   const debounceRef = useRef(null);
   const [resolvingLocation, setResolvingLocation] = useState(false);
+  const [errorDialog, setErrorDialog] = useState(null);
 
   useEffect(() => {
     if (activeTab === 'corestack' && !csLocations) {
@@ -55,6 +57,8 @@ export default function BoundarySelector({ onBoundarySelect, onMapUpdate }) {
     setCsSelectedTehsil(val);
     setCsVillages([]);
     if (!val) return;
+    
+    setCsLoading(true);
     try {
       const data = await getVillageGeometries(csSelectedState, csSelectedDistrict, val);
       let features = data?.type === 'FeatureCollection' ? data.features : Array.isArray(data) ? data : [];
@@ -86,7 +90,11 @@ export default function BoundarySelector({ onBoundarySelect, onMapUpdate }) {
         }
       }
       setCsVillages(Object.values(grouped));
-    } catch { setCsVillages([]); }
+    } catch { 
+      setCsVillages([]); 
+    } finally {
+      setCsLoading(false);
+    }
   };
 
   const selectCsVillage = useCallback((feature) => {
@@ -94,6 +102,15 @@ export default function BoundarySelector({ onBoundarySelect, onMapUpdate }) {
     if (!geojson) return;
     const name = feature.properties?.vill_name || feature.properties?.name || 'Village';
     const area = computeAreaHectares(geojson);
+
+    if (area > MAX_AREA_HA) {
+      setErrorDialog({
+        title: 'Village Boundary Too Large',
+        message: `Area: ${area.toLocaleString('en-IN', { maximumFractionDigits: 0 })} ha.\nMaximum allowed is ${MAX_AREA_HA.toLocaleString('en-IN')} ha.\n\nThis village exceeds the maximum allowed size for real-time analytics. Please use the Custom Draw or GeoJSON Upload tools for a smaller sub-region.`
+      });
+      return;
+    }
+
     try {
       const coords = geojson.type === 'MultiPolygon' ? geojson.coordinates[0][0] : geojson.coordinates[0];
       const avgLat = coords.reduce((s, c) => s + c[1], 0) / coords.length;
@@ -101,7 +118,8 @@ export default function BoundarySelector({ onBoundarySelect, onMapUpdate }) {
       if (onMapUpdate) onMapUpdate({ lat: avgLat, lng: avgLng }, geojson);
     } catch {}
     setSelectedVillageName(name);
-    onBoundarySelect({ type: 'geojson', boundary_geojson: geojson, village_name: name, state: csSelectedState, district: csSelectedDistrict, tehsil: csSelectedTehsil, area_hectares: area, source: 'corestack' });
+    const villageId = feature.properties?.vill_ID || feature.properties?.village_id || feature.id || null;
+    onBoundarySelect({ type: 'geojson', boundary_geojson: geojson, village_name: name, village_id: villageId, state: csSelectedState, district: csSelectedDistrict, tehsil: csSelectedTehsil, area_hectares: area, source: 'corestack' });
   }, [csSelectedState, csSelectedDistrict, csSelectedTehsil, onBoundarySelect, onMapUpdate]);
 
   // ─── Places Search Handlers ───
@@ -121,11 +139,20 @@ export default function BoundarySelector({ onBoundarySelect, onMapUpdate }) {
     const details = await getPlaceDetails(prediction.place_id);
     if (!details) return;
 
+    const area = computeAreaHectares(details.geojson);
+    
+    if (area > MAX_AREA_HA) {
+      setErrorDialog({
+        title: 'Search Area Too Large',
+        message: `Area: ${area.toLocaleString('en-IN', { maximumFractionDigits: 0 })} ha.\nMaximum allowed is ${MAX_AREA_HA.toLocaleString('en-IN')} ha.\n\nThis region is too large for real-time analytics. Please search for a specific village, town, or neighborhood instead.`
+      });
+      return;
+    }
+
     setSelectedPlace(details);
     setEditMode(null);
     setEditedGeojson(null);
 
-    const area = computeAreaHectares(details.geojson);
     if (onMapUpdate) onMapUpdate({ lat: details.lat, lng: details.lng }, details.geojson);
 
     // Don't call onBoundarySelect yet — wait for user to confirm/edit
@@ -137,7 +164,10 @@ export default function BoundarySelector({ onBoundarySelect, onMapUpdate }) {
 
     const area = computeAreaHectares(geojson);
     if (area > MAX_AREA_HA) {
-      alert(`Boundary too large: ${area.toLocaleString('en-IN', { maximumFractionDigits: 0 })} ha.\nMaximum allowed is ${MAX_AREA_HA.toLocaleString('en-IN')} ha.\nPlease select a smaller area.`);
+      setErrorDialog({
+        title: 'Boundary Too Large',
+        message: `Area: ${area.toLocaleString('en-IN', { maximumFractionDigits: 0 })} ha.\nMaximum allowed is ${MAX_AREA_HA.toLocaleString('en-IN')} ha.\n\nPlease select a smaller area.`
+      });
       return;
     }
 
@@ -229,8 +259,15 @@ export default function BoundarySelector({ onBoundarySelect, onMapUpdate }) {
             </div>
           </div>
           
-          {csVillages.length > 0 && (
-            <div style={{ marginTop: '0.75rem', maxHeight: '240px', overflowY: 'auto', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '0.4rem' }}>
+          {csLoading && (
+            <div style={{ marginTop: '0.75rem', padding: '1.5rem', textAlign: 'center', background: '#f8fafc', border: '1px dashed #cbd5e1', borderRadius: '6px' }}>
+              <span className="spinner" style={{ width: 24, height: 24, borderWidth: 3, borderColor: 'rgba(139, 92, 246, 0.2)', borderTopColor: '#8b5cf6', margin: '0 auto', display: 'block' }}></span>
+              <div style={{ marginTop: '0.6rem', fontSize: '0.85rem', color: '#64748b', fontWeight: 500 }}>Fetching villages...</div>
+            </div>
+          )}
+
+          {!csLoading && csVillages.length > 0 && (
+            <div style={{ marginTop: '0.75rem', maxHeight: '35vh', overflowY: 'auto', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '0.4rem' }}>
               {csVillages.map((feat, idx) => {
                 const name = feat.properties?.vill_name || feat.properties?.name || 'Village';
                 const isSelected = selectedVillageName === name;
@@ -256,7 +293,7 @@ export default function BoundarySelector({ onBoundarySelect, onMapUpdate }) {
                 type="text"
                 value={searchQuery}
                 onChange={(e) => handleSearchInput(e.target.value)}
-                placeholder="Search village, town, or city..."
+                placeholder="Search village"
                 style={{
                   width: '100%', padding: '0.6rem 0.6rem 0.6rem 2rem',
                   borderRadius: '8px', border: '1.5px solid #e2e8f0',
@@ -278,25 +315,43 @@ export default function BoundarySelector({ onBoundarySelect, onMapUpdate }) {
             {/* Predictions Dropdown */}
             {predictions.length > 0 && (
               <div style={{
-                position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 100,
-                background: '#fff', border: '1px solid #e2e8f0', borderRadius: '0 0 8px 8px',
-                boxShadow: '0 8px 24px rgba(0,0,0,0.12)', maxHeight: '200px', overflowY: 'auto',
+                position: 'relative', marginTop: '0.6rem', zIndex: 100,
+                background: '#fff', border: '1px solid #e2e8f0', borderRadius: '8px',
+                boxShadow: '0 4px 15px -3px rgba(0,0,0,0.05)', 
+                maxHeight: 'none', overflowY: 'visible', overflowX: 'hidden'
               }}>
-                {predictions.map((p) => (
+                {predictions.map((p, idx) => (
                   <button
                     key={p.place_id}
                     onClick={() => handleSelectPlace(p)}
                     style={{
-                      display: 'block', width: '100%', textAlign: 'left',
-                      padding: '0.55rem 0.75rem', background: 'transparent',
-                      border: 'none', borderBottom: '1px solid #f1f5f9',
-                      cursor: 'pointer', fontSize: '0.85rem', color: '#1e293b',
+                      display: 'flex', alignItems: 'center', width: '100%', textAlign: 'left',
+                      padding: '0.65rem 0.8rem', background: 'transparent',
+                      border: 'none', borderBottom: idx === predictions.length - 1 ? 'none' : '1px solid #f1f5f9',
+                      cursor: 'pointer', transition: 'all 0.2s ease',
                     }}
-                    onMouseEnter={(e) => e.target.style.background = '#f8fafc'}
-                    onMouseLeave={(e) => e.target.style.background = 'transparent'}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = '#f5f3ff';
+                      e.currentTarget.querySelector('.pin-icon').style.color = '#8b5cf6';
+                      e.currentTarget.querySelector('.pin-icon').style.transform = 'scale(1.1)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = 'transparent';
+                      e.currentTarget.querySelector('.pin-icon').style.color = '#94a3b8';
+                      e.currentTarget.querySelector('.pin-icon').style.transform = 'scale(1)';
+                    }}
                   >
-                    <div style={{ fontWeight: 500 }}>{p.main_text}</div>
-                    <div style={{ fontSize: '0.72rem', color: '#94a3b8', marginTop: '1px' }}>{p.secondary_text}</div>
+                    <div className="pin-icon" style={{ 
+                      marginRight: '12px', color: '#94a3b8', 
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      transition: 'all 0.2s ease'
+                    }}>
+                      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: 600, fontSize: '0.9rem', color: '#1e293b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.main_text}</div>
+                      <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.secondary_text}</div>
+                    </div>
                   </button>
                 ))}
               </div>
@@ -339,7 +394,7 @@ export default function BoundarySelector({ onBoundarySelect, onMapUpdate }) {
                     border: `1.5px solid ${editMode === 'edit' ? '#f59e0b' : '#fcd34d'}`,
                   }}
                 >
-                  ✏️ {editMode === 'edit' ? 'Editing...' : 'Edit Boundary'}
+                   {editMode === 'edit' ? 'Editing...' : 'Edit Boundary'}
                 </button>
                 <button
                   onClick={() => {
@@ -422,7 +477,32 @@ export default function BoundarySelector({ onBoundarySelect, onMapUpdate }) {
               Upload a GeoJSON/JSON polygon for any Indian village.
               IndiaSAT LULC v3 (10m) covers all of India — no location selection needed.
             </div>
-            <input type="file" accept=".json,.geojson" onChange={async (e) => {
+
+            {resolvingLocation ? (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.75rem', padding: '1.5rem 0' }}>
+                <span className="spinner" style={{ width: 28, height: 28, borderWidth: 3, borderColor: 'rgba(139, 92, 246, 0.2)', borderTopColor: '#8b5cf6' }}></span>
+                <span style={{ fontSize: '0.85rem', color: '#6d28d9', fontWeight: 600 }}>Resolving administrative boundaries...</span>
+                <span style={{ fontSize: '0.7rem', color: '#94a3b8' }}>This may take a few seconds</span>
+              </div>
+            ) : selectedVillageName ? (
+              <div style={{ padding: '1rem', background: '#fff', borderRadius: '8px', border: '1px solid #e2e8f0', textAlign: 'left', marginTop: '0.5rem', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+                <div style={{ fontSize: '0.7rem', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px', fontWeight: 600 }}>Active Custom Boundary</div>
+                <div style={{ fontSize: '0.9rem', fontWeight: 700, color: '#1e293b', marginBottom: '0.75rem' }}>{selectedVillageName}</div>
+                <button 
+                  onClick={() => {
+                    setSelectedVillageName('');
+                    onBoundarySelect(null);
+                    onMapUpdate(null, null, null);
+                  }}
+                  style={{ width: '100%', fontSize: '0.8rem', padding: '0.4rem', border: '1px solid #cbd5e1', borderRadius: '6px', background: '#f8fafc', color: '#475569', cursor: 'pointer', fontWeight: 500, transition: 'all 0.2s' }}
+                  onMouseOver={(e) => { e.target.style.background = '#f1f5f9'; e.target.style.color = '#0f172a'; }}
+                  onMouseOut={(e) => { e.target.style.background = '#f8fafc'; e.target.style.color = '#475569'; }}
+                >
+                  Clear & Upload Another
+                </button>
+              </div>
+            ) : (
+              <input type="file" accept=".json,.geojson" onChange={async (e) => {
               const file = e.target.files[0];
               if (file) {
                 const reader = new FileReader();
@@ -434,7 +514,10 @@ export default function BoundarySelector({ onBoundarySelect, onMapUpdate }) {
                       : geojson.geometry || geojson;
                     const area = computeAreaHectares(polygon);
                     if (area > MAX_AREA_HA) {
-                      alert(`Boundary too large: ${area.toLocaleString('en-IN', { maximumFractionDigits: 0 })} ha.\nMaximum allowed is ${MAX_AREA_HA.toLocaleString('en-IN')} ha.\nPlease upload a smaller boundary.`);
+                      setErrorDialog({
+                        title: 'Uploaded Boundary Too Large',
+                        message: `Area: ${area.toLocaleString('en-IN', { maximumFractionDigits: 0 })} ha.\nMaximum allowed is ${MAX_AREA_HA.toLocaleString('en-IN')} ha.\n\nPlease upload a smaller boundary.`
+                      });
                       e.target.value = ''; // reset file input
                       return;
                     }
@@ -474,12 +557,38 @@ export default function BoundarySelector({ onBoundarySelect, onMapUpdate }) {
                       source: 'upload',
                     });
                   } catch (err) {
-                    alert('Invalid GeoJSON file: ' + err.message);
+                    setErrorDialog({
+                      title: 'Invalid File',
+                      message: 'Could not parse the GeoJSON file: ' + err.message
+                    });
                   }
                 };
                 reader.readAsText(file);
               }
             }} style={{ display: 'block', margin: '0 auto', fontSize: '0.8rem' }}/>
+            )}
+          </div>
+        </div>
+      )}
+      {/* ═══ Error Dialog Modal ═══ */}
+      {errorDialog && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(15, 23, 42, 0.6)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 99999, animation: 'fadeIn 0.2s ease' }}>
+          <div style={{ background: '#fff', padding: '1.5rem', borderRadius: '12px', width: '90%', maxWidth: '400px', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)', transform: 'translateY(0)', animation: 'slideUp 0.3s ease' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '1rem', color: '#dc2626' }}>
+              <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+              <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 600 }}>{errorDialog.title}</h3>
+            </div>
+            <div style={{ color: '#475569', fontSize: '0.85rem', lineHeight: 1.6, whiteSpace: 'pre-wrap', marginBottom: '1.5rem' }}>
+              {errorDialog.message}
+            </div>
+            <button 
+              onClick={() => setErrorDialog(null)}
+              style={{ width: '100%', padding: '0.6rem', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', color: '#0f172a', fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s' }}
+              onMouseOver={(e) => { e.target.style.background = '#f1f5f9'; e.target.style.borderColor = '#cbd5e1'; }}
+              onMouseOut={(e) => { e.target.style.background = '#f8fafc'; e.target.style.borderColor = '#e2e8f0'; }}
+            >
+              Okay, got it
+            </button>
           </div>
         </div>
       )}

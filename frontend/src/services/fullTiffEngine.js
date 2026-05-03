@@ -87,7 +87,7 @@ async function parseTiffWithRealAffine(arrayBuffer) {
     // unexpected sign. Force negative to guarantee correctness.
     pixelHeight = -Math.abs(resolution[1]);
 
-    console.log(`[FullTIFF] Real affine: origin=[${originX.toFixed(6)}, ${originY.toFixed(6)}], px=[${pixelWidth.toFixed(8)}, ${pixelHeight.toFixed(8)}], size=${width}×${height}`);
+    //console.log(`[FullTIFF] Real affine: origin=[${originX.toFixed(6)}, ${originY.toFixed(6)}], px=[${pixelWidth.toFixed(8)}, ${pixelHeight.toFixed(8)}], size=${width}×${height}`);
   } catch (e) {
     // Fallback: compute from bounding box if TIFF metadata is missing
     console.warn('[FullTIFF] No affine in TIFF metadata, using getBoundingBox fallback:', e.message);
@@ -237,7 +237,7 @@ export async function runFullExtraction(boundaryGeojson, villageName, onProgress
   const [minLng, minLat, maxLng, maxLat] = turf.bbox(feature);
   const bbox = [minLng, minLat, maxLng, maxLat];
 
-  console.log(`[FullTIFF] Village "${villageName}": bbox=[${bbox.map(v => v.toFixed(4)).join(',')}]`);
+  //console.log(`[FullTIFF] Village "${villageName}": bbox=[${bbox.map(v => v.toFixed(4)).join(',')}]`);
   onProgress?.('Preparing full-village GeoTIFF analysis…');
 
   // Polygon coords for numpy masking — computed once, reused across all years
