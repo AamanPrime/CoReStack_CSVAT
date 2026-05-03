@@ -154,12 +154,12 @@ export async function resolveAdminHierarchy(geojson) {
   // ── Round 1: State ────────────────────────────────────────────────────────
   try {
     const stateCandidates = await fetchCandidates('state', bbox);
-    console.log(`[AdminResolver] State: ${stateCandidates.length} candidates`);
+    //console.log(`[AdminResolver] State: ${stateCandidates.length} candidates`);
 
     const { best } = pickMaxIntersection(customFeature, stateCandidates);
     if (best) {
       state = extractName(best.properties, 'state') || '';
-      console.log(`[AdminResolver] State resolved: "${state}"`);
+      //console.log(`[AdminResolver] State resolved: "${state}"`);
     }
   } catch (e) {
     console.warn('[AdminResolver] State round failed:', e.message);
@@ -170,12 +170,12 @@ export async function resolveAdminHierarchy(geojson) {
   // The village bbox is tight enough (~0.1°×0.1°) to return only 1-3 district candidates.
   try {
     const distCandidates = await fetchCandidates('district', bbox);
-    console.log(`[AdminResolver] District: ${distCandidates.length} candidates`);
+    //console.log(`[AdminResolver] District: ${distCandidates.length} candidates`);
 
     const { best } = pickMaxIntersection(customFeature, distCandidates);
     if (best) {
       district = extractName(best.properties, 'district') || '';
-      console.log(`[AdminResolver] District resolved: "${district}"`);
+      //console.log(`[AdminResolver] District resolved: "${district}"`);
     }
   } catch (e) {
     console.warn('[AdminResolver] District round failed:', e.message);
@@ -185,12 +185,12 @@ export async function resolveAdminHierarchy(geojson) {
   // Same pattern as district: the bbox is tight enough to return only 1-5 tehsil candidates.
   try {
     const tehsilCandidates = await fetchCandidates('tehsil', bbox);
-    console.log(`[AdminResolver] Tehsil: ${tehsilCandidates.length} candidates`);
+    //console.log(`[AdminResolver] Tehsil: ${tehsilCandidates.length} candidates`);
 
     const { best } = pickMaxIntersection(customFeature, tehsilCandidates);
     if (best) {
       tehsil = extractName(best.properties, 'tehsil') || '';
-      console.log(`[AdminResolver] Tehsil resolved: "${tehsil}"`);
+      //console.log(`[AdminResolver] Tehsil resolved: "${tehsil}"`);
     }
   } catch (e) {
     console.warn('[AdminResolver] Tehsil round failed:', e.message);

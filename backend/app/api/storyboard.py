@@ -189,6 +189,7 @@ STRICT RULES:
 - Keep "content" to 2-3 crisp sentences per slide
 - Keep "insight" to a single punchy phrase (max 8 words)
 - Return ONLY valid JSON — no markdown, no preamble, no explanation
+- Dont inlcude emoji in the slides content.
 
 VILLAGE METADATA:
 - Name:     {payload.village_name}
@@ -227,7 +228,7 @@ OUTPUT FORMAT (return ONLY this JSON, nothing else):
                     "Content-Type": "application/json",
                 },
                 json={
-                    "model": "llama-3.3-70b-versatile",
+                    "model": "meta-llama/llama-4-scout-17b-16e-instruct",
                     "messages": [{"role": "user", "content": prompt}],
                     "temperature": 0.2,
                     "max_tokens": 4096,

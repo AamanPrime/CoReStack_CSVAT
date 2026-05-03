@@ -392,7 +392,7 @@ compute_raster_analytics(extracted_data, pixel_area_ha)
 
   if (pyResult.raw_histograms) {
     results.raw_histograms = pyResult.raw_histograms;
-    console.log('[Tiled Raster] Raw histograms:', pyResult.raw_histograms);
+    //console.log('[Tiled Raster] Raw histograms:', pyResult.raw_histograms);
   }
 
   const hasCropData = results.cropping_intensity?.data?.length > 0;

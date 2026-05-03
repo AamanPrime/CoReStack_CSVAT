@@ -205,7 +205,7 @@ export default function SlideEditor({ villageName, onClose, onSave }) {
       <div className="se-modal">
         {/* Header */}
         <div className="se-header">
-          <h2>✏️ Story Editor</h2>
+          <h2> Story Editor</h2>
           <span className="se-header-village">{villageName}</span>
           <button className="se-close-btn" onClick={onClose}>✕</button>
         </div>

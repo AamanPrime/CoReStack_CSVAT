@@ -125,7 +125,7 @@ export async function autoCleanup() {
     tx.onerror = () => { db.close(); reject(tx.error); };
   });
 
-  console.log(`[TiffStore] Auto-cleanup: purged ${toRemove.length} old village(s): ${toRemove.join(', ')}`);
+  //console.log(`[TiffStore] Auto-cleanup: purged ${toRemove.length} old village(s): ${toRemove.join(', ')}`);
 }
 
 /** Get storage usage stats. */

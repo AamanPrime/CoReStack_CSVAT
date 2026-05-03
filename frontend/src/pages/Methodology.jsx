@@ -1,11 +1,24 @@
 import React from 'react';
+import { Link } from 'react-router-dom';
 import './Methodology.css';
-
 
 export default function Methodology() {
   return (
-    <div className="methodology-container">
-      <h1 className="meth-title">Methodology &amp; Scientific Transparency</h1>
+    <div className="methodology-container" style={{ position: 'relative' }}>
+      <Link to="/" style={{
+        position: 'absolute', top: '1.5rem', right: '2rem',
+        padding: '0.5rem 1rem', background: '#f1f5f9', color: '#475569',
+        borderRadius: '8px', textDecoration: 'none', fontWeight: 600, fontSize: '0.9rem',
+        display: 'flex', alignItems: 'center', gap: '0.4rem',
+        boxShadow: '0 2px 4px rgba(0,0,0,0.05)', transition: 'all 0.2s ease', border: '1px solid #e2e8f0'
+      }}
+      onMouseEnter={(e) => { e.currentTarget.style.background = '#e2e8f0'; e.currentTarget.style.color = '#1e293b'; }}
+      onMouseLeave={(e) => { e.currentTarget.style.background = '#f1f5f9'; e.currentTarget.style.color = '#475569'; }}
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        Close
+      </Link>
+      <h1 className="meth-title" style={{ paddingRight: '100px' }}>Methodology &amp; Scientific Transparency</h1>
       <p className="meth-subtitle">
         This page details how CSVAT computes socio-ecological metrics for a village boundary.
         Every number in the report is either directly measured from classified satellite imagery
@@ -310,7 +323,7 @@ export default function Methodology() {
 
         <div className="meth-mode-grid">
           <div className="meth-card" style={{ borderColor: '#10b981' }}>
-            <div style={{ fontWeight: 700, color: '#10b981', marginBottom: '0.5rem', fontSize: '0.9rem' }}>⚡ High Accuracy Raster</div>
+            <div style={{ fontWeight: 700, color: '#10b981', marginBottom: '0.5rem', fontSize: '0.9rem' }}> High Accuracy Raster</div>
             <ul className="meth-ul" style={{ fontSize: '0.78rem' }}>
               <li><strong>100% browser-side</strong> — server signs GEE URLs only, zero raster data on server</li>
               <li>One <strong>full-village GeoTIFF</strong> per fiscal year</li>
@@ -324,7 +337,7 @@ export default function Methodology() {
             </ul>
           </div>
           <div className="meth-card">
-            <div style={{ fontWeight: 700, color: '#8b5cf6', marginBottom: '0.5rem', fontSize: '0.9rem' }}>⚡ MWS Vector</div>
+            <div style={{ fontWeight: 700, color: '#8b5cf6', marginBottom: '0.5rem', fontSize: '0.9rem' }}> MWS Vector</div>
             <ul className="meth-ul" style={{ fontSize: '0.78rem' }}>
               <li>Fetches pre-aggregated MWS data from CoRE Stack API</li>
               <li>Village-MWS polygon intersection + weighted aggregation</li>
@@ -335,7 +348,7 @@ export default function Methodology() {
             </ul>
           </div>
           <div className="meth-card">
-            <div style={{ fontWeight: 700, color: '#3b82f6', marginBottom: '0.5rem', fontSize: '0.9rem' }}>🖥️ Server</div>
+            <div style={{ fontWeight: 700, color: '#3b82f6', marginBottom: '0.5rem', fontSize: '0.9rem' }}>Server</div>
             <ul className="meth-ul" style={{ fontSize: '0.78rem' }}>
               <li>Same computation logic as MWS Vector</li>
               <li>Dispatched to backend Celery workers</li>
@@ -468,8 +481,8 @@ function ComparisonTable() {
         <thead>
           <tr>
             <th>Attribute</th>
-            <th style={{ color: '#10b981' }}>⚡ High Accuracy Raster</th>
-            <th style={{ color: '#8b5cf6' }}>⚡ MWS Vector / 🖥️ Server</th>
+            <th style={{ color: '#10b981' }}> High Accuracy Raster</th>
+            <th style={{ color: '#8b5cf6' }}> MWS Vector / Server</th>
           </tr>
         </thead>
         <tbody>

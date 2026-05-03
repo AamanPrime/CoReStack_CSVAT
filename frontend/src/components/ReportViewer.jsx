@@ -165,7 +165,7 @@ function StorySlides({ slides, villageName, onSlideEdit, ciData, swData }) {
               <div className="ts-card-chapter" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span>Chapter {idx + 1}</span>
                 {idx === activeIdx && editingIdx !== idx && (
-                  <button className="ts-inline-edit-btn" onClick={() => startEdit(idx, slide)}>✏️ Edit</button>
+                  <button className="ts-inline-edit-btn" onClick={() => startEdit(idx, slide)}> Edit</button>
                 )}
               </div>
               
@@ -980,7 +980,7 @@ function generateStorySlides(results, ciData, swData, center) {
     const totalDecline = declines.reduce((sum, t) => sum + (t.area_ha || 0), 0);
     slides.push({
       title: 'Shifting Practices',
-      icon: '🔄',
+      icon: '',
       narrative: `The cropping intensity transitions reveal the agricultural dynamism of this region. ${totalImprovement.toFixed(2)} hectares saw improvement — farms moving from single to double or triple cropping — signaling intensification and better water access. Meanwhile, ${totalDecline.toFixed(2)} hectares shifted to lower-intensity patterns, possibly due to water stress or soil degradation. These transitions paint a nuanced picture of agricultural resilience and vulnerability.`,
       mapUrl: getStaticMapUrl(center, 15, '1280x900', 135),
       imageUrl: 'https://images.unsplash.com/photo-1625246333195-78d9c38ad449?w=600&h=300&fit=crop',
@@ -1043,14 +1043,14 @@ export default function ReportViewer({
 
   useEffect(() => {
     if (!village_name) return;
-    console.log('[CSVAT] Fetching DB story for:', village_name, state, district, tehsil);
+    //console.log('[CSVAT] Fetching DB story for:', village_name, state, district, tehsil);
     getVillageStory(village_name, state, district, tehsil)
       .then((data) => {
-        console.log('[CSVAT] DB story received:', data?.name, 'chapters:', data?.story_chapters?.length);
+        //console.log('[CSVAT] DB story received:', data?.name, 'chapters:', data?.story_chapters?.length);
         setDbStory(data);
       })
       .catch((err) => {
-        console.log('[CSVAT] No DB story found:', err?.response?.status || err.message);
+        //console.log('[CSVAT] No DB story found:', err?.response?.status || err.message);
         setDbStory(null);
       });
   }, [village_name, state, district, tehsil]);
@@ -1102,7 +1102,7 @@ export default function ReportViewer({
       });
     }
 
-    console.log('[CSVAT] dbSlides:', chapterSlides.length, chapterSlides.map(s => s.title));
+    //console.log('[CSVAT] dbSlides:', chapterSlides.length, chapterSlides.map(s => s.title));
     return chapterSlides;
   }, [dbStory, mapCenter]);
 
@@ -1141,7 +1141,7 @@ export default function ReportViewer({
     const generated = [...storySlides];
     const dbChapters = [...dbSlides];
 
-    console.log('[CSVAT] Merging — dbChapters:', dbChapters.length, 'generated:', generated.length, 'custom:', customSlides.length);
+    //console.log('[CSVAT] Merging — dbChapters:', dbChapters.length, 'generated:', generated.length, 'custom:', customSlides.length);
 
     // If we have both DB chapter 0 and generated intro slide,
     // merge them into one combined intro slide
@@ -1157,7 +1157,7 @@ export default function ReportViewer({
         mapZoom: genIntro.mapZoom || 13,
       };
       const result = [combined, ...dbChapters, ...generated, ...customSlides];
-      console.log('[CSVAT] allSlides (merged):', result.length, result.map(s => s.title));
+      //console.log('[CSVAT] allSlides (merged):', result.length, result.map(s => s.title));
       return result;
     }
 
@@ -1187,10 +1187,12 @@ export default function ReportViewer({
     && boundary?.source !== 'places'
     && boundary?.source !== 'search';
 
+  // Storyboard generation state
   const [aiSlides, setAiSlides] = useState(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [genProgress, setGenProgress] = useState('');
   const [genError, setGenError] = useState(null);
+  const generateRef = useRef(false);
 
   const handleSlideEdit = useCallback((idx, updatedData) => {
     setSlideOverrides(prev => ({
@@ -1231,7 +1233,7 @@ export default function ReportViewer({
       setAiSlides(newAiSlides);
       
       if (villageId) {
-        console.log('[StoryboardDB] Persisting manual slide edit to DB...');
+        //console.log('[StoryboardDB] Persisting manual slide edit to DB...');
         saveStoryboardToDb(villageId, newAiSlides, boundary, results).catch(console.error);
       }
     }
@@ -1256,12 +1258,18 @@ export default function ReportViewer({
 
   const triggerAiStoryboard = useCallback(async (force = false) => {
     if (!results) return;
+    if (generateRef.current && !force) {
+      //console.log('[Storyboard] Generation already in progress, skipping duplicate call.');
+      return;
+    }
+    generateRef.current = true;
+    
     console.group('%c[Storyboard] Pipeline', 'color:#a78bfa;font-weight:bold');
-    console.log('  village_id:', villageId, '| isCoReStack:', isCoReStack, '| source:', boundary?.source, '| force:', force);
+    //console.log('  village_id:', villageId, '| isCoReStack:', isCoReStack, '| source:', boundary?.source, '| force:', force);
 
     // Non-CoReStack (search / upload / places) — handle fallbacks
     if (!isCoReStack) {
-      console.log(`  [skip] 4-slide classic static template for ${boundary?.source} boundary`); console.groupEnd();
+      //console.log(`  [skip] 4-slide classic static template for ${boundary?.source} boundary`); console.groupEnd();
       setAiSlides(null); // Triggers fallback to allSlides (generateStorySlides)
       return;
     }
@@ -1273,11 +1281,11 @@ export default function ReportViewer({
     try {
       // 1. Cache check
       if (!force) {
-        console.log('  [1] Checking cache for village_id:', villageId);
+        //console.log('  [1] Checking cache for village_id:', villageId);
         const cached = await fetchCachedStoryboard(villageId);
-        console.log('  [1] cache:', cached ? cached.slides?.length + ' slides' : 'miss');
+        //console.log('  [1] cache:', cached ? cached.slides?.length + ' slides' : 'miss');
         if (cached?.slides?.length > 0) {
-          console.log('  ✅ Cache hit'); console.groupEnd();
+          //console.log('  ✅ Cache hit'); console.groupEnd();
           setAiSlides(cached);
           setIsGenerating(false); setGenProgress('');
           return;
@@ -1285,17 +1293,17 @@ export default function ReportViewer({
       }
 
       // 2. Run Groq LLM pipeline
-      console.log('  [2] Running Groq pipeline…');
+      //console.log('  [2] Running Groq pipeline…');
       const story = await runStoryboardPipeline({
         results, boundary,
         onProgress: (msg) => { console.log('  [pipeline]', msg); setGenProgress(msg); },
       });
-      console.log('  [2] Got', story?.slides?.length, 'slides');
+      //console.log('  [2] Got', story?.slides?.length, 'slides');
 
       // 3. Save to DB
-      console.log('  [3] Saving to DB…');
+      //console.log('  [3] Saving to DB…');
       await saveStoryboardToDb(villageId, story, boundary, results);
-      console.log('  [3] Saved'); console.groupEnd();
+      //console.log('  [3] Saved'); console.groupEnd();
 
       setAiSlides(story);
     } catch (err) {
@@ -1303,12 +1311,13 @@ export default function ReportViewer({
       setGenError(err.message);
     } finally {
       setIsGenerating(false); setGenProgress('');
+      generateRef.current = false;
     }
   }, [results, boundary, isCoReStack, villageId]);
 
   // Auto-trigger once when results are ready
   useEffect(() => {
-    console.log('[Storyboard] Auto-trigger — results:', !!results, '| villageId:', villageId, '| source:', boundary?.source);
+    //console.log('[Storyboard] Auto-trigger — results:', !!results, '| villageId:', villageId, '| source:', boundary?.source);
     if (results) triggerAiStoryboard(false);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -1318,12 +1327,12 @@ export default function ReportViewer({
     let baseSlides = allSlides;
 
     if (aiSlides?.slides?.length > 0) {
-      console.log('[Storyboard] Using AI slides:', aiSlides.slides.length);
+      //console.log('[Storyboard] Using AI slides:', aiSlides.slides.length);
       baseSlides = aiSlides.slides.map(s => {
         const mapCfg = SLIDE_MAP_ACTIONS[s.slide_number] || { zoom: 14, heading: 0 };
         return {
-          title: `${s.emoji} ${s.title}`,
-          icon: s.emoji,
+          title: s.emoji ? `${s.emoji} ${s.title}` : s.title,
+          icon: s.emoji || '',
           narrative: `${s.content}\n\n💡 ${s.insight}`,
           mapUrl: getStaticMapUrl(mapCenter, mapCfg.zoom, '1280x900', mapCfg.heading),
           imageUrl: s.image_url || null,
@@ -1333,7 +1342,7 @@ export default function ReportViewer({
         };
       });
     } else {
-      console.log('[Storyboard] Falling back to allSlides:', allSlides.length);
+      //console.log('[Storyboard] Falling back to allSlides:', allSlides.length);
     }
 
     // Apply any inline session edits the user made
@@ -1564,7 +1573,7 @@ export default function ReportViewer({
       {crop_intensity_change && crop_intensity_change.length > 0 && (
         <div className="card animate-slide-up">
           <div className="card-header">
-            <span className="icon">🔄</span>
+            <span className="icon"></span>
             <h3>Cropping Intensity Change Detection</h3>
           </div>
           <div className="chart-wrapper" style={{ height: '320px' }}>
@@ -1727,7 +1736,7 @@ export default function ReportViewer({
                 onClick={() => setShowSlideEditor(true)}
                 title="Edit storyboard slides"
               >
-                ✏️ Edit Story
+                 Edit Story
               </button>
             )}
             {isCoReStack && (
@@ -1737,7 +1746,7 @@ export default function ReportViewer({
                 disabled={isGenerating}
                 title="Regenerate storyboard from scratch"
               >
-                {isGenerating ? '⏳ Generating…' : '🔄 Regenerate'}
+                {isGenerating ? '⏳ Generating…' : ' Regenerate'}
               </button>
             )}
             {!aiSlides && !isGenerating && (
@@ -1746,7 +1755,7 @@ export default function ReportViewer({
                 onClick={() => setShowSlideEditor(true)}
                 title="Edit story slides"
               >
-                ✏️ Edit Story
+                 Edit Story
               </button>
             )}
           </div>

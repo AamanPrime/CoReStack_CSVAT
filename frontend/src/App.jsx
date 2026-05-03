@@ -26,10 +26,7 @@ export default function App() {
             <Link to="/methodology" style={{ color: 'var(--text-secondary)', textDecoration: 'none', fontSize: '0.9rem', fontWeight: 500 }}>
               Methodology
             </Link>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-              <span className="status-dot"></span>
-              <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>System Online</span>
-            </div>
+
           </div>
         </nav>
 
