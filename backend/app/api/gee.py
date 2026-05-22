@@ -5,7 +5,7 @@ and return it as JSON for client-side (Pyodide WASM) computation.
 The backend acts purely as a data proxy — no analytics computation here.
 """
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from app.services.gee_service import (
@@ -13,6 +13,16 @@ from app.services.gee_service import (
     fetch_water_multi_year,
     fetch_ndvi_multi_year,
     fetch_all,
+    fetch_all_states,
+    fetch_districts_in_state,
+    fetch_tehsils_in_district,
+    fetch_tehsils_in_state,
+    fetch_villages_in_tehsil,
+    fetch_villages_in_district,
+    fetch_tehsil_geometry,
+    fetch_district_geometry,
+    fetch_state_geometry,
+    debug_asset_properties,
 )
 
 router = APIRouter(prefix="/api/v1/gee", tags=["GEE Data Proxy"])
@@ -102,3 +112,153 @@ async def api_fetch_all(request: GEEDataRequest):
         "data": {"lulc": lulc, "water": water, "ndvi": ndvi},
         "errors": errors or None,
     }
+
+
+# ─── Pan-India Admin Hierarchy Endpoints ────────────────────────────────────
+
+
+@router.get("/states")
+async def api_get_states():
+    """Return all pan-India state/UT names from GEE State_pan_india asset.
+
+    Results are cached in-process after the first call.
+    """
+    try:
+        names = fetch_all_states()
+        return {"status": "ok", "data": names}
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"GEE error: {e}")
+
+
+@router.get("/districts")
+async def api_get_districts(state: str = Query(..., min_length=2)):
+    """Return all district names in a state from GEE District_pan_india asset.
+
+    Results are cached per state after the first call.
+    """
+    try:
+        names = fetch_districts_in_state(state)
+        return {"status": "ok", "data": names}
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"GEE error: {e}")
+
+
+@router.get("/tehsils")
+async def api_get_tehsils(
+    state: str = Query(..., min_length=2),
+    district: str = Query(..., min_length=2),
+):
+    """Return all tehsil names in a district from GEE SOI_tehsil asset.
+
+    Results are cached per (state, district) pair after the first call.
+    """
+    try:
+        names = fetch_tehsils_in_district(state, district)
+        return {"status": "ok", "data": names}
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"GEE error: {e}")
+
+
+@router.get("/village-geometries")
+async def api_get_village_geometries(
+    state: str = Query(..., min_length=2),
+    district: str = Query(..., min_length=2),
+    tehsil: str = Query(..., min_length=2),
+):
+    """Return GeoJSON FeatureCollection of all villages in a tehsil.
+
+    Queries GEE Village_pan_india filtered by state, district, and tehsil.
+    Only vill_name and vill_ID properties are returned to keep payload small.
+    """
+    try:
+        data = fetch_villages_in_tehsil(state, district, tehsil)
+        return {"status": "ok", "data": data}
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"GEE error: {e}")
+
+
+@router.get("/tehsils-by-state")
+async def api_tehsils_by_state(state: str = Query(..., min_length=2)):
+    """Fallback: return all tehsils in a state (when the state has no sub-districts)."""
+    try:
+        names = fetch_tehsils_in_state(state)
+        return {"status": "ok", "data": names}
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"GEE error: {e}")
+
+
+@router.get("/villages-by-district")
+async def api_villages_by_district(
+    state: str = Query(..., min_length=2),
+    district: str = Query(..., min_length=2),
+):
+    """Fallback: return all villages in a district (when the district has no tehsils)."""
+    try:
+        data = fetch_villages_in_district(state, district)
+        return {"status": "ok", "data": data}
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"GEE error: {e}")
+
+
+@router.get("/tehsil-geometry")
+async def api_get_tehsil_geometry(
+    state: str = Query(..., min_length=2),
+    district: str = Query(..., min_length=2),
+    tehsil: str = Query(..., min_length=2),
+):
+    """Return GeoJSON Feature for the merged SOI_tehsil boundary of a tehsil.
+
+    Used as a fallback when a tehsil has no villages in Village_pan_india.
+    """
+    try:
+        feature = fetch_tehsil_geometry(state, district, tehsil)
+        return {"status": "ok", "data": feature}
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"GEE error: {e}")
+
+
+@router.get("/district-geometry")
+async def api_get_district_geometry(
+    state: str = Query(..., min_length=2),
+    district: str = Query(..., min_length=2),
+):
+    """Return GeoJSON Feature for the merged district boundary.
+
+    Fallback when a district has no tehsils and no villages.
+    """
+    try:
+        feature = fetch_district_geometry(state, district)
+        return {"status": "ok", "data": feature}
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"GEE error: {e}")
+
+
+@router.get("/state-geometry")
+async def api_get_state_geometry(
+    state: str = Query(..., min_length=2),
+):
+    """Return GeoJSON Feature for the state boundary.
+
+    Last-resort fallback when a state has no districts, no tehsils, and no villages.
+    """
+    try:
+        feature = fetch_state_geometry(state)
+        return {"status": "ok", "data": feature}
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"GEE error: {e}")
+
+
+@router.get("/debug-props")
+async def api_debug_asset_props(asset: str = Query(...)):
+    """Return the first feature of any GEE asset to reveal its property schema."""
+    try:
+        info = debug_asset_properties(asset)
+        return {"status": "ok", "data": info}
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"GEE error: {e}")

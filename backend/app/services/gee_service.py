@@ -491,3 +491,258 @@ def fetch_admin_candidates(
     return result or {"type": "FeatureCollection", "features": []}
 
 
+# ─── Pan-India Admin Hierarchy for Dropdown Selectors ───────────────────────
+#
+# Actual schemas (verified via .first().getInfo() on live GEE assets):
+#
+#  State_pan_india    → { Name: "Andaman & Nicobar Islands" }
+#  District_pan_india → { Name: "NICOBAR" }  ← NO state field — can't filter by state
+#  SOI_tehsil         → { TEHSIL, District, STATE, Shape_Area, Shape_Leng }
+#  Village_pan_india  → { name, district, state, sub_dist, uid, pc11_village_id, ... }
+#
+# Strategy:
+#  • States    → State_pan_india.Name (aggregate_array)
+#  • Districts → SOI_tehsil filtered by STATE, then distinct District values
+#                (District_pan_india has no state field)
+#  • Tehsils   → SOI_tehsil filtered by District (UPPERCASE match)
+#  • Villages  → Village_pan_india filtered by sub_dist + district (lowercase)
+
+_STATE_PROP       = "Name"       # State_pan_india
+_TEHSIL_STATE_P   = "STATE"      # SOI_tehsil — UPPERCASE e.g. "ANDAMAN & NICOBAR"
+_TEHSIL_DIST_P    = "District"   # SOI_tehsil — UPPERCASE e.g. "NICOBAR"
+_TEHSIL_NAME_P    = "TEHSIL"     # SOI_tehsil — UPPERCASE e.g. "CAMPBELL BAY"
+_VILL_NAME_P      = "name"       # Village_pan_india
+_VILL_DIST_P      = "district"   # Village_pan_india — lowercase
+_VILL_SUBDT_P     = "sub_dist"   # Village_pan_india — lowercase
+
+
+def _find_prop(props: dict, candidates: list[str]) -> str | None:
+    """Return the first candidate key present in the properties dict."""
+    for c in candidates:
+        if c in props:
+            return c
+    return None
+
+
+def _get_sample_props(fc) -> dict:
+    """Return the properties dict of the first feature in a FeatureCollection."""
+    info = fc.first().getInfo()
+    return (info or {}).get("properties") or {}
+
+
+def _apply_filters(fc, filters: list):
+    """Apply 0, 1, or multiple ee.Filters safely."""
+    if not filters:
+        return fc
+    if len(filters) == 1:
+        return fc.filter(filters[0])
+    return fc.filter(ee.Filter.And(*filters))
+
+
+@lru_cache(maxsize=1)
+def fetch_all_states() -> list[str]:
+    """Sorted list of all state/UT names from GEE State_pan_india (cached)."""
+    _init_ee()
+    fc = ee.FeatureCollection(ADMIN_ASSETS["state"])
+    names = fc.aggregate_array(_STATE_PROP).distinct().sort().getInfo()
+    logger.info("fetch_all_states: %d states", len(names or []))
+    return sorted(str(n) for n in (names or []) if n)
+
+
+@lru_cache(maxsize=64)
+def fetch_districts_in_state(state: str) -> list[str]:
+    """Sorted list of district names for a state.
+
+    District_pan_india has no state field, so we use SOI_tehsil (which has STATE)
+    and return its distinct District values for the matching state.
+    """
+    _init_ee()
+    fc = ee.FeatureCollection(ADMIN_ASSETS["tehsil"])
+    # STATE field is UPPERCASE; state arg comes from State_pan_india (Title Case)
+    filtered = fc.filter(ee.Filter.stringContains(_TEHSIL_STATE_P, state.upper()))
+    names = filtered.aggregate_array(_TEHSIL_DIST_P).distinct().sort().getInfo()
+    logger.info("fetch_districts_in_state(%r): %d districts", state, len(names or []))
+    return sorted(str(n) for n in (names or []) if n)
+
+
+@lru_cache(maxsize=512)
+def fetch_tehsils_in_district(state: str, district: str) -> list[str]:
+    """Sorted list of tehsil names in a district from GEE SOI_tehsil (cached)."""
+    _init_ee()
+    fc = ee.FeatureCollection(ADMIN_ASSETS["tehsil"])
+    # District field in SOI_tehsil is UPPERCASE
+    filtered = fc.filter(ee.Filter.stringContains(_TEHSIL_DIST_P, district.upper()))
+    names = filtered.aggregate_array(_TEHSIL_NAME_P).distinct().sort().getInfo()
+    logger.info("fetch_tehsils_in_district(%r, %r): %d tehsils", state, district, len(names or []))
+    return sorted(str(n) for n in (names or []) if n)
+
+
+def _get_tehsil_geometry(district: str, tehsil: str) -> "ee.Geometry | None":
+    """Return the merged geometry of all SOI_tehsil features matching district+tehsil."""
+    fc = ee.FeatureCollection(ADMIN_ASSETS["tehsil"])
+    matched = fc.filter(
+        ee.Filter.And(
+            ee.Filter.stringContains(_TEHSIL_DIST_P, district.upper()),
+            ee.Filter.stringContains(_TEHSIL_NAME_P, tehsil.upper()),
+        )
+    )
+    return matched.geometry()
+
+
+def _get_district_geometry(state: str, district: str) -> "ee.Geometry | None":
+    """Return the merged geometry of all SOI_tehsil features for a district."""
+    fc = ee.FeatureCollection(ADMIN_ASSETS["tehsil"])
+    matched = fc.filter(
+        ee.Filter.And(
+            ee.Filter.stringContains(_TEHSIL_STATE_P, state.upper()),
+            ee.Filter.stringContains(_TEHSIL_DIST_P, district.upper()),
+        )
+    )
+    return matched.geometry()
+
+
+def _get_state_geometry(state: str) -> "ee.Geometry | None":
+    """Return the geometry of the given state from State_pan_india."""
+    fc = ee.FeatureCollection(ADMIN_ASSETS["state"])
+    matched = fc.filter(ee.Filter.stringContains(_STATE_PROP, state))
+    return matched.geometry()
+
+
+def _villages_within(geometry, limit: int = 600) -> dict:
+    """Return Village_pan_india features within the given geometry (spatial filter)."""
+    village_fc = ee.FeatureCollection("projects/ext-datasets/assets/datasets/Village_pan_india")
+    filtered = village_fc.filterBounds(geometry).limit(limit)
+    filtered = filtered.select([_VILL_NAME_P, "uid", "pc11_village_id"])
+    result = filtered.getInfo()
+    return result or {"type": "FeatureCollection", "features": []}
+
+
+def fetch_villages_in_tehsil(state: str, district: str, tehsil: str) -> dict:
+    """GeoJSON FeatureCollection of villages in a tehsil.
+
+    Uses spatial filterBounds on the SOI_tehsil geometry — avoids relying on
+    Village_pan_india numeric property codes which can't be string-filtered.
+    """
+    _init_ee()
+    geom = _get_tehsil_geometry(district, tehsil)
+    result = _villages_within(geom)
+    count = len((result or {}).get("features", []))
+    logger.info("fetch_villages_in_tehsil(%r/%r/%r) → %d features", state, district, tehsil, count)
+    return result
+
+
+def fetch_tehsil_geometry(state: str, district: str, tehsil: str) -> dict:
+    """GeoJSON Feature representing the merged tehsil boundary from SOI_tehsil.
+
+    Used as a fallback when a tehsil has no village-level records in Village_pan_india.
+    Returns a GeoJSON Feature dict with a 'geometry' key, or raises ValueError if not found.
+    """
+    _init_ee()
+    fc = ee.FeatureCollection(ADMIN_ASSETS["tehsil"])
+    matched = fc.filter(
+        ee.Filter.And(
+            ee.Filter.stringContains(_TEHSIL_DIST_P, district.upper()),
+            ee.Filter.stringContains(_TEHSIL_NAME_P, tehsil.upper()),
+        )
+    )
+    # Dissolve into a single geometry and return as a Feature
+    geom = matched.geometry()
+    feature_info = ee.Feature(geom, {
+        "tehsil": tehsil,
+        "district": district,
+        "state": state,
+        "source": "SOI_tehsil",
+    }).getInfo()
+    count = matched.size().getInfo()
+    logger.info("fetch_tehsil_geometry(%r/%r/%r) → matched %d SOI features", state, district, tehsil, count)
+    if not feature_info or not feature_info.get("geometry"):
+        raise ValueError(f"No tehsil geometry found for {tehsil} in {district}, {state}")
+    return feature_info
+
+
+def fetch_district_geometry(state: str, district: str) -> dict:
+    """GeoJSON Feature representing the merged district boundary from SOI_tehsil.
+
+    Used as a fallback when a district has no tehsils and no villages in GEE.
+    Returns a GeoJSON Feature dict, or raises ValueError if not found.
+    """
+    _init_ee()
+    fc = ee.FeatureCollection(ADMIN_ASSETS["tehsil"])
+    matched = fc.filter(
+        ee.Filter.And(
+            ee.Filter.stringContains(_TEHSIL_STATE_P, state.upper()),
+            ee.Filter.stringContains(_TEHSIL_DIST_P, district.upper()),
+        )
+    )
+    geom = matched.geometry()
+    feature_info = ee.Feature(geom, {
+        "district": district,
+        "state": state,
+        "source": "SOI_tehsil",
+        "level": "district",
+    }).getInfo()
+    count = matched.size().getInfo()
+    logger.info("fetch_district_geometry(%r/%r) → matched %d SOI features", state, district, count)
+    if not feature_info or not feature_info.get("geometry"):
+        raise ValueError(f"No district geometry found for {district} in {state}")
+    return feature_info
+
+
+def fetch_state_geometry(state: str) -> dict:
+    """GeoJSON Feature representing the state boundary from State_pan_india.
+
+    Used as a last-resort fallback when a state has no districts, no tehsils, and no villages.
+    Returns a GeoJSON Feature dict, or raises ValueError if not found.
+    """
+    _init_ee()
+    fc = ee.FeatureCollection(ADMIN_ASSETS["state"])
+    matched = fc.filter(ee.Filter.stringContains(_STATE_PROP, state))
+    geom = matched.geometry()
+    feature_info = ee.Feature(geom, {
+        "state": state,
+        "source": "State_pan_india",
+        "level": "state",
+    }).getInfo()
+    count = matched.size().getInfo()
+    logger.info("fetch_state_geometry(%r) → matched %d state features", state, count)
+    if not feature_info or not feature_info.get("geometry"):
+        raise ValueError(f"No state geometry found for {state}")
+    return feature_info
+
+
+
+@lru_cache(maxsize=64)
+def fetch_tehsils_in_state(state: str) -> list[str]:
+    """Sorted list of tehsil names for an entire state (fallback when state has no districts).
+
+    Used by the adaptive cascade: State → [skip district] → Tehsil → Village.
+    """
+    _init_ee()
+    fc = ee.FeatureCollection(ADMIN_ASSETS["tehsil"])
+    filtered = fc.filter(ee.Filter.stringContains(_TEHSIL_STATE_P, state.upper()))
+    names = filtered.aggregate_array(_TEHSIL_NAME_P).distinct().sort().getInfo()
+    logger.info("fetch_tehsils_in_state(%r): %d tehsils", state, len(names or []))
+    return sorted(str(n) for n in (names or []) if n)
+
+
+def fetch_villages_in_district(state: str, district: str) -> dict:
+    """Villages for an entire district (fallback when district has no tehsils).
+
+    Uses spatial filterBounds on the SOI_tehsil district geometry.
+    """
+    _init_ee()
+    geom = _get_district_geometry(state, district)
+    result = _villages_within(geom)
+    count = len((result or {}).get("features", []))
+    logger.info("fetch_villages_in_district(%r/%r) → %d features", state, district, count)
+    return result
+
+
+def debug_asset_properties(asset_path: str) -> dict:
+    """Return the first GEE feature of an asset to inspect its property schema.
+
+    Call via: GET /api/v1/gee/debug-props?asset=projects/ext-datasets/assets/datasets/SOI_tehsil
+    """
+    _init_ee()
+    return ee.FeatureCollection(asset_path).first().getInfo() or {}
+

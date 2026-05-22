@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { computeAreaHectares, usePlacesAutocomplete } from './GoogleMapsIntegration';
-import { getActiveLocations, getVillageGeometries } from '../services/api';
+import { getGEEStates, getGEEDistricts, getGEETehsils, getGEETehsilsByState, getGEEVillageGeometries, getGEEVillagesByDistrict, getVillageGeometries, getGEETehsilGeometry, getGEEDistrictGeometry, getGEEStateGeometry } from '../services/api';
 import { resolveAdminHierarchy } from '../services/adminResolver';
 
 const MAX_AREA_HA = 20000; // Maximum boundary area allowed for analysis
@@ -22,16 +22,49 @@ export default function BoundarySelector({ onBoundarySelect, onMapUpdate }) {
     setEditedGeojson(null);
     setSearchQuery('');
     clearPredictions();
-    // Reset corestack village selection
+    // Reset corestack / GEE hierarchy selection
     setSelectedVillageName('');
+    setCsSelectedState('');
+    setCsSelectedDistrict('');
+    setCsSelectedTehsil('');
+    setCsVillages([]);
+    setGeeDistricts([]);
+    setGeeTehsils([]);
+    setSkipDistrict(false);
+    setSkipTehsil(false);
+    setMwsStatus('idle');
+    setMwsUid(null);
+    setAreaFallback(null);
   };
-  const [csLocations, setCsLocations] = useState(null);
+  // ─── CoRE Stack / GEE Hierarchy State ───
+  const [geeStates, setGeeStates] = useState([]);        // string[] — all pan-India states
+  const [geeDistricts, setGeeDistricts] = useState([]);  // string[] — districts in selected state
+  const [geeTehsils, setGeeTehsils] = useState([]);      // string[] — tehsils in selected district
+
+  // Adaptive cascade flags — set when a hierarchy level has no data
+  const [skipDistrict, setSkipDistrict] = useState(false); // true → no districts for state
+  const [skipTehsil, setSkipTehsil] = useState(false);     // true → no tehsils for district
+
   const [csSelectedState, setCsSelectedState] = useState('');
   const [csSelectedDistrict, setCsSelectedDistrict] = useState('');
   const [csSelectedTehsil, setCsSelectedTehsil] = useState('');
   const [csVillages, setCsVillages] = useState([]);
   const [csLoading, setCsLoading] = useState(false);
+  const [districtLoading, setDistrictLoading] = useState(false);
+  const [tehsilLoading, setTehsilLoading] = useState(false);
   const [selectedVillageName, setSelectedVillageName] = useState('');
+
+  // MWS availability check state
+  const [mwsStatus, setMwsStatus] = useState('idle'); // 'idle' | 'checking' | 'ok' | 'none'
+  const [mwsUid, setMwsUid] = useState(null);
+
+  // CoReStack village lookup: normalised name → { vill_ID, vill_name }
+  // Populated when a tehsil is selected; used to gate MWS button availability
+  const csCoreLookup = useRef(new Map());
+
+  // Area fallback — GeoJSON Feature for the smallest available admin unit
+  // when no villages exist. Level can be 'tehsil' | 'district' | 'state'.
+  const [areaFallback, setAreaFallback] = useState(null); // { feature, label, level }
 
   // ─── Places Search State ───
   const [searchQuery, setSearchQuery] = useState('');
@@ -43,61 +76,209 @@ export default function BoundarySelector({ onBoundarySelect, onMapUpdate }) {
   const [resolvingLocation, setResolvingLocation] = useState(false);
   const [errorDialog, setErrorDialog] = useState(null);
 
+  // Load all states on first CoReStack tab open
   useEffect(() => {
-    if (activeTab === 'corestack' && !csLocations) {
-      getActiveLocations().then((resp) => setCsLocations(resp || [])).catch(() => setCsLocations([]));
+    if (activeTab === 'corestack' && geeStates.length === 0) {
+      getGEEStates()
+        .then((names) => setGeeStates(Array.isArray(names) ? names : []))
+        .catch(() => setGeeStates([]));
     }
-  }, [activeTab, csLocations]);
+  }, [activeTab]);
 
-  const csStates = csLocations || [];
-  const csDistricts = csStates.find((s) => s.label === csSelectedState)?.district || [];
-  const csTehsils = csDistricts.find((d) => d.label === csSelectedDistrict)?.blocks || [];
+  // State selected → fetch districts; if none, auto-skip to tehsil level
+  const handleCsStateChange = async (val) => {
+    setCsSelectedState(val);
+    setCsSelectedDistrict('');
+    setCsSelectedTehsil('');
+    setCsVillages([]);
+    setGeeDistricts([]);
+    setGeeTehsils([]);
+    setSkipDistrict(false);
+    setSkipTehsil(false);
+    setMwsStatus('idle');
+    setSelectedVillageName('');
+    if (!val) return;
+    setDistrictLoading(true);
+    try {
+      const names = await getGEEDistricts(val);
+      const districts = Array.isArray(names) ? names : [];
+      if (districts.length > 0) {
+        // Normal path: state → district → tehsil → village
+        setGeeDistricts(districts);
+        setSkipDistrict(false);
+      } else {
+        // Skip district: load tehsils directly for the state
+        setSkipDistrict(true);
+        setTehsilLoading(true);
+        try {
+          const tehsils = await getGEETehsilsByState(val);
+          const tehsilList = Array.isArray(tehsils) ? tehsils : [];
+          if (tehsilList.length > 0) {
+            setGeeTehsils(tehsilList);
+          } else {
+            // No districts AND no tehsils — try loading state geometry as boundary
+            setGeeTehsils([]);
+            setCsLoading(true);
+            try {
+              const stateFeat = await getGEEStateGeometry(val);
+              setAreaFallback({ feature: stateFeat, label: val, level: 'state' });
+            } catch {
+              setAreaFallback(null);
+            } finally {
+              setCsLoading(false);
+            }
+          }
+        } catch {
+          setGeeTehsils([]);
+        } finally {
+          setTehsilLoading(false);
+        }
+      }
+    } catch {
+      setGeeDistricts([]);
+    } finally {
+      setDistrictLoading(false);
+    }
+  };
 
+  // District selected → fetch tehsils; if none, auto-skip to village level
+  const handleCsDistrictChange = async (val) => {
+    setCsSelectedDistrict(val);
+    setCsSelectedTehsil('');
+    setCsVillages([]);
+    setGeeTehsils([]);
+    setSkipTehsil(false);
+    setMwsStatus('idle');
+    setSelectedVillageName('');
+    setAreaFallback(null);
+    csCoreLookup.current = new Map(); // reset lookup on district change
+    if (!val || !csSelectedState) return;
+    setTehsilLoading(true);
+    try {
+      const names = await getGEETehsils(csSelectedState, val);
+      const tehsils = Array.isArray(names) ? names : [];
+      if (tehsils.length > 0) {
+        // Normal path: district → tehsil → village
+        setGeeTehsils(tehsils);
+        setSkipTehsil(false);
+      } else {
+        // Skip tehsil: load villages directly for the district (no CoReStack lookup here — no tehsil to query)
+        setSkipTehsil(true);
+        setCsLoading(true);
+        try {
+          const fc = await getGEEVillagesByDistrict(csSelectedState, val);
+          const features = fc?.features || [];
+          const sorted = features.sort((a, b) => {
+            const nameA = a.properties?.vill_name || a.properties?.name || '';
+            const nameB = b.properties?.vill_name || b.properties?.name || '';
+            return nameA.localeCompare(nameB);
+          });
+          if (sorted.length > 0) {
+            setCsVillages(sorted);
+          } else {
+            // No tehsils AND no villages — show district boundary as fallback
+            setCsVillages([]);
+            try {
+              const distFeat = await getGEEDistrictGeometry(csSelectedState, val);
+              setAreaFallback({ feature: distFeat, label: val, level: 'district' });
+            } catch {
+              setAreaFallback(null);
+            }
+          }
+        } catch {
+          setCsVillages([]);
+        } finally {
+          setCsLoading(false);
+        }
+      }
+    } catch {
+      setGeeTehsils([]);
+    } finally {
+      setTehsilLoading(false);
+    }
+  };
+
+  // Tehsil selected → fetch villages from GEE Village_pan_india
+  // Also fire CoReStack village-geometries in parallel to build MWS lookup map
   const handleCsTehsilChange = async (val) => {
     setCsSelectedTehsil(val);
     setCsVillages([]);
+    setMwsStatus('idle');
+    setSelectedVillageName('');
+    setAreaFallback(null);
+    csCoreLookup.current = new Map(); // reset on every tehsil change
     if (!val) return;
-    
+
     setCsLoading(true);
     try {
-      const data = await getVillageGeometries(csSelectedState, csSelectedDistrict, val);
-      let features = data?.type === 'FeatureCollection' ? data.features : Array.isArray(data) ? data : [];
-      // Group features by village name, merging geometries into a MultiPolygon
+      // Fire GEE + CoReStack requests in parallel
+      const [geeData, csData] = await Promise.allSettled([
+        getGEEVillageGeometries(csSelectedState, csSelectedDistrict, val),
+        getVillageGeometries(csSelectedState, csSelectedDistrict, val),
+      ]);
+
+      // Build CoReStack lookup: normalised-name → { vill_ID, vill_name }
+      if (csData.status === 'fulfilled') {
+        const csFeatures = csData.value?.features || (Array.isArray(csData.value) ? csData.value : []);
+        const lookup = new Map();
+        for (const f of csFeatures) {
+          const n = f?.properties?.vill_name || f?.properties?.name || '';
+          if (n) lookup.set(n.toLowerCase().trim(), {
+            vill_ID: f?.properties?.vill_ID || f?.properties?.village_id || null,
+            vill_name: n,
+          });
+        }
+        csCoreLookup.current = lookup;
+      }
+
+      // Process GEE features
+      const rawFeatures = geeData.status === 'fulfilled'
+        ? (geeData.value?.type === 'FeatureCollection' ? geeData.value.features : Array.isArray(geeData.value) ? geeData.value : [])
+        : [];
+
+      // Group GEE features by village name, merging geometries into MultiPolygon
       const grouped = {};
-      for (const f of features) {
+      for (const f of rawFeatures) {
         const name = f?.properties?.vill_name || f?.properties?.name || '';
         if (!name) continue;
-        
         if (!grouped[name]) {
           grouped[name] = { ...f, geometry: JSON.parse(JSON.stringify(f.geometry)) };
         } else {
-          // Merge geometry into existing entry as MultiPolygon
           const existing = grouped[name].geometry;
           const incoming = f.geometry;
           if (existing && incoming) {
-            const existCoords = existing.type === 'MultiPolygon' 
-              ? existing.coordinates 
-              : [existing.coordinates];
-            const newCoords = incoming.type === 'MultiPolygon' 
-              ? incoming.coordinates 
-              : [incoming.coordinates];
-            
-            grouped[name].geometry = {
-              type: 'MultiPolygon',
-              coordinates: [...existCoords, ...newCoords],
-            };
+            const existCoords = existing.type === 'MultiPolygon' ? existing.coordinates : [existing.coordinates];
+            const newCoords = incoming.type === 'MultiPolygon' ? incoming.coordinates : [incoming.coordinates];
+            grouped[name].geometry = { type: 'MultiPolygon', coordinates: [...existCoords, ...newCoords] };
           }
         }
       }
-      setCsVillages(Object.values(grouped));
-    } catch { 
-      setCsVillages([]); 
+      const sorted = Object.values(grouped).sort((a, b) => {
+        const nameA = a.properties?.vill_name || a.properties?.name || '';
+        const nameB = b.properties?.vill_name || b.properties?.name || '';
+        return nameA.localeCompare(nameB);
+      });
+      setCsVillages(sorted);
+
+      // If no villages found in GEE, fetch tehsil geometry as fallback
+      if (sorted.length === 0) {
+        try {
+          const tehsilFeat = await getGEETehsilGeometry(csSelectedState, csSelectedDistrict, val);
+          setAreaFallback({ feature: tehsilFeat, label: val, level: 'tehsil' });
+        } catch {
+          setAreaFallback(null);
+        }
+      } else {
+        setAreaFallback(null);
+      }
+    } catch {
+      setCsVillages([]);
     } finally {
       setCsLoading(false);
     }
   };
 
-  const selectCsVillage = useCallback((feature) => {
+  const selectCsVillage = useCallback(async (feature) => {
     const geojson = feature.geometry;
     if (!geojson) return;
     const name = feature.properties?.vill_name || feature.properties?.name || 'Village';
@@ -111,15 +292,33 @@ export default function BoundarySelector({ onBoundarySelect, onMapUpdate }) {
       return;
     }
 
+    let avgLat = null;
+    let avgLng = null;
     try {
       const coords = geojson.type === 'MultiPolygon' ? geojson.coordinates[0][0] : geojson.coordinates[0];
-      const avgLat = coords.reduce((s, c) => s + c[1], 0) / coords.length;
-      const avgLng = coords.reduce((s, c) => s + c[0], 0) / coords.length;
+      avgLat = coords.reduce((s, c) => s + c[1], 0) / coords.length;
+      avgLng = coords.reduce((s, c) => s + c[0], 0) / coords.length;
       if (onMapUpdate) onMapUpdate({ lat: avgLat, lng: avgLng }, geojson);
     } catch {}
+
     setSelectedVillageName(name);
-    const villageId = feature.properties?.vill_ID || feature.properties?.village_id || feature.id || null;
-    onBoundarySelect({ type: 'geojson', boundary_geojson: geojson, village_name: name, village_id: villageId, state: csSelectedState, district: csSelectedDistrict, tehsil: csSelectedTehsil, area_hectares: area, source: 'corestack' });
+
+    // Check CoReStack lookup: if village name matches a CoReStack-active village, MWS is available
+    const csEntry = csCoreLookup.current.get(name.toLowerCase().trim()) || null;
+    const villageId = csEntry?.vill_ID || feature.properties?.vill_ID || feature.properties?.village_id || feature.id || null;
+    const isMwsAvailable = !!csEntry;
+    const mwsUidVal = csEntry?.vill_ID || null;
+
+    // Boundary select with instant MWS status
+    onBoundarySelect({
+      type: 'geojson', boundary_geojson: geojson, village_name: name,
+      village_id: villageId, state: csSelectedState, district: csSelectedDistrict,
+      tehsil: csSelectedTehsil, area_hectares: area, source: 'corestack',
+      mwsAvailable: isMwsAvailable, mwsUid: mwsUidVal,
+    });
+
+    setMwsStatus(isMwsAvailable ? 'ok' : 'none');
+    setMwsUid(mwsUidVal);
   }, [csSelectedState, csSelectedDistrict, csSelectedTehsil, onBoundarySelect, onMapUpdate]);
 
   // ─── Places Search Handlers ───
@@ -231,52 +430,157 @@ export default function BoundarySelector({ onBoundarySelect, onMapUpdate }) {
       {/* ═══ CoRE Stack Tab ═══ */}
       {activeTab === 'corestack' && (
         <>
+          {/* State */}
           <div className="selector-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <span style={{ fontSize: '0.9rem', color: '#475569', minWidth: '70px', fontWeight: 500 }}>State</span>
             <div className="select-wrapper" style={{ flex: 1 }}>
-              <select value={csSelectedState} onChange={(e) => { setCsSelectedState(e.target.value); setCsSelectedDistrict(''); setCsSelectedTehsil(''); setCsVillages([]); }} style={{ width: '100%', padding: '0.5rem 0.6rem', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.9rem', color: '#1e293b' }}>
-                <option value="">Select State</option>
-                {csStates.map((s) => <option key={s.label} value={s.label}>{s.label}</option>)}
+              <select
+                value={csSelectedState}
+                onChange={(e) => handleCsStateChange(e.target.value)}
+                disabled={geeStates.length === 0}
+                style={{ width: '100%', padding: '0.5rem 0.6rem', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.9rem', color: '#1e293b' }}
+              >
+                <option value="">{geeStates.length === 0 ? 'Loading states…' : 'Select State'}</option>
+                {geeStates.map((s) => <option key={s} value={s}>{s}</option>)}
               </select>
             </div>
           </div>
-          <div className="selector-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <span style={{ fontSize: '0.9rem', color: '#475569', minWidth: '70px', fontWeight: 500 }}>District</span>
-            <div className="select-wrapper" style={{ flex: 1 }}>
-              <select value={csSelectedDistrict} onChange={(e) => { setCsSelectedDistrict(e.target.value); setCsSelectedTehsil(''); setCsVillages([]); }} disabled={!csSelectedState} style={{ width: '100%', padding: '0.5rem 0.6rem', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.9rem', color: '#1e293b' }}>
-                <option value="">Select District</option>
-                {csDistricts.map((d) => <option key={d.label} value={d.label}>{d.label}</option>)}
-              </select>
+
+          {/* District — hidden when state has no district-level data */}
+          {!skipDistrict && csSelectedState && (
+            <div className="selector-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span style={{ fontSize: '0.9rem', color: '#475569', minWidth: '70px', fontWeight: 500 }}>District</span>
+              <div className="select-wrapper" style={{ flex: 1 }}>
+                <select
+                  value={csSelectedDistrict}
+                  onChange={(e) => handleCsDistrictChange(e.target.value)}
+                  disabled={!csSelectedState || districtLoading}
+                  style={{ width: '100%', padding: '0.5rem 0.6rem', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.9rem', color: '#1e293b' }}
+                >
+                  <option value="">{districtLoading ? 'Loading districts…' : 'Select District'}</option>
+                  {geeDistricts.map((d) => <option key={d} value={d}>{d}</option>)}
+                </select>
+              </div>
             </div>
-          </div>
-          <div className="selector-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <span style={{ fontSize: '0.9rem', color: '#475569', minWidth: '70px', fontWeight: 500 }}>Tehsil</span>
-            <div className="select-wrapper" style={{ flex: 1 }}>
-              <select value={csSelectedTehsil} onChange={(e) => handleCsTehsilChange(e.target.value)} disabled={!csSelectedDistrict} style={{ width: '100%', padding: '0.5rem 0.6rem', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.9rem', color: '#1e293b' }}>
-                <option value="">Select Tehsil</option>
-                {csTehsils.map((t) => <option key={t.label} value={t.label}>{t.label}</option>)}
-              </select>
-            </div>
-          </div>
-          
-          {csLoading && (
-            <div style={{ marginTop: '0.75rem', padding: '1.5rem', textAlign: 'center', background: '#f8fafc', border: '1px dashed #cbd5e1', borderRadius: '6px' }}>
-              <span className="spinner" style={{ width: 24, height: 24, borderWidth: 3, borderColor: 'rgba(139, 92, 246, 0.2)', borderTopColor: '#8b5cf6', margin: '0 auto', display: 'block' }}></span>
-              <div style={{ marginTop: '0.6rem', fontSize: '0.85rem', color: '#64748b', fontWeight: 500 }}>Fetching villages...</div>
+          )}
+          {skipDistrict && csSelectedState && (
+            <div style={{ fontSize: '0.72rem', color: '#64748b', padding: '0.3rem 0.5rem', background: '#f1f5f9', borderRadius: '5px', fontStyle: 'italic' }}>
+              ℹ️ No district data for {csSelectedState} — selecting tehsil directly
             </div>
           )}
 
+          {/* Tehsil — hidden when district has no tehsil-level data */}
+          {!skipTehsil && (csSelectedDistrict || skipDistrict) && (
+            <div className="selector-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span style={{ fontSize: '0.9rem', color: '#475569', minWidth: '70px', fontWeight: 500 }}>Tehsil</span>
+              <div className="select-wrapper" style={{ flex: 1 }}>
+                <select
+                  value={csSelectedTehsil}
+                  onChange={(e) => handleCsTehsilChange(e.target.value)}
+                  disabled={tehsilLoading || geeTehsils.length === 0}
+                  style={{ width: '100%', padding: '0.5rem 0.6rem', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.9rem', color: '#1e293b' }}
+                >
+                  <option value="">{tehsilLoading ? 'Loading tehsils…' : 'Select Tehsil'}</option>
+                  {geeTehsils.map((t) => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </div>
+            </div>
+          )}
+          {skipTehsil && csSelectedDistrict && (
+            <div style={{ fontSize: '0.72rem', color: '#64748b', padding: '0.3rem 0.5rem', background: '#f1f5f9', borderRadius: '5px', fontStyle: 'italic' }}>
+              ℹ️ No tehsil data for {csSelectedDistrict} — showing villages directly
+            </div>
+          )}
+
+          {/* Village loading spinner */}
+          {csLoading && (
+            <div style={{ marginTop: '0.75rem', padding: '1.5rem', textAlign: 'center', background: '#f8fafc', border: '1px dashed #cbd5e1', borderRadius: '6px' }}>
+              <span className="spinner" style={{ width: 24, height: 24, borderWidth: 3, borderColor: 'rgba(139, 92, 246, 0.2)', borderTopColor: '#8b5cf6', margin: '0 auto', display: 'block' }}></span>
+              <div style={{ marginTop: '0.6rem', fontSize: '0.85rem', color: '#64748b', fontWeight: 500 }}>Fetching villages from GEE…</div>
+            </div>
+          )}
+
+          {/* Village list */}
           {!csLoading && csVillages.length > 0 && (
             <div style={{ marginTop: '0.75rem', maxHeight: '35vh', overflowY: 'auto', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '0.4rem' }}>
               {csVillages.map((feat, idx) => {
                 const name = feat.properties?.vill_name || feat.properties?.name || 'Village';
                 const isSelected = selectedVillageName === name;
                 return (
-                  <button key={idx} onClick={() => selectCsVillage(feat)} style={{ display: 'block', width: '100%', textAlign: 'left', padding: '0.6rem 0.75rem', background: isSelected ? '#ede9fe' : 'transparent', border: 'none', borderRadius: '4px', fontSize: '0.95rem', color: isSelected ? '#6d28d9' : '#0f172a', fontWeight: isSelected ? 600 : 400, borderBottom: '1px solid #f1f5f9', cursor: 'pointer', marginBottom: '2px' }}>
+                  <button
+                    key={idx}
+                    onClick={() => selectCsVillage(feat)}
+                    style={{
+                      display: 'block', width: '100%', textAlign: 'left',
+                      padding: '0.6rem 0.75rem',
+                      background: isSelected ? '#ede9fe' : 'transparent',
+                      border: 'none', borderRadius: '4px',
+                      fontSize: '0.95rem',
+                      color: isSelected ? '#6d28d9' : '#0f172a',
+                      fontWeight: isSelected ? 600 : 400,
+                      borderBottom: '1px solid #f1f5f9', cursor: 'pointer', marginBottom: '2px',
+                    }}
+                  >
                     {name}
                   </button>
                 );
               })}
+            </div>
+          )}
+
+          {/* Area boundary fallback — shown when no villages exist at the selected level */}
+          {!csLoading && areaFallback && csVillages.length === 0 && (() => {
+            const { feature, label, level } = areaFallback;
+            const levelEmoji = level === 'state' ? '🗺️' : level === 'district' ? '🏛️' : '📍';
+            const levelName = level.charAt(0).toUpperCase() + level.slice(1);
+            const isSelected = selectedVillageName === label;
+            return (
+              <div style={{ marginTop: '0.75rem', background: '#fefce8', border: '1px solid #fde047', borderRadius: '6px', padding: '0.75rem 1rem' }}>
+                <div style={{ fontSize: '0.8rem', color: '#854d0e', fontWeight: 600, marginBottom: '0.4rem' }}>
+                  {levelEmoji} No village boundaries found in GEE
+                </div>
+                <div style={{ fontSize: '0.75rem', color: '#92400e', marginBottom: '0.6rem' }}>
+                  You can use the entire <strong>{label}</strong> {levelName} boundary as the analysis area.
+                </div>
+                <button
+                  onClick={() => selectCsVillage({ geometry: feature.geometry, properties: { vill_name: label, ...feature.properties } })}
+                  style={{
+                    width: '100%', padding: '0.55rem 0.75rem',
+                    background: isSelected ? '#ede9fe' : '#ffffff',
+                    border: `1.5px solid ${isSelected ? '#7c3aed' : '#f59e0b'}`,
+                    borderRadius: '6px', cursor: 'pointer',
+                    fontSize: '0.9rem', fontWeight: 600,
+                    color: isSelected ? '#6d28d9' : '#b45309',
+                  }}
+                >
+                  {isSelected ? '✓ ' : ''}Select {levelName} Boundary — {label}
+                </button>
+              </div>
+            );
+          })()}
+
+          {/* No data at all */}
+          {!csLoading && !areaFallback && csVillages.length === 0 && (csSelectedTehsil || (skipTehsil && csSelectedDistrict) || (skipDistrict && csSelectedState && geeTehsils.length === 0)) && (
+            <div style={{ marginTop: '0.75rem', padding: '1rem', textAlign: 'center', background: '#f8fafc', border: '1px dashed #cbd5e1', borderRadius: '6px' }}>
+              <div style={{ fontSize: '0.8rem', color: '#64748b' }}>No boundary data available for this selection</div>
+            </div>
+          )}
+
+          {/* MWS availability badge */}
+          {selectedVillageName && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginTop: '0.25rem', fontSize: '0.75rem' }}>
+              {mwsStatus === 'checking' && (
+                <>
+                  <span className="spinner" style={{ width: 10, height: 10, borderWidth: 2, borderColor: 'rgba(139,92,246,0.2)', borderTopColor: '#8b5cf6', flexShrink: 0 }}></span>
+                  <span style={{ color: '#64748b' }}>Checking MWS coverage…</span>
+                </>
+              )}
+              {mwsStatus === 'ok' && (
+                <span style={{ color: '#16a34a', fontWeight: 500 }}>✓ MWS data available — all analysis modes active</span>
+              )}
+              {mwsStatus === 'none' && (
+                <span style={{ color: '#d97706', fontWeight: 500 }}>⚠ No MWS data — High Accuracy mode only</span>
+              )}
             </div>
           )}
         </>
