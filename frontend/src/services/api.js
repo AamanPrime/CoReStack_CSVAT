@@ -97,6 +97,72 @@ export async function getVillageGeometries(state, district, tehsil) {
   return data.data || data;
 }
 
+// ─── GEE Pan-India Admin Hierarchy ───
+
+/** All pan-India states/UTs from GEE State_pan_india (string[]) */
+export async function getGEEStates() {
+  const { data } = await api.get('/gee/states');
+  return data.data || data;
+}
+
+/** All district names in a state from GEE (via SOI_tehsil) (string[]) */
+export async function getGEEDistricts(state) {
+  const { data } = await api.get('/gee/districts', { params: { state } });
+  return data.data || data;
+}
+
+/** All tehsil names in a district from GEE SOI_tehsil (string[]) */
+export async function getGEETehsils(state, district) {
+  const { data } = await api.get('/gee/tehsils', { params: { state, district } });
+  return data.data || data;
+}
+
+/** Fallback: all tehsils in a state when state has no districts (string[]) */
+export async function getGEETehsilsByState(state) {
+  const { data } = await api.get('/gee/tehsils-by-state', { params: { state } });
+  return data.data || data;
+}
+
+/** All village geometries in a tehsil from GEE (GeoJSON FeatureCollection) */
+export async function getGEEVillageGeometries(state, district, tehsil) {
+  const { data } = await api.get('/gee/village-geometries', {
+    params: { state, district, tehsil },
+  });
+  return data.data || data;
+}
+
+/** Fallback: all villages in a district when district has no tehsils (GeoJSON FeatureCollection) */
+export async function getGEEVillagesByDistrict(state, district) {
+  const { data } = await api.get('/gee/villages-by-district', { params: { state, district } });
+  return data.data || data;
+}
+
+/** Tehsil boundary as GeoJSON Feature from SOI_tehsil (fallback when tehsil has no villages) */
+export async function getGEETehsilGeometry(state, district, tehsil) {
+  const { data } = await api.get('/gee/tehsil-geometry', { params: { state, district, tehsil } });
+  return data.data || data;
+}
+
+/** District boundary as GeoJSON Feature (fallback when district has no tehsils/villages) */
+export async function getGEEDistrictGeometry(state, district) {
+  const { data } = await api.get('/gee/district-geometry', { params: { state, district } });
+  return data.data || data;
+}
+
+/** State boundary as GeoJSON Feature (last-resort fallback for states with no sub-divisions) */
+export async function getGEEStateGeometry(state) {
+  const { data } = await api.get('/gee/state-geometry', { params: { state } });
+  return data.data || data;
+}
+
+/** Resolve lat/lon to MWS uid via CoReStack API. Returns {} if no MWS data exists. */
+export async function getMWSIdByLatLon(latitude, longitude) {
+  const { data } = await api.get('/corestack/mws-id', {
+    params: { latitude, longitude },
+  });
+  return data.data || data;
+}
+
 export async function getMWSGeometries(state, district, tehsil) {
   const { data } = await api.get('/corestack/mws-geometries', {
     params: { state, district, tehsil },
