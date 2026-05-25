@@ -10,7 +10,6 @@ import ReportViewer from '../components/ReportViewer';
 import { MapView } from '../components/GoogleMapsIntegration';
 import {
   runAnalyticsPipeline,
-  MWSUnavailableError,
   generateCSV,
 } from '../services/wasmEngine';
 import { createJob, pollJob, getLayers, saveClientResults } from '../services/api';
@@ -77,6 +76,36 @@ export default function DesktopDashboard() {
   const [isRunning, setIsRunning] = useState(false);
   const [error, setError] = useState(null);
   const [progress, setProgress] = useState('');
+  const [progressPct, setProgressPct] = useState(0);
+
+  // Maps progress messages to a coarse 0–100 percent so users see a real bar.
+  // Watches for the "[n/N]" fiscal-year pattern emitted by fullTiffEngine,
+  // and falls back to milestone phrases for the surrounding phases.
+  const updateProgress = useCallback((msg) => {
+    setProgress(msg);
+    if (typeof msg !== 'string') return;
+    const m = msg.match(/\[(\d+)\/(\d+)\]/);
+    if (m) {
+      const cur = parseInt(m[1], 10);
+      const total = parseInt(m[2], 10);
+      if (total > 0) {
+        // 15% pre, 70% during years, 15% post
+        setProgressPct(Math.min(85, Math.round(15 + (cur / total) * 70)));
+        return;
+      }
+    }
+    const lower = msg.toLowerCase();
+    if (lower.includes('starting analysis')) setProgressPct(1);
+    else if (lower.includes('resolving')) setProgressPct(3);
+    else if (lower.includes('loading python') || lower.includes('loading pyodide')) setProgressPct(6);
+    else if (lower.includes('installing')) setProgressPct(10);
+    else if (lower.includes('starting') && lower.includes('client-side')) setProgressPct(12);
+    else if (lower.includes('extracted') && lower.includes('years')) setProgressPct(82);
+    else if (lower.includes('running raster analytics')) setProgressPct(88);
+    else if (lower.includes('building report')) setProgressPct(92);
+    else if (lower.includes('building your report')) setProgressPct(95);
+    else if (lower.includes('complete')) setProgressPct(99);
+  }, []);
 
   // Polling ref
   const stopPollingRef = useRef(null);
@@ -107,6 +136,7 @@ export default function DesktopDashboard() {
     setIsRunning(true);
     setError(null);
     setResults(null);
+    setProgressPct(0);
 
     try {
 
@@ -128,13 +158,14 @@ export default function DesktopDashboard() {
         console.warn('[Job persist] Skipping job creation:', jobErr.message);
       }
 
-      setProgress(`Starting client-side analytics pipeline (${computePath.toUpperCase()})…`);
+      updateProgress('Starting analysis…');
       const result = await runAnalyticsPipeline(
         boundary, selectedLayers, selectedYears,
-        (msg) => setProgress(msg),
+        updateProgress,
         computePath
       );
-      setProgress('Rendering report…');
+      updateProgress('Building your report…');
+      setProgressPct(100);
       await delay(200);
       setResults(result);
 
@@ -149,6 +180,7 @@ export default function DesktopDashboard() {
     }
     setIsRunning(false);
     setProgress('');
+    setProgressPct(0);
   };
 
   const handleSubmit = (path) => {
@@ -224,8 +256,35 @@ export default function DesktopDashboard() {
           }}>
             <div className="spinner"></div>
             <div className="loading-text">{progress}</div>
+            {/* 0–100 progress bar — big bold percent label */}
+            <div style={{ width: 420, maxWidth: '80vw', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
+              <div style={{
+                fontSize: '3rem',
+                fontWeight: 800,
+                lineHeight: 1,
+                color: '#059669',
+                letterSpacing: '-0.02em',
+                fontVariantNumeric: 'tabular-nums',
+              }}>
+                {Math.round(progressPct)}%
+              </div>
+              <div style={{
+                width: '100%',
+                height: 14,
+                background: 'rgba(0,0,0,0.08)',
+                borderRadius: 8,
+                overflow: 'hidden',
+              }}>
+                <div style={{
+                  width: `${Math.max(0, Math.min(100, progressPct))}%`,
+                  height: '100%',
+                  background: 'linear-gradient(90deg, #10b981 0%, #059669 100%)',
+                  transition: 'width 0.25s ease-out',
+                }} />
+              </div>
+            </div>
             <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-              Running analytics in your browser
+              We're crunching the numbers — this runs right in your browser, your data never leaves your device.
             </div>
           </div>
         )}
@@ -295,79 +354,29 @@ export default function DesktopDashboard() {
             }}
           />
 
-
-
-          {/* Execution Mode & Run */}
-          {boundary && (boundary.source === 'corestack' || boundary.source === 'upload' || boundary.source === 'places') && (() => {
-            // mwsAvailable: true = ok, false = unavailable, null = still checking
-            const mwsAvailable =
-              (boundary.source === 'upload' || boundary.source === 'places')
-                ? true
-                : boundary.mwsAvailable ?? null;
-            const mwsChecking = mwsAvailable === null;
-            return (
+          {/* Get Analysis Report — single action (was: Execution Mode + MWS) */}
+          {boundary && (
             <div className="analytics-section">
               <div style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '0.35rem' }}>
-                Run Analytics
+                Run the analysis
               </div>
-              {/* Uploaded GeoJSON: only Raster path (no tehsil data for MWS/Server) */}
-              {(boundary.source === 'upload' || boundary.source === 'places') ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                  <button
-                    className="btn btn-primary btn-lg"
-                    onClick={() => handleSubmit('raster_tiled')}
-                    disabled={isRunning}
-                    id="run-analytics-tiled-btn"
-                    style={{ width: '100%', background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', borderColor: '#059669' }}
-                  >
-                    {isRunning ? (
-                      <><span className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }}></span> Processing…</>
-                    ) : ' High Accuracy Analysis'}
-                  </button>
-                  <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
-                    100% browser-side: downloads TIFF tiles → parses → computes (zero server storage)
-                  </div>
-                </div>
-              ) : (
-                /* CoRE Stack boundary: full mode selection */
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.5rem' }}>
-                  <button
-                    className="btn btn-primary btn-lg"
-                    onClick={() => handleSubmit('raster_tiled')}
-                    disabled={isRunning}
-                    id="run-analytics-tiled-btn"
-                    style={{ width: '100%', background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', borderColor: '#059669' }}
-                  >
-                    {isRunning ? (
-                      <><span className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }}></span> Processing…</>
-                    ) : ' High Accuracy Analysis'}
-                  </button>
-                  <button
-                    className="btn btn-secondary btn-lg"
-                    onClick={() => handleSubmit('mws')}
-                    disabled={isRunning || !mwsAvailable || mwsChecking}
-                    id="run-analytics-mws-btn"
-                    title={
-                      mwsChecking ? 'Checking MWS availability…' :
-                      !mwsAvailable ? 'No MWS data for this village — use High Accuracy instead' : undefined
-                    }
-                    style={{
-                      width: '100%',
-                      opacity: (!mwsAvailable || mwsChecking) ? 0.45 : 1,
-                      cursor: (!mwsAvailable || mwsChecking) ? 'not-allowed' : 'pointer',
-                    }}
-                  >
-                    {isRunning ? (
-                      <><span className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }}></span> Processing…</>
-                    ) : mwsChecking ? (
-                      <><span className="spinner" style={{ width: 14, height: 14, borderWidth: 2 }}></span> Checking MWS…</>
-                    ) : '🌿 MWS Path (Vector)'}
-                  </button>
-                </div>
-              )}
+              <button
+                className="btn btn-primary btn-lg"
+                onClick={() => handleSubmit('raster_tiled')}
+                disabled={isRunning}
+                id="run-analytics-tiled-btn"
+                style={{ width: '100%', background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', borderColor: '#059669' }}
+              >
+                {isRunning ? (
+                  <><span className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }}></span> Working…</>
+                ) : 'Get Analysis Report'}
+              </button>
+              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
+                More accurate — takes a little longer.
+              </div>
             </div>
-            );
-          })()}
+          )}
+
         </div>
       </aside>
     </div>
