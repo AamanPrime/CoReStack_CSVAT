@@ -297,9 +297,8 @@ export default function DesktopDashboard() {
 
 
 
-          {/* Execution Mode & Run */}
+          {/* Run Analytics */}
           {boundary && (boundary.source === 'corestack' || boundary.source === 'upload' || boundary.source === 'places') && (() => {
-            // mwsAvailable: true = ok, false = unavailable, null = still checking
             const mwsAvailable =
               (boundary.source === 'upload' || boundary.source === 'places')
                 ? true
@@ -307,64 +306,38 @@ export default function DesktopDashboard() {
             const mwsChecking = mwsAvailable === null;
             return (
             <div className="analytics-section">
-              <div style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '0.35rem' }}>
-                Run Analytics
-              </div>
-              {/* Uploaded GeoJSON: only Raster path (no tehsil data for MWS/Server) */}
-              {(boundary.source === 'upload' || boundary.source === 'places') ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                  <button
-                    className="btn btn-primary btn-lg"
-                    onClick={() => handleSubmit('raster_tiled')}
-                    disabled={isRunning}
-                    id="run-analytics-tiled-btn"
-                    style={{ width: '100%', background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', borderColor: '#059669' }}
-                  >
-                    {isRunning ? (
-                      <><span className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }}></span> Processing…</>
-                    ) : ' High Accuracy Analysis'}
-                  </button>
-                  <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
-                    100% browser-side: downloads TIFF tiles → parses → computes (zero server storage)
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.5rem' }}>
+                <button
+                  className="btn btn-primary btn-lg"
+                  onClick={() => handleSubmit('raster_tiled')}
+                  disabled={isRunning}
+                  id="run-analytics-tiled-btn"
+                  style={{ width: '100%', background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', borderColor: '#059669' }}
+                >
+                  {isRunning ? (
+                    <><span className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }}></span> Processing…</>
+                  ) : ' Get Analysis Report'}
+                </button>
+                {mwsChecking && (
+                  <div style={{ fontSize: '0.72rem', color: '#64748b', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                    <span className="spinner" style={{ width: 10, height: 10, borderWidth: 2, borderColor: 'rgba(139,92,246,0.2)', borderTopColor: '#8b5cf6', flexShrink: 0 }}></span>
+                    Checking data availability…
                   </div>
-                </div>
-              ) : (
-                /* CoRE Stack boundary: full mode selection */
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.5rem' }}>
-                  <button
-                    className="btn btn-primary btn-lg"
-                    onClick={() => handleSubmit('raster_tiled')}
-                    disabled={isRunning}
-                    id="run-analytics-tiled-btn"
-                    style={{ width: '100%', background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', borderColor: '#059669' }}
-                  >
-                    {isRunning ? (
-                      <><span className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }}></span> Processing…</>
-                    ) : ' High Accuracy Analysis'}
-                  </button>
+                )}
+                {mwsAvailable === true && boundary.source === 'corestack' && (
                   <button
                     className="btn btn-secondary btn-lg"
                     onClick={() => handleSubmit('mws')}
-                    disabled={isRunning || !mwsAvailable || mwsChecking}
+                    disabled={isRunning}
                     id="run-analytics-mws-btn"
-                    title={
-                      mwsChecking ? 'Checking MWS availability…' :
-                      !mwsAvailable ? 'No MWS data for this village — use High Accuracy instead' : undefined
-                    }
-                    style={{
-                      width: '100%',
-                      opacity: (!mwsAvailable || mwsChecking) ? 0.45 : 1,
-                      cursor: (!mwsAvailable || mwsChecking) ? 'not-allowed' : 'pointer',
-                    }}
+                    style={{ width: '100%' }}
                   >
                     {isRunning ? (
                       <><span className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }}></span> Processing…</>
-                    ) : mwsChecking ? (
-                      <><span className="spinner" style={{ width: 14, height: 14, borderWidth: 2 }}></span> Checking MWS…</>
                     ) : '🌿 MWS Path (Vector)'}
                   </button>
-                </div>
-              )}
+                )}
+              </div>
             </div>
             );
           })()}

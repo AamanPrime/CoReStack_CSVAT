@@ -236,9 +236,9 @@ function StorySlides({ slides, villageName, onSlideEdit, ciData, swData }) {
                     data={{
                       labels: ciData.map(d => d.year),
                       datasets: [
-                        { label: 'Single Crop', data: ciData.map(d => d.single_crop_ha), backgroundColor: 'rgba(74, 222, 128, 0.8)' },
-                        { label: 'Double Crop', data: ciData.map(d => d.double_crop_ha), backgroundColor: 'rgba(96, 165, 250, 0.8)' },
                         { label: 'Triple Crop', data: ciData.map(d => d.triple_crop_ha), backgroundColor: 'rgba(251, 191, 36, 0.8)' },
+                        { label: 'Double Crop', data: ciData.map(d => d.double_crop_ha), backgroundColor: 'rgba(96, 165, 250, 0.8)' },
+                        { label: 'Single Crop', data: ciData.map(d => d.single_crop_ha), backgroundColor: 'rgba(74, 222, 128, 0.8)' },
                       ],
                     }}
                     options={{
@@ -1431,12 +1431,6 @@ export default function ReportViewer({
             <div className="value">{totalAreaHa.toFixed(2)}</div>
             <div className="label">Total Area (ha)</div>
           </div>
-          {vegetation && (
-            <div className="stat-card stat-red">
-              <div className="value">{vegetation.transitions?.filter(t => (t.to_label || t.to) !== 'Tree Cover' && (t.to_label || t.to) !== 'Forest' && t.area_ha > 0).length || 0}</div>
-              <div className="label">Tree Cover Loss Types</div>
-            </div>
-          )}
         </div>
       </div>
 
@@ -1452,9 +1446,9 @@ export default function ReportViewer({
               data={{
                 labels: ciData.map(d => d.year),
                 datasets: [
-                  { label: 'Single Crop (ha)', data: ciData.map(d => d.single_crop_ha), backgroundColor: 'rgba(34, 197, 94, 0.7)', borderRadius: 6 },
-                  { label: 'Double Crop (ha)', data: ciData.map(d => d.double_crop_ha), backgroundColor: 'rgba(59, 130, 246, 0.7)', borderRadius: 6 },
                   { label: 'Triple Crop (ha)', data: ciData.map(d => d.triple_crop_ha), backgroundColor: 'rgba(245, 158, 11, 0.7)', borderRadius: 6 },
+                  { label: 'Double Crop (ha)', data: ciData.map(d => d.double_crop_ha), backgroundColor: 'rgba(59, 130, 246, 0.7)', borderRadius: 6 },
+                  { label: 'Single Crop (ha)', data: ciData.map(d => d.single_crop_ha), backgroundColor: 'rgba(34, 197, 94, 0.7)', borderRadius: 6 },
                 ],
               }}
               options={{

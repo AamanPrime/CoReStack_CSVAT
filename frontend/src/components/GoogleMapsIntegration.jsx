@@ -60,8 +60,6 @@ export function MapView({
   interactive = true,
   maskOutside = false,
   outlineColor = "#22c55e",
-  activeFiscalYear = null,
-  wmsConfig = null,
   editable = false,
   drawMode = false,
   onGeojsonEdit = null,
@@ -73,8 +71,6 @@ export function MapView({
 
   const markerRef = useRef(null);
   const overlaysRef = useRef({});
-  const wmsOverlayRef = useRef(null);
-  const prevFiscalYearRef = useRef(null);
   const drawingRef = useRef({ polygon: null, clickListener: null, markers: [] });
 
   // Initialize map
@@ -387,143 +383,6 @@ export function MapView({
       });
     }
   }, [center, zoom, isMapReady]);
-
-  // ─── WMS Fiscal Year Overlay Management (canvas-clipped to polygon) ───
-  useEffect(() => {
-    if (!mapInstance.current || !window.google?.maps || !isMapReady) return;
-    if (!wmsConfig || !activeFiscalYear) {
-      // Remove existing WMS overlay if present
-      if (wmsOverlayRef.current) {
-        const overlayTypes = mapInstance.current.overlayMapTypes;
-        for (let i = overlayTypes.getLength() - 1; i >= 0; i--) {
-          const ov = overlayTypes.getAt(i);
-          if (ov && ov.name === '__wms_lulc') {
-            overlayTypes.removeAt(i);
-            break;
-          }
-        }
-        wmsOverlayRef.current = null;
-        prevFiscalYearRef.current = null;
-      }
-      return;
-    }
-
-    // Skip if same year
-    if (prevFiscalYearRef.current === activeFiscalYear) return;
-    prevFiscalYearRef.current = activeFiscalYear;
-
-    // Convert fiscal year "2020-21" → "20_21" for the API
-    const fyParts = activeFiscalYear.replace(/^20/, '').split('-');
-    const fyParam = fyParts.length === 2 ? `${fyParts[0]}_${fyParts[1]}` : activeFiscalYear;
-
-    const { apiBase, district, tehsil } = wmsConfig;
-    const tileUrl = `${apiBase}/raster/wms-tile?district=${encodeURIComponent(district)}&tehsil=${encodeURIComponent(tehsil)}&fy=${fyParam}`;
-
-    // Extract polygon coordinates for canvas clipping
-    const polyRings = [];
-    if (geojson?.coordinates) {
-      const rings = geojson.type === 'MultiPolygon'
-        ? geojson.coordinates.map(poly => poly[0])
-        : [geojson.coordinates[0]];
-      rings.forEach(ring => {
-        polyRings.push(ring.map(([lng, lat]) => ({ lat, lng })));
-      });
-    }
-
-    // Remove old overlay
-    const overlayTypes = mapInstance.current.overlayMapTypes;
-    for (let i = overlayTypes.getLength() - 1; i >= 0; i--) {
-      const ov = overlayTypes.getAt(i);
-      if (ov && ov.name === '__wms_lulc') {
-        overlayTypes.removeAt(i);
-        break;
-      }
-    }
-
-    // Create canvas-clipped WMS tile overlay
-    // This clips tiles to the polygon boundary so LULC only shows inside the village
-    const clippedMapType = {
-      tileSize: new window.google.maps.Size(256, 256),
-      name: '__wms_lulc',
-      getTile: function(coord, z, ownerDocument) {
-        const canvas = ownerDocument.createElement('canvas');
-        canvas.width = 256;
-        canvas.height = 256;
-        canvas.style.width = '256px';
-        canvas.style.height = '256px';
-
-        const numTiles = 1 << z;
-        // Tile bounds in lat/lng (EPSG:4326)
-        const swLng = (coord.x / numTiles) * 360 - 180;
-        const neLng = ((coord.x + 1) / numTiles) * 360 - 180;
-        const swy = Math.PI - (2 * Math.PI * (coord.y + 1)) / numTiles;
-        const ney = Math.PI - (2 * Math.PI * coord.y) / numTiles;
-        const swLat = (180 / Math.PI) * Math.atan(Math.sinh(swy));
-        const neLat = (180 / Math.PI) * Math.atan(Math.sinh(ney));
-
-        // Quick bounds check: does this tile intersect the polygon at all?
-        if (polyRings.length > 0) {
-          const polyBounds = { minLat: 90, maxLat: -90, minLng: 180, maxLng: -180 };
-          polyRings.forEach(ring => {
-            ring.forEach(({ lat, lng }) => {
-              if (lat < polyBounds.minLat) polyBounds.minLat = lat;
-              if (lat > polyBounds.maxLat) polyBounds.maxLat = lat;
-              if (lng < polyBounds.minLng) polyBounds.minLng = lng;
-              if (lng > polyBounds.maxLng) polyBounds.maxLng = lng;
-            });
-          });
-          // No intersection → return empty canvas
-          if (neLng < polyBounds.minLng || swLng > polyBounds.maxLng ||
-              neLat < polyBounds.minLat || swLat > polyBounds.maxLat) {
-            return canvas;
-          }
-        }
-
-        const bbox = `${swLng},${swLat},${neLng},${neLat}`;
-        const imgUrl = `${tileUrl}&bbox=${bbox}&width=256&height=256`;
-
-        const img = new Image();
-        img.crossOrigin = 'anonymous';
-        img.onload = () => {
-          const ctx = canvas.getContext('2d');
-
-          // Set up polygon clipping path
-          if (polyRings.length > 0) {
-            ctx.beginPath();
-            polyRings.forEach(ring => {
-              ring.forEach(({ lat, lng }, idx) => {
-                // Convert lat/lng to pixel within this tile
-                const px = ((lng - swLng) / (neLng - swLng)) * 256;
-                const py = ((neLat - lat) / (neLat - swLat)) * 256;
-                if (idx === 0) ctx.moveTo(px, py);
-                else ctx.lineTo(px, py);
-              });
-              ctx.closePath();
-            });
-            ctx.clip();
-          }
-
-          // Draw the WMS tile clipped to the polygon
-          ctx.globalAlpha = 0.75;
-          ctx.drawImage(img, 0, 0, 256, 256);
-        };
-        img.onerror = () => {
-          // Silently fail — empty canvas is fine
-        };
-        img.src = imgUrl;
-
-        return canvas;
-      },
-      releaseTile: function(canvas) {
-        // Clean up canvas
-        canvas.width = 0;
-        canvas.height = 0;
-      },
-    };
-
-    overlayTypes.push(clippedMapType);
-    wmsOverlayRef.current = clippedMapType;
-  }, [activeFiscalYear, wmsConfig, geojson, isMapReady]);
 
   // ─── Layer Overlay Management ───
   useEffect(() => {
