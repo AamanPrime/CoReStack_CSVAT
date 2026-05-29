@@ -904,9 +904,9 @@ function generateStorySlides(results, ciData, swData, center) {
 
   // Slide 1: Village Introduction
   slides.push({
-    title: `The Story of ${village_name || 'This Village'}`,
+    title: `${village_name || 'This Village'} — An Overview`,
     icon: '🌾',
-    narrative: `${village_name || 'This village'}${district ? `, nestled in ${district} district` : ''}${state ? ` of ${state}` : ''}, tells a story written in its land, water, and people. This data story draws from satellite imagery and geospatial analytics to paint a picture of how this landscape has evolved — tracking cropping patterns, surface water availability, vegetation health, and terrain composition across multiple years.`,
+    narrative: `${village_name || 'This village'}${district ? `, in ${district} district` : ''}${state ? `, ${state}` : ''} has been studied using satellite images taken over several years. This report shows how the village has changed — how much land is being farmed, how water sources have shifted across seasons, and whether the local forests and green cover have grown or reduced. All data comes directly from space-based sensors and is updated yearly.`,
     mapUrl: getStaticMapUrl(center, 13, '1280x900', 0),
     imageUrl: 'https://images.unsplash.com/photo-1500382017468-9049fed747ef?w=600&h=300&fit=crop',
     mapZoom: 13,
@@ -919,9 +919,9 @@ function generateStorySlides(results, ciData, swData, center) {
     const trend = latest.total_cropped_ha > earliest.total_cropped_ha ? 'increased' : 'decreased';
     const intensityTrend = latest.cropping_intensity > earliest.cropping_intensity ? 'intensified' : 'weakened';
     slides.push({
-      title: 'Cropping Patterns Over Time',
+      title: 'How Much Land Is Being Farmed?',
       icon: '🌱',
-      narrative: `Over ${ciData.length} fiscal years (${earliest.year} to ${latest.year}), the total cropped area has ${trend} from ${earliest.total_cropped_ha?.toFixed(2)} ha to ${latest.total_cropped_ha?.toFixed(2)} ha. The cropping intensity index has ${intensityTrend}, moving from ${earliest.cropping_intensity?.toFixed(3) || '—'} to ${latest.cropping_intensity?.toFixed(3) || '—'}. In the most recent year, single crop covers ${latest.single_crop_ha?.toFixed(2)} ha, double crop covers ${latest.double_crop_ha?.toFixed(2)} ha, and triple crop covers ${latest.triple_crop_ha?.toFixed(2)} ha — revealing how farmers have adapted their practices to the changing climate and water availability.`,
+      narrative: `Between ${earliest.year} and ${latest.year}, the total farmed area has ${trend} from ${earliest.total_cropped_ha?.toFixed(0)} hectares to ${latest.total_cropped_ha?.toFixed(0)} hectares. Farmers here are now growing ${intensityTrend === 'intensified' ? 'more crops per year on the same land' : 'fewer crops per year'}. In the latest year, ${latest.triple_crop_ha?.toFixed(0)} ha is harvested three times a year, ${latest.double_crop_ha?.toFixed(0)} ha twice, and ${latest.single_crop_ha?.toFixed(0)} ha just once. Triple-cropping means the land and water are being used very efficiently.`,
       mapUrl: getStaticMapUrl(center, 15, '1280x900', 90),
       imageUrl: 'https://images.unsplash.com/photo-1574943320219-553eb213f72d?w=600&h=300&fit=crop',
       mapZoom: 15,
@@ -937,9 +937,9 @@ function generateStorySlides(results, ciData, swData, center) {
     const rabi = latest.rabi_ha ?? latest.seasonal_winter_ha ?? 0;
     const zaid = latest.zaid_ha ?? latest.perennial_ha ?? 0;
     slides.push({
-      title: 'Water — The Lifeblood',
+      title: 'Water — Where and When?',
       icon: '💧',
-      narrative: `In ${latest.year}, the village's surface water footprint measured ${(latest.total_water_ha ?? 0).toFixed(2)} hectares — split across Kharif season (${kharif.toFixed(2)} ha during the monsoon), Rabi season (${rabi.toFixed(2)} ha in winter), and Zaid season (${zaid.toFixed(2)} ha in summer). Tracking ${swData.length} years of data from ${earliest.year} to ${latest.year}, we can see the seasonal rhythm of water availability that dictates what grows, when it grows, and whether the harvest succeeds.`,
+      narrative: `In ${latest.year}, the village had water on the land across ${(latest.total_water_ha ?? 0).toFixed(0)} hectares in total. This includes ${kharif.toFixed(0)} ha during the monsoon (Kharif), ${rabi.toFixed(0)} ha in winter (Rabi), and ${zaid.toFixed(0)} ha in summer (Zaid). Looking across ${swData.length} years of data, we can see whether water availability is improving or reducing season by season — which directly affects how much food can be grown and when.`,
       mapUrl: getStaticMapUrl(center, 14, '1280x900', 180),
       imageUrl: 'https://images.unsplash.com/photo-1470071459604-3b5ec3a7fe05?w=600&h=300&fit=crop',
       mapZoom: 14,
@@ -955,9 +955,9 @@ function generateStorySlides(results, ciData, swData, center) {
     const netStr = net != null ? `${net >= 0 ? '+' : ''}${net.toFixed(2)}` : '—';
     const direction = net >= 0 ? 'a net gain' : 'a net loss';
     slides.push({
-      title: 'The Green Canopy',
+      title: 'Trees and Green Cover',
       icon: '🌳',
-      narrative: `The vegetation story reveals ${direction} of ${Math.abs(net ?? 0).toFixed(2)} hectares of tree cover. The analysis detected ${gain} ha of tree cover gain against ${loss} ha of loss. ${vegetation.degraded_land_ha ? `An additional ${vegetation.degraded_land_ha.toFixed(2)} ha is classified as degraded land.` : ''} ${vegetation.transitions?.length > 0 ? `The primary transitions show tree cover converting to ${vegetation.transitions.filter(t => (t.to_label || t.to) !== 'Tree Cover').map(t => t.to_label || t.to).slice(0, 3).join(', ')}.` : ''} These shifts reflect the ongoing balance between agricultural expansion and environmental conservation.`,
+      narrative: `The village has seen ${direction} of ${Math.abs(net ?? 0).toFixed(0)} hectares of tree cover. In simple terms: ${gain} ha of new trees grew, while ${loss} ha of existing trees were lost. ${vegetation.degraded_land_ha ? `About ${vegetation.degraded_land_ha.toFixed(0)} ha is showing signs of land degradation and needs attention.` : ''} ${vegetation.transitions?.length > 0 ? `In most cases, the lost tree cover has converted to ${vegetation.transitions.filter(t => (t.to_label || t.to) !== 'Tree Cover').map(t => t.to_label || t.to).slice(0, 3).join(', ')}.` : ''} Keeping tree cover healthy matters for water retention, soil health, and local cooling.`,
       mapUrl: getStaticMapUrl(center, 14, '1280x900', 270),
       imageUrl: 'https://images.unsplash.com/photo-1441974231531-c6227db76b6e?w=600&h=300&fit=crop',
       mapZoom: 14,
@@ -979,9 +979,9 @@ function generateStorySlides(results, ciData, swData, center) {
     const totalImprovement = improvements.reduce((sum, t) => sum + (t.area_ha || 0), 0);
     const totalDecline = declines.reduce((sum, t) => sum + (t.area_ha || 0), 0);
     slides.push({
-      title: 'Shifting Practices',
+      title: 'Are Farming Practices Improving?',
       icon: '',
-      narrative: `The cropping intensity transitions reveal the agricultural dynamism of this region. ${totalImprovement.toFixed(2)} hectares saw improvement — farms moving from single to double or triple cropping — signaling intensification and better water access. Meanwhile, ${totalDecline.toFixed(2)} hectares shifted to lower-intensity patterns, possibly due to water stress or soil degradation. These transitions paint a nuanced picture of agricultural resilience and vulnerability.`,
+      narrative: `Over the study period, ${totalImprovement.toFixed(0)} hectares moved to more intensive farming — farmers shifted from one crop a year to two or three. This is a positive sign, often meaning better water access or improved seeds and practices. At the same time, ${totalDecline.toFixed(0)} hectares moved to lower intensity, which may indicate water shortage, soil issues, or other challenges. Understanding this shift helps target where support is most needed.`,
       mapUrl: getStaticMapUrl(center, 15, '1280x900', 135),
       imageUrl: 'https://images.unsplash.com/photo-1625246333195-78d9c38ad449?w=600&h=300&fit=crop',
       mapZoom: 15,
@@ -1410,7 +1410,49 @@ export default function ReportViewer({
             </div>
           )}
         </div>
+        {mapCenter?.lat && getStaticMapUrl(mapCenter, 14, '800x200') && (
+          <img
+            src={getStaticMapUrl(mapCenter, 14, '800x200')}
+            alt={`Satellite view — ${village_name}`}
+            style={{ width: '100%', borderRadius: '8px', marginTop: '1rem', height: '160px', objectFit: 'cover' }}
+            onError={e => { e.target.style.display = 'none'; }}
+          />
+        )}
       </div>
+
+      {/* ─── Village Overview (from storyboard intro) ─── */}
+      {storySlides[0] && (
+        <div className="card animate-slide-up" style={{ marginBottom: '1.5rem' }}>
+          <div className="card-header">
+            <span className="icon">📖</span>
+            <h3>Village Overview</h3>
+          </div>
+          <div className="narrative" style={{ fontSize: '0.95rem', lineHeight: '1.75' }}>
+            {storySlides[0].narrative}
+          </div>
+        </div>
+      )}
+
+      {/* ─── Land Use at a Glance ─── */}
+      {(ciData || vegetation) && (
+        <div className="card animate-slide-up" style={{ marginBottom: '1.5rem' }}>
+          <div className="card-header">
+            <span className="icon">🗺️</span>
+            <h3>Land Use at a Glance</h3>
+          </div>
+          <div className="narrative" style={{ fontSize: '0.95rem', lineHeight: '1.75' }}>
+            {ciData && ciData.length > 0 && (() => {
+              const latest = ciData[ciData.length - 1];
+              return `As of ${latest.year}, the village has ${latest.total_cropped_ha?.toFixed(0)} ha of farmland. Of this, ${latest.triple_crop_ha?.toFixed(0)} ha is harvested three times a year (triple crop), ${latest.double_crop_ha?.toFixed(0)} ha twice (double crop), and ${latest.single_crop_ha?.toFixed(0)} ha once (single crop). `;
+            })()}
+            {vegetation && (() => {
+              const net = vegetation.net_change_ha;
+              const direction = net >= 0 ? 'gained' : 'lost';
+              return `The village has ${direction} ${Math.abs(net ?? 0).toFixed(0)} ha of tree cover over the study period${vegetation.degraded_land_ha ? `, and ${vegetation.degraded_land_ha.toFixed(0)} ha shows signs of land degradation` : ''}.`;
+            })()}
+          </div>
+        </div>
+      )}
 
       {/* ─── Summary Stats ─── */}
       <div className="card animate-slide-up" style={{ marginBottom: '1.5rem' }}>
