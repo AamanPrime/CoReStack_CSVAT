@@ -64,11 +64,50 @@ function getStaticMapUrl(center, zoom = 14, size = '1280x900', heading = 0) {
 }
 
 /**
+ * Walk a GeoJSON Polygon / MultiPolygon and return one flat `lat,lng|lat,lng|…`
+ * string for the outer ring (downsampled to ≤ 100 points so the URL stays
+ * under Google Static Maps' length limit).
+ */
+function polygonToPath(geojson) {
+  if (!geojson) return null;
+  let outer = null;
+  if (geojson.type === 'FeatureCollection') outer = geojson.features?.[0]?.geometry;
+  else if (geojson.type === 'Feature') outer = geojson.geometry;
+  else outer = geojson;
+  if (!outer) return null;
+  const rings = outer.type === 'MultiPolygon' ? outer.coordinates[0] :
+                outer.type === 'Polygon' ? outer.coordinates : null;
+  if (!rings || !rings[0]) return null;
+  let coords = rings[0]; // outer ring only
+  // Downsample to ~80 points to keep URL short
+  if (coords.length > 80) {
+    const step = Math.ceil(coords.length / 80);
+    coords = coords.filter((_, i) => i % step === 0);
+    // Re-close
+    if (coords[coords.length - 1] !== coords[0]) coords.push(coords[0]);
+  }
+  return coords.map(([lng, lat]) => `${lat.toFixed(5)},${lng.toFixed(5)}`).join('|');
+}
+
+/**
+ * Build a static-map URL with the village boundary drawn on top as a
+ * semi-transparent yellow polygon.
+ */
+function getStaticMapUrlWithBoundary(center, geojson, zoom = 13, size = '1280x720') {
+  const base = getStaticMapUrl(center, zoom, size, 0);
+  if (!base) return null;
+  const pathCoords = polygonToPath(geojson);
+  if (!pathCoords) return base;
+  const path = `fillcolor:0xFFC10755|color:0xFFA500FF|weight:3|${pathCoords}`;
+  return `${base}&path=${encodeURIComponent(path)}`;
+}
+
+/**
  * StorySlides — Terraso-style storyboard component.
  * Shows ONE chapter at a time. Scroll-snap within the panel.
  * Background image changes per chapter with cross-fade transition.
  */
-function StorySlides({ slides, villageName, onSlideEdit, ciData, swData }) {
+function StorySlides({ slides, villageName, onSlideEdit, ciData, swData, boundaryMapUrl }) {
   const scrollRef = useRef(null);
   const cardRefs = useRef([]);
   const [activeIdx, setActiveIdx] = React.useState(0);
@@ -136,17 +175,31 @@ function StorySlides({ slides, villageName, onSlideEdit, ciData, swData }) {
 
   return (
     <div className="ts-storyboard">
-      {/* Background images — cross-fade via opacity */}
-      {slides.map((slide, idx) => (
+      {/* Background:
+       *   - If `boundaryMapUrl` is provided, use it as a single calm background
+       *     for ALL slides (the village boundary outlined on satellite imagery).
+       *   - Otherwise, fall back to per-slide map URLs that cross-fade between
+       *     chapters (the original Terraso-style behaviour). */}
+      {boundaryMapUrl ? (
         <div
-          key={idx}
-          className={`ts-bg-layer ${idx === activeIdx ? 'ts-bg-layer--active' : ''}`}
+          className="ts-bg-layer ts-bg-layer--active"
           style={{
-            backgroundImage: slide.mapUrl ? `url(${slide.mapUrl})` : 'none',
-            backgroundColor: slide.mapUrl ? undefined : '#1a1a2e',
+            backgroundImage: `url(${boundaryMapUrl})`,
+            backgroundColor: '#1a1a2e',
           }}
         />
-      ))}
+      ) : (
+        slides.map((slide, idx) => (
+          <div
+            key={idx}
+            className={`ts-bg-layer ${idx === activeIdx ? 'ts-bg-layer--active' : ''}`}
+            style={{
+              backgroundImage: slide.mapUrl ? `url(${slide.mapUrl})` : 'none',
+              backgroundColor: slide.mapUrl ? undefined : '#1a1a2e',
+            }}
+          />
+        ))
+      )}
 
       {/* Dark overlay */}
       <div className="ts-map-overlay" />
@@ -675,9 +728,10 @@ async function downloadReportAsHTML(results, storySlides, villageName) {
     /* ═══ TERRASO STORYBOARD (fully interactive in HTML export) ═══ */
     .ts-storyboard {
       position: relative;
-      width: 90%;
-      max-width: 1200px;
-      height: 80vh;
+      width: 95%;
+      max-width: 1280px;
+      aspect-ratio: 16 / 9;
+      height: auto;
       margin: 2rem auto;
       border-radius: 16px;
       overflow: hidden;
@@ -837,7 +891,7 @@ async function downloadReportAsHTML(results, storySlides, villageName) {
 
     /* Responsive */
     @media (max-width: 768px) {
-      .ts-storyboard { width: 95%; height: 70vh; }
+      .ts-storyboard { width: 96%; aspect-ratio: 16 / 9; height: auto; }
       .ts-snap-page { padding: 1.5rem 1rem; }
       .ts-card { padding: 1.25rem; }
       .ts-card-title { font-size: 1.15rem; }
@@ -1345,8 +1399,22 @@ export default function ReportViewer({
       //console.log('[Storyboard] Falling back to allSlides:', allSlides.length);
     }
 
-    // Apply any inline session edits the user made
-    return baseSlides.map((slide, idx) => {
+    // Always-on intro slide explaining what the yellow boundary means.
+    // It sits ahead of everything else (AI slides, DB story, fallback generated).
+    const boundaryIntroSlide = {
+      title: '🗺️ Village Boundary',
+      icon: '🗺️',
+      narrative:
+        'The yellow outline marks the analysed village boundary on satellite imagery — every chart and number below is computed from inside this shape only.',
+      isIntro: true,
+    };
+
+    const withIntro = [boundaryIntroSlide, ...baseSlides];
+
+    // Apply any inline session edits the user made.
+    // Override index 0 still refers to the intro slide; everything else
+    // shifts by one — that matches how the editor stores by displayed index.
+    return withIntro.map((slide, idx) => {
       const override = slideOverrides[idx];
       if (override) {
         return { ...slide, ...override };
@@ -1412,6 +1480,110 @@ export default function ReportViewer({
         </div>
       </div>
 
+      {/* Village Boundary card removed — it's now the storyboard's first slide. */}
+
+      {/* ─── STORYBOARD — top of the report (boundary intro is its first slide) ─── */}
+      <div style={{ position: 'relative', marginBottom: '1.5rem' }}>
+        {/* Action bar */}
+        <div className="storyboard-action-bar">
+          {aiSlides && (
+            <button
+              className="storyboard-action-btn storyboard-edit-btn"
+              onClick={() => setShowSlideEditor(true)}
+              title="Edit storyboard slides"
+            >
+               Edit Story
+            </button>
+          )}
+          {isCoReStack && (
+            <button
+              className="storyboard-action-btn storyboard-regen-btn"
+              onClick={() => triggerAiStoryboard(true)}
+              disabled={isGenerating}
+              title="Regenerate storyboard from scratch"
+            >
+              {isGenerating ? '⏳ Generating…' : ' Regenerate'}
+            </button>
+          )}
+          {!aiSlides && !isGenerating && (
+            <button
+              className="storyboard-action-btn storyboard-edit-btn"
+              onClick={() => setShowSlideEditor(true)}
+              title="Edit story slides"
+            >
+               Edit Story
+            </button>
+          )}
+        </div>
+
+        {/* Full-screen loading placeholder */}
+        {isGenerating ? (
+          <div style={{ height: '80vh', width: '100%', background: '#0f172a', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#fff' }}>
+            <div className="storyboard-gen-spinner" style={{ width: '48px', height: '48px', borderTopColor: '#3b82f6', borderRightColor: '#3b82f6', marginBottom: '1.5rem', borderWidth: '4px' }} />
+            <h3 style={{ fontFamily: 'Inter', fontWeight: 600, fontSize: '1.5rem', margin: '0 0 0.5rem 0' }}>Loading Storyboard</h3>
+            <p style={{ color: '#94a3b8', margin: 0 }}>{genProgress || 'Please wait while we fetch the village narrative...'}</p>
+          </div>
+        ) : genError ? (
+          <div style={{ height: '80vh', width: '100%', background: '#0f172a', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#ef4444' }}>
+            <span style={{ fontSize: '3rem', marginBottom: '1rem' }}>⚠️</span>
+            <h3 style={{ fontFamily: 'Inter', fontWeight: 600, margin: '0 0 0.5rem 0' }}>Storyboard generation failed</h3>
+            <p style={{ color: '#fca5a5', margin: 0 }}>{genError}</p>
+            <button className="btn btn-primary" style={{ marginTop: '1.5rem' }} onClick={() => triggerAiStoryboard(true)}>Retry Generation</button>
+          </div>
+        ) : (
+          <StorySlides
+            slides={finalSlidesWithOverrides}
+            villageName={village_name}
+            onSlideEdit={handleSlideEdit}
+            ciData={ciData}
+            swData={swData}
+            boundaryMapUrl={getStaticMapUrlWithBoundary(
+              mapCenter,
+              boundary?.boundary_geojson || boundary?.geojson || results?.geojson,
+              13,
+              '1280x720',
+            )}
+          />
+        )}
+      </div>
+
+      {/* ─── Overview + Land Use (text version of storyboard's opening slides) ─── */}
+      {(() => {
+        const slides = finalSlidesWithOverrides || [];
+        const overview = slides[0];
+        const landUseSlide = slides.find(s => {
+          const t = (s.title || '').toLowerCase();
+          return t.includes('cropping') || t.includes('land use') || t.includes('land-use');
+        });
+        if (!overview && !landUseSlide) return null;
+        return (
+          <div className="card animate-slide-up" style={{ marginBottom: '1.5rem' }}>
+            {overview && (
+              <>
+                <div className="card-header">
+                  <span className="icon">{overview.icon || '📖'}</span>
+                  <h3>Overview</h3>
+                </div>
+                <div className="narrative" style={{ whiteSpace: 'pre-wrap' }}>
+                  {overview.narrative}
+                </div>
+              </>
+            )}
+            {landUseSlide && (
+              <>
+                <div className="card-header" style={{ marginTop: overview ? '1.25rem' : 0 }}>
+                  <span className="icon">{landUseSlide.icon || '🌾'}</span>
+                  <h3>Land Use</h3>
+                </div>
+                <div className="narrative" style={{ whiteSpace: 'pre-wrap' }}>
+                  {landUseSlide.narrative}
+                </div>
+              </>
+            )}
+          </div>
+        );
+      })()}
+
       {/* ─── Summary Stats ─── */}
       <div className="card animate-slide-up" style={{ marginBottom: '1.5rem' }}>
         <div className="stats-grid">
@@ -1431,12 +1603,7 @@ export default function ReportViewer({
             <div className="value">{totalAreaHa.toFixed(2)}</div>
             <div className="label">Total Area (ha)</div>
           </div>
-          {vegetation && (
-            <div className="stat-card stat-red">
-              <div className="value">{vegetation.transitions?.filter(t => (t.to_label || t.to) !== 'Tree Cover' && (t.to_label || t.to) !== 'Forest' && t.area_ha > 0).length || 0}</div>
-              <div className="label">Tree Cover Loss Types</div>
-            </div>
-          )}
+          {/* Tree-cover KPI removed per design — replaced by inline narrative below */}
         </div>
       </div>
 
@@ -1452,9 +1619,10 @@ export default function ReportViewer({
               data={{
                 labels: ciData.map(d => d.year),
                 datasets: [
-                  { label: 'Single Crop (ha)', data: ciData.map(d => d.single_crop_ha), backgroundColor: 'rgba(34, 197, 94, 0.7)', borderRadius: 6 },
-                  { label: 'Double Crop (ha)', data: ciData.map(d => d.double_crop_ha), backgroundColor: 'rgba(59, 130, 246, 0.7)', borderRadius: 6 },
+                  // Order: Triple → Double → Single (top of stack to bottom)
                   { label: 'Triple Crop (ha)', data: ciData.map(d => d.triple_crop_ha), backgroundColor: 'rgba(245, 158, 11, 0.7)', borderRadius: 6 },
+                  { label: 'Double Crop (ha)', data: ciData.map(d => d.double_crop_ha), backgroundColor: 'rgba(59, 130, 246, 0.7)', borderRadius: 6 },
+                  { label: 'Single Crop (ha)', data: ciData.map(d => d.single_crop_ha), backgroundColor: 'rgba(34, 197, 94, 0.7)', borderRadius: 6 },
                 ],
               }}
               options={{
@@ -1465,19 +1633,62 @@ export default function ReportViewer({
             />
           </div>
           <table className="data-table">
-            <thead><tr><th>Year</th><th>Single Crop (ha)</th><th>Double Crop (ha)</th><th>Triple Crop (ha)</th><th>Total (ha)</th><th>Intensity Index</th></tr></thead>
+            <thead><tr><th>Year</th><th>Triple Crop (ha)</th><th>Double Crop (ha)</th><th>Single Crop (ha)</th><th>Total (ha)</th><th>Intensity Index</th></tr></thead>
             <tbody>
               {ciData.map(d => (
-                <tr key={d.year}><td>{d.year}</td><td>{d.single_crop_ha?.toFixed(2)}</td><td>{d.double_crop_ha?.toFixed(2)}</td><td>{d.triple_crop_ha?.toFixed(2)}</td><td>{d.total_cropped_ha?.toFixed(2)}</td><td>{d.cropping_intensity?.toFixed(3) ?? '—'}</td></tr>
+                <tr key={d.year}><td>{d.year}</td><td>{d.triple_crop_ha?.toFixed(2)}</td><td>{d.double_crop_ha?.toFixed(2)}</td><td>{d.single_crop_ha?.toFixed(2)}</td><td>{d.total_cropped_ha?.toFixed(2)}</td><td>{d.cropping_intensity?.toFixed(3) ?? '—'}</td></tr>
               ))}
             </tbody>
           </table>
           <div className="narrative">
-            Cropping intensity analysis shows how agricultural land use patterns have changed within the village boundary.
-            The intensity index represents the average number of crop cycles per year across the analyzed area.
+            This chart shows how many crop cycles the village's farmland goes through each year.
+            Triple-cropped land is harvested three times a year (usually irrigated), double-cropped twice, and single-cropped once (usually rainfed).
+            The "Intensity Index" is the average number of harvests per hectare per year — higher means more intensive farming.
           </div>
         </div>
       )}
+
+      {/* ─── Rainfed vs Irrigated (estimated from cropping intensity) ─── */}
+      {ciData && ciData.length > 0 && (() => {
+        const latest = ciData[ciData.length - 1];
+        const rainfed = latest.rainfed_ha ?? (latest.single_crop_ha || 0);
+        const irrigated = latest.irrigated_ha ?? ((latest.double_crop_ha || 0) + (latest.triple_crop_ha || 0));
+        const total = rainfed + irrigated;
+        const rainfedPct = total > 0 ? (rainfed / total) * 100 : 0;
+        const irrigatedPct = total > 0 ? (irrigated / total) * 100 : 0;
+        if (total <= 0) return null;
+        return (
+          <div className="card animate-slide-up">
+            <div className="card-header">
+              <span className="icon">🌧️</span>
+              <h3>Rainfed vs Irrigated Area ({latest.year})</h3>
+            </div>
+            <div className="stats-grid">
+              <div className="stat-card stat-amber">
+                <div className="value">{rainfed.toFixed(2)}</div>
+                <div className="label">Rainfed (ha) — {rainfedPct.toFixed(0)}%</div>
+              </div>
+              <div className="stat-card stat-blue">
+                <div className="value">{irrigated.toFixed(2)}</div>
+                <div className="label">Irrigated (ha) — {irrigatedPct.toFixed(0)}%</div>
+              </div>
+              <div className="stat-card stat-green">
+                <div className="value">{total.toFixed(2)}</div>
+                <div className="label">Total cropped (ha)</div>
+              </div>
+            </div>
+            {/* Simple proportional bar */}
+            <div style={{ marginTop: '1rem', display: 'flex', height: '22px', borderRadius: '6px', overflow: 'hidden', border: '1px solid var(--border-light, #e2e8f0)' }}>
+              <div style={{ width: `${rainfedPct}%`, background: 'rgba(245, 158, 11, 0.85)' }} title={`Rainfed: ${rainfedPct.toFixed(1)}%`} />
+              <div style={{ width: `${irrigatedPct}%`, background: 'rgba(59, 130, 246, 0.85)' }} title={`Irrigated: ${irrigatedPct.toFixed(1)}%`} />
+            </div>
+            <div className="narrative" style={{ marginTop: '0.75rem' }}>
+              Rainfed land is harvested once a year (depends on the monsoon), while irrigated land supports two or three crop cycles a year.
+              These figures are estimated from the cropping intensity above — single-crop pixels are counted as rainfed; double- and triple-crop pixels as irrigated.
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ─── Surface Water (Kharif / Rabi / Zaid) ─── */}
       {swData && swData.length > 0 && (
@@ -1725,65 +1936,6 @@ export default function ReportViewer({
       </div>
 
         </div>{/* end .report-viewer-content */}
-
-        {/* ─── TERRASO FULLSCREEN SLIDE STORYBOARD ─── */}
-        <div style={{ position: 'relative' }}>
-          {/* Action bar */}
-          <div className="storyboard-action-bar">
-            {aiSlides && (
-              <button
-                className="storyboard-action-btn storyboard-edit-btn"
-                onClick={() => setShowSlideEditor(true)}
-                title="Edit storyboard slides"
-              >
-                 Edit Story
-              </button>
-            )}
-            {isCoReStack && (
-              <button
-                className="storyboard-action-btn storyboard-regen-btn"
-                onClick={() => triggerAiStoryboard(true)}
-                disabled={isGenerating}
-                title="Regenerate storyboard from scratch"
-              >
-                {isGenerating ? '⏳ Generating…' : ' Regenerate'}
-              </button>
-            )}
-            {!aiSlides && !isGenerating && (
-              <button
-                className="storyboard-action-btn storyboard-edit-btn"
-                onClick={() => setShowSlideEditor(true)}
-                title="Edit story slides"
-              >
-                 Edit Story
-              </button>
-            )}
-          </div>
-
-          {/* Full-screen loading placeholder */}
-          {isGenerating ? (
-            <div style={{ height: '80vh', width: '100%', background: '#0f172a', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#fff' }}>
-              <div className="storyboard-gen-spinner" style={{ width: '48px', height: '48px', borderTopColor: '#3b82f6', borderRightColor: '#3b82f6', marginBottom: '1.5rem', borderWidth: '4px' }} />
-              <h3 style={{ fontFamily: 'Inter', fontWeight: 600, fontSize: '1.5rem', margin: '0 0 0.5rem 0' }}>Loading Storyboard</h3>
-              <p style={{ color: '#94a3b8', margin: 0 }}>{genProgress || 'Please wait while we fetch the village narrative...'}</p>
-            </div>
-          ) : genError ? (
-            <div style={{ height: '80vh', width: '100%', background: '#0f172a', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#ef4444' }}>
-              <span style={{ fontSize: '3rem', marginBottom: '1rem' }}>⚠️</span>
-              <h3 style={{ fontFamily: 'Inter', fontWeight: 600, margin: '0 0 0.5rem 0' }}>Storyboard generation failed</h3>
-              <p style={{ color: '#fca5a5', margin: 0 }}>{genError}</p>
-              <button className="btn btn-primary" style={{ marginTop: '1.5rem' }} onClick={() => triggerAiStoryboard(true)}>Retry Generation</button>
-            </div>
-          ) : (
-            <StorySlides 
-              slides={finalSlidesWithOverrides} 
-              villageName={village_name} 
-              onSlideEdit={handleSlideEdit} 
-              ciData={ciData}
-              swData={swData}
-            />
-          )}
-        </div>
 
       </div>{/* end .report-viewer-scroll */}
 

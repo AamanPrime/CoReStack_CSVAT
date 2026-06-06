@@ -318,7 +318,7 @@ compute_raster_analytics(extracted_data, pixel_area_ha)
   const results = {
     village_name: villageName,
     state, district, tehsil,
-    data_source: 'IndiaSAT LULC v3 (10m, full-TIFF)',
+    data_source: 'Satellite land-use data (10 m)',
     compute_mode: 'client_raster_full',
     years: selectedYears,
     area_hectares: boundary.area_hectares || 0,
@@ -327,13 +327,19 @@ compute_raster_analytics(extracted_data, pixel_area_ha)
   if (pyResult.cropping_intensity?.length > 0) {
     results.cropping_intensity = {
       village_name: villageName,
-      data: pyResult.cropping_intensity.map(r => ({
-        year: r.fiscal_year, fiscal_year: r.fiscal_year,
-        single_crop_ha: r.single_crop_ha, double_crop_ha: r.double_crop_ha,
-        triple_crop_ha: r.triple_crop_ha, total_cropped_ha: r.total_cropped_ha,
-        cropping_intensity: r.intensity_index,
-      })),
-      source: 'IndiaSAT LULC v3 (10m, full-TIFF)',
+      data: pyResult.cropping_intensity
+        .map(r => ({
+          year: r.fiscal_year, fiscal_year: r.fiscal_year,
+          single_crop_ha: r.single_crop_ha, double_crop_ha: r.double_crop_ha,
+          triple_crop_ha: r.triple_crop_ha, total_cropped_ha: r.total_cropped_ha,
+          cropping_intensity: r.intensity_index,
+          // Estimated rainfed vs irrigated split: single-crop ≈ rainfed (one cycle/yr),
+          // double+triple ≈ irrigated (needs supplemental water for off-monsoon cycles).
+          rainfed_ha: r.single_crop_ha || 0,
+          irrigated_ha: (r.double_crop_ha || 0) + (r.triple_crop_ha || 0),
+        }))
+        .sort((a, b) => a.year - b.year),
+      source: 'Satellite land-use data (10 m)',
       processing: '100% client-side (geotiff.js + numpy WASM)',
     };
   }
@@ -342,12 +348,14 @@ compute_raster_analytics(extracted_data, pixel_area_ha)
   if (pyResult.surface_water?.length > 0) {
     results.surface_water = {
       village_name: villageName,
-      data: pyResult.surface_water.map(r => ({
-        year: r.fiscal_year, fiscal_year: r.fiscal_year,
-        kharif_ha: r.kharif_ha, rabi_ha: r.rabi_ha,
-        zaid_ha: r.zaid_ha, total_water_ha: r.total_water_ha,
-      })),
-      source: 'IndiaSAT LULC v3 Raster (10m, full-TIFF)',
+      data: pyResult.surface_water
+        .map(r => ({
+          year: r.fiscal_year, fiscal_year: r.fiscal_year,
+          kharif_ha: r.kharif_ha, rabi_ha: r.rabi_ha,
+          zaid_ha: r.zaid_ha, total_water_ha: r.total_water_ha,
+        }))
+        .sort((a, b) => a.year - b.year),
+      source: 'Satellite land-use data (10 m)',
       processing: '100% client-side (geotiff.js + numpy WASM)',
     };
   }
@@ -361,8 +369,10 @@ compute_raster_analytics(extracted_data, pixel_area_ha)
       tree_cover_start_ha: first.tree_cover_ha,
       tree_cover_end_ha: last.tree_cover_ha,
       net_change_ha: +(last.tree_cover_ha - first.tree_cover_ha).toFixed(2),
-      yearly_data: vegData.map(v => ({ year: v.fiscal_year, tree_cover_ha: v.tree_cover_ha })),
-      source: 'IndiaSAT LULC v3 (10m, full-TIFF)',
+      yearly_data: vegData
+        .map(v => ({ year: v.fiscal_year, tree_cover_ha: v.tree_cover_ha }))
+        .sort((a, b) => a.year - b.year),
+      source: 'Satellite land-use data (10 m)',
     };
   }
 

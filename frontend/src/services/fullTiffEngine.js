@@ -390,7 +390,7 @@ mask_pixels_numpy(pixel_flat, width, height, origin_x, origin_y,
     data: extractedYears,
     pixel_area_ha: globalPixelAreaHa,
     years_extracted: extractedYears.length,
-    source: 'GEE IndiaSAT LULC v3 (client-side full-TIFF, geotiff.js + numpy)',
+    source: 'Satellite land-use raster (10 m)',
     accuracy: 'exact',
   };
 }
