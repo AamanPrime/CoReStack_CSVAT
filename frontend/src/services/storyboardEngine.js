@@ -373,7 +373,7 @@ export function buildTemplateSlides(results, boundary) {
     },
     {
       slide_number: 2,
-      emoji: '📍',
+      emoji: '',
       title: 'Location Context',
       content: `The area was delineated via custom boundary. Geographic position and connectivity were assessed through the uploaded GeoJSON extent.`,
       insight: 'Custom boundary analysis',
@@ -394,7 +394,7 @@ export function buildTemplateSlides(results, boundary) {
     },
     {
       slide_number: 5,
-      emoji: '🌾',
+      emoji: '',
       title: 'Land Use',
       content: latestCI
         ? `Latest land use data shows ${latestCI.total_cropped_ha?.toFixed(2)} ha cropped area. Single crop: ${latestCI.single_crop_ha?.toFixed(2)} ha, Double crop: ${latestCI.double_crop_ha?.toFixed(2)} ha, Triple crop: ${latestCI.triple_crop_ha?.toFixed(2)} ha.`
@@ -405,7 +405,7 @@ export function buildTemplateSlides(results, boundary) {
     },
     {
       slide_number: 6,
-      emoji: '🌱',
+      emoji: '',
       title: 'Agricultural Profile',
       content: latestCI
         ? `Cropping intensity index: ${latestCI.cropping_intensity?.toFixed(3)}. The area supports ${latestCI.triple_crop_ha > 0 ? 'triple' : latestCI.double_crop_ha > 0 ? 'double' : 'single'} season cropping.`
@@ -429,7 +429,7 @@ export function buildTemplateSlides(results, boundary) {
     },
     {
       slide_number: 8,
-      emoji: '💧',
+      emoji: '',
       title: 'Water Availability',
       content: latestSW
         ? `In ${latestSW.year}, total surface water coverage was ${latestSW.total_water_ha?.toFixed(2)} ha — split across Kharif (${latestSW.kharif_ha?.toFixed(2)} ha), Rabi (${latestSW.rabi_ha?.toFixed(2)} ha), and Zaid seasons.`
@@ -440,7 +440,7 @@ export function buildTemplateSlides(results, boundary) {
     },
     {
       slide_number: 9,
-      emoji: '🌳',
+      emoji: '',
       title: 'Vegetation Change',
       content:
         veg.tree_cover_gain_ha != null
@@ -490,7 +490,7 @@ export function buildTemplateSlides(results, boundary) {
     },
     {
       slide_number: 12,
-      emoji: '💡',
+      emoji: '',
       title: 'Opportunities',
       content: `Based on the satellite analytics, this area shows potential for ${veg.net_change_ha < 0 ? 'reforestation initiatives' : 'continued vegetation conservation'}. ${latestCI?.cropping_intensity < 1.2 ? 'Cropping intensity improvement is possible.' : 'Cropping patterns appear optimised.'}`,
       insight: 'Data-driven intervention potential',
@@ -620,7 +620,7 @@ export function slidesToChapters(slides) {
     slide_number: s.slide_number,
     emoji: s.emoji,
     title: `${s.emoji} ${s.title}`,
-    narrative: `${s.content}\n\n💡 ${s.insight}`,
+    narrative: `${s.content}\n\n ${s.insight}`,
     map_action: MAP_ACTIONS[s.slide_number] || 'zoom_to_village',
     image_url: null,
     // Keep original fields for the editor

@@ -73,7 +73,7 @@ def _persist_job_result(job_id: str, status: str, results: dict = None, error: s
 
 
 def _run_async(coro):
-    """Run an async coroutine from a sync context (Celery task)."""
+    """Run an async coroutine from a sync context (FastAPI BackgroundTask)."""
     import asyncio
     try:
         loop = asyncio.get_event_loop()

@@ -690,7 +690,7 @@ export function generateCSV(results) {
   const lines = [];
   const add = (...cols) => lines.push(cols.join(','));
 
-  add('CSVAT Village Analytics Report');
+  add(`CSVAT ${results.village_name || 'Village'} Report`);
   add('Village', results.village_name);
   add('State', results.state);
   add('District', results.district);
@@ -778,27 +778,27 @@ export function generateHTMLReport(results) {
 :root{--bg:#f8fafc;--card:#ffffff;--text:#1e293b;--muted:#64748b;--heading:#0f172a;--green:#16a34a;--blue:#2563eb;--amber:#d97706;--red:#dc2626;--teal:#0d9488;--border:#e2e8f0;--card-shadow:0 4px 6px -1px rgba(0,0,0,0.05),0 2px 4px -1px rgba(0,0,0,0.03)}
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;padding:2rem}
-.c{max-width:1200px;margin:0 auto}.hdr{text-align:center;padding:3rem 2rem;background:var(--card);border-radius:12px;border:1px solid var(--border);box-shadow:var(--card-shadow);margin-bottom:2rem}
+.c{width:60%;max-width:60%;margin:0 auto;font-size:1.1rem}@media(max-width:1024px){.c{width:80%;max-width:80%}}@media(max-width:768px){.c{width:95%;max-width:95%;font-size:1rem}}.hdr{text-align:center;padding:3rem 2rem;background:var(--card);border-radius:12px;border:1px solid var(--border);box-shadow:var(--card-shadow);margin-bottom:2rem}
 .hdr h1{font-size:2.2rem;color:var(--heading);font-weight:700}
 .meta{display:flex;justify-content:center;gap:2rem;margin-top:1.5rem;flex-wrap:wrap}
 .mi{background:#f1f5f9;padding:.75rem 1.5rem;border-radius:8px;border:1px solid var(--border)}
 .mi label{color:var(--muted);font-size:.75rem;text-transform:uppercase;letter-spacing:0.05em;font-weight:600}.mi span{display:block;font-weight:700;color:var(--heading);margin-top:0.2rem}
 .sec{background:var(--card);border-radius:12px;border:1px solid var(--border);box-shadow:var(--card-shadow);margin-bottom:2rem;padding:2rem}
-.sec h2{font-size:1.4rem;color:var(--heading);font-weight:700;margin-bottom:1rem;padding-bottom:.75rem;border-bottom:1px solid var(--border)}
-.cc{position:relative;height:350px;margin:1.5rem 0}
+.sec h2{font-size:1.6rem;color:var(--heading);font-weight:700;margin-bottom:1rem;padding-bottom:.75rem;border-bottom:1px solid var(--border)}
+.cc{position:relative;width:100%;height:auto !important;aspect-ratio:2.2 / 1;margin:1.5rem 0}@media(max-width:768px){.cc{aspect-ratio:1.5 / 1}}
 .sg{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:1rem;margin-top:1rem}
 .sc{background:#f8fafc;padding:1.25rem;border-radius:10px;border:1px solid var(--border);text-align:center}
 .sc .v{font-size:1.8rem;font-weight:800}.sc .l{color:var(--muted);font-size:.85rem;margin-top:.25rem;font-weight:500}
 .pos{color:var(--green)}.neg{color:var(--red)}.neu{color:var(--blue)}.warn{color:var(--amber)}
-.nar{color:var(--text);line-height:1.7;font-size:.95rem;margin-top:1.5rem;background:#f1f5f9;padding:1rem;border-radius:8px;border-left:4px solid var(--blue)}
+.nar{color:var(--text);line-height:1.7;font-size:1.05rem;margin-top:1.5rem;background:#f1f5f9;padding:1rem;border-radius:8px;border-left:4px solid var(--blue)}
 table{width:100%;border-collapse:collapse;margin-top:1rem}
-th,td{padding:.85rem 1rem;text-align:right;border-bottom:1px solid var(--border)}
-th{color:var(--heading);font-weight:600;font-size:.75rem;text-transform:uppercase;background:#f8fafc;letter-spacing:0.05em}
+th,td{padding:.85rem 1rem;text-align:right;border-bottom:1px solid var(--border);font-size:1rem}
+th{color:var(--heading);font-weight:600;font-size:.85rem;text-transform:uppercase;background:#f8fafc;letter-spacing:0.05em}
 th:first-child,td:first-child{text-align:left}
 .ft{text-align:center;padding:2rem;color:var(--muted);font-size:.85rem}
 .src{background:#ecfdf5;color:var(--green);border:1px solid #a7f3d0;padding:.4rem 1rem;border-radius:6px;display:inline-block;font-size:.75rem;font-weight:600;margin-top:.75rem;text-transform:uppercase;letter-spacing:0.05em}
 </style></head><body><div class="c">
-<div class="hdr"><h1>🌾 Village Analytics Report</h1>
+<div class="hdr"><h1> ${results.village_name || 'Village'} Report</h1>
 <p style="color:var(--muted);margin-top:.5rem">${results.village_name} — Socio-Ecological Analysis</p>
 <div class="src"> Data: ${source}</div>
 <div class="meta">
@@ -809,17 +809,17 @@ th:first-child,td:first-child{text-align:left}
 <div class="mi"><label>Engine</label><span>Pyodide WASM</span></div>
 <div class="mi"><label>Total Area</label><span>${(results.area_hectares || 0).toFixed(2)} ha</span></div>
 </div></div>
-${ci ? `<div class="sec"><h2>🌱 Cropping Intensity Trends</h2>
+${ci ? `<div class="sec"><h2> Cropping Intensity Trends</h2>
 <div class="cc"><canvas id="ciChart"></canvas></div>
 <table><thead><tr><th>Year</th><th>Single (ha)</th><th>Double (ha)</th><th>Triple (ha)</th><th>Total (ha)</th><th>Intensity</th></tr></thead>
 <tbody>${ciData.map(d=>`<tr><td>${d.year}</td><td>${d.single_crop_ha}</td><td>${d.double_crop_ha}</td><td>${d.triple_crop_ha}</td><td>${d.total_cropped_ha}</td><td>${d.cropping_intensity ?? '—'}</td></tr>`).join('')}</tbody></table>
 <p class="nar">Cropping intensity analysis shows agricultural land use patterns.</p></div>` : ''}
-${sw ? `<div class="sec"><h2>💧 Seasonal Surface Water (Kharif / Rabi / Zaid)</h2>
+${sw ? `<div class="sec"><h2> Seasonal Surface Water (Kharif / Rabi / Zaid)</h2>
 <div class="cc"><canvas id="swChart"></canvas></div>
 <table><thead><tr><th>Year</th><th>Kharif (ha)</th><th>Rabi (ha)</th><th>Zaid (ha)</th><th>Total (ha)</th></tr></thead>
 <tbody>${swData.map(d=>`<tr><td>${d.year}</td><td>${d.kharif_ha ?? d.seasonal_monsoon_ha ?? 0}</td><td>${d.rabi_ha ?? d.seasonal_winter_ha ?? 0}</td><td>${d.zaid_ha ?? d.perennial_ha ?? 0}</td><td>${d.total_water_ha}</td></tr>`).join('')}</tbody></table>
 <p class="nar">Surface water availability across Kharif (Jun-Sep), Rabi (Oct-Feb), and Zaid (Mar-May) seasons.</p></div>` : ''}
-${vg ? `<div class="sec"><h2>🌳 Vegetation & Tree Cover Change</h2>
+${vg ? `<div class="sec"><h2> Vegetation & Tree Cover Change</h2>
 <div class="sg">
 <div class="sc"><div class="v pos">${vg.tree_cover_gain_ha}</div><div class="l">Tree Cover Gain (ha)</div></div>
 <div class="sc"><div class="v neg">${vg.tree_cover_loss_ha}</div><div class="l">Tree Cover Loss (ha)</div></div>

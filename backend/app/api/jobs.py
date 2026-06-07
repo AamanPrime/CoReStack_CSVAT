@@ -4,7 +4,7 @@ Handles job submission, status polling, and asset delivery.
 Uses SQLite for persistence (replaces in-memory dict from MVP).
 
 Modes:
-  - SERVER: dispatches analytics to Celery worker (async), client polls for results
+  - SERVER: dispatches analytics to FastAPI background tasks (async), client polls for results
   - CLIENT: client runs WASM analytics, POSTs results for persistence via /save
 """
 

@@ -153,7 +153,7 @@ def _serialize(s: VillageStoryboardSlide) -> dict:
 
 # ─── Endpoints ──────────────────────────────────────────────────────────────
 
-# ⚠️  Static routes MUST be registered before /{village_id} to avoid
+#   Static routes MUST be registered before /{village_id} to avoid
 #    FastAPI matching 'generate' and '' as a village_id integer.
 
 @router.delete("/")

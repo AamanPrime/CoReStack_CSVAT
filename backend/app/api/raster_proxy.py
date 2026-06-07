@@ -238,6 +238,18 @@ async def get_full_download_url(request_body: dict):
         min_lng, min_lat, max_lng, max_lat = bbox
         region = ee.Geometry.Rectangle([min_lng, min_lat, max_lng, max_lat])
 
+        # Always export in EPSG:4326.
+        #
+        # The browser-side masking (fullTiffEngine.js / numpy ray-casting) computes
+        # pixel centres from the TIFF affine tags and compares them directly against
+        # the village polygon — BOTH must be in the same CRS (EPSG:4326, degrees).
+        #
+        # Using the asset's native projected CRS (e.g. UTM, LAEA) would produce
+        # pixel centres in metres while the polygon is in degrees, causing the
+        # ray-cast to find zero matches even for covered mainland-India villages.
+        #
+        # scale=10 matches IndiaSAT LULC v3's native 10 m resolution projected to
+        # geographic coordinates (~0.00009° per pixel at India's latitudes).
         url = image.getDownloadURL({
             "region": region,
             "format": "GEO_TIFF",

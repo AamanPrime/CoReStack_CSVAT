@@ -200,7 +200,7 @@ export default function MobileDashboard() {
               </div>
             </div>
             <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-              Crunching the numbers — runs in your browser, data stays on your device.
+              
             </div>
           </div>
         )}
@@ -265,26 +265,75 @@ export default function MobileDashboard() {
 
 
 
-          {/* Get Analysis Report — single action (was: Execution Mode + MWS) */}
+          {/* Get Analysis Report — dual-path: Satellite Raster vs MWS Vector */}
           {boundary && (
             <div className="analytics-section">
-              <div style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '0.35rem' }}>
+              <div style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '0.5rem' }}>
                 Run the analysis
               </div>
+
+              {/* Satellite Raster button — always available */}
               <button
                 className="btn btn-primary btn-lg"
                 onClick={() => handleSubmit('raster_tiled')}
                 disabled={isRunning}
                 id="run-analytics-tiled-btn"
-                style={{ width: '100%', background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', borderColor: '#059669' }}
+                title="Download village GeoTIFFs from IndiaSAT LULC v3 and compute LULC analytics client-side (most accurate)"
+                style={{ width: '100%', background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', borderColor: '#059669', marginBottom: '0.5rem' }}
               >
                 {isRunning ? (
                   <><span className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }}></span> Working…</>
-                ) : 'Get Analysis Report'}
+                ) : 'Get Report (Slow, Most Accurate)'}
               </button>
-              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
-                More accurate — takes a little longer.
+              <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginBottom: '0.6rem', lineHeight: 1.4 }}>
+                IndiaSAT LULC v3 · 10 m 
               </div>
+
+              {/* MWS Vector button — disabled for uploads/places */}
+              {boundary.source === 'upload' || boundary.source === 'places' ? (
+                <div style={{
+                  padding: '0.55rem 0.75rem', borderRadius: '8px', border: '1.5px dashed #c4b5fd',
+                  fontSize: '0.72rem', color: '#a78bfa', textAlign: 'center', lineHeight: 1.5,
+                  background: 'rgba(139,92,246,0.04)',
+                }}>
+                   MWS Vector path requires a village selected via CoRE Stack browser
+                </div>
+              ) : (
+                <>
+                  <button
+                    className="btn btn-secondary btn-lg"
+                    onClick={() => handleSubmit('mws_vector')}
+                    disabled={isRunning || !boundary.mwsAvailable}
+                    id="run-analytics-mws-btn"
+                    title={
+                      !boundary.mwsAvailable
+                        ? 'No MWS watershed data for this village — use Satellite Raster instead'
+                        : 'Use CoRE Stack MWS vector data — faster but lower resolution than satellite raster'
+                    }
+                    style={{
+                      width: '100%',
+                      background: (!boundary.mwsAvailable || isRunning)
+                        ? 'linear-gradient(135deg, #9ca3af 0%, #6b7280 100%)'
+                        : 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)',
+                      color: '#fff', border: 'none',
+                      borderRadius: '8px', padding: '0.6rem 1rem',
+                      fontSize: '0.88rem', fontWeight: 600,
+                      cursor: (!boundary.mwsAvailable || isRunning) ? 'not-allowed' : 'pointer',
+                      transition: 'all 0.2s', letterSpacing: '0.01em',
+                      opacity: !boundary.mwsAvailable ? 0.65 : 1,
+                    }}
+                  >
+                    {isRunning ? (
+                      <><span className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }}></span> Working…</>
+                    ) : 'Get Report(Fast, Less Accurate'}
+                  </button>
+                  <div style={{ fontSize: '0.68rem', color: boundary.mwsAvailable ? 'var(--text-muted)' : '#f87171', marginTop: '0.35rem', lineHeight: 1.4 }}>
+                    {boundary.mwsAvailable
+                      ? 'CoRE Stack MWS · watershed-level · Faster — works offline.'
+                      : ' No MWS data for this village — use Satellite Raster.'}
+                  </div>
+                </>
+              )}
             </div>
           )}
         </div>

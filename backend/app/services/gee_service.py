@@ -515,6 +515,33 @@ _VILL_NAME_P      = "name"       # Village_pan_india
 _VILL_DIST_P      = "district"   # Village_pan_india — lowercase
 _VILL_SUBDT_P     = "sub_dist"   # Village_pan_india — lowercase
 
+# ── State-name normalisation for SOI_tehsil ──────────────────────────────────
+# The STATE field in SOI_tehsil is uppercase but sometimes uses legacy/alternate
+# spellings that don't match what State_pan_india returns.
+# Map State_pan_india name (as returned) → expected SOI_tehsil STATE value.
+STATE_NAME_ALIASES: dict[str, str] = {
+    # State_pan_india value        : SOI_tehsil STATE value
+    # Verified by inspecting SOI_tehsil distinct STATE values via GEE.
+    "Chhattisgarh":                "CHHATISGARH",   # SOI: single-H + single-T
+    "Uttarakhand":                  "UTTARAKHAND",
+    "Odisha":                       "ODISHA",
+    "Telangana":                    "TELANGANA",
+    "Jammu And Kashmir":            "JAMMU AND KASHMIR",   # SOI uses AND not &
+    "Jammu & Kashmir":              "JAMMU AND KASHMIR",
+    "Ladakh":                       "LADAKH",
+    "Dadra And Nagar Haveli And Daman And Diu": "DADRA & NAGAR HAVELI & DAMAN & DIU",
+}
+
+
+def _state_for_filter(state: str) -> str:
+    """Return the SOI_tehsil STATE value to use as the stringContains substring.
+
+    Resolves known spelling discrepancies between State_pan_india and SOI_tehsil.
+    Falls back to state.upper() if no alias is defined.
+    """
+    return STATE_NAME_ALIASES.get(state, state.upper())
+
+
 
 def _find_prop(props: dict, candidates: list[str]) -> str | None:
     """Return the first candidate key present in the properties dict."""
@@ -558,10 +585,11 @@ def fetch_districts_in_state(state: str) -> list[str]:
     """
     _init_ee()
     fc = ee.FeatureCollection(ADMIN_ASSETS["tehsil"])
-    # STATE field is UPPERCASE; state arg comes from State_pan_india (Title Case)
-    filtered = fc.filter(ee.Filter.stringContains(_TEHSIL_STATE_P, state.upper()))
+    # Resolve known spelling discrepancies between State_pan_india and SOI_tehsil.STATE
+    state_filter_val = _state_for_filter(state)
+    filtered = fc.filter(ee.Filter.stringContains(_TEHSIL_STATE_P, state_filter_val))
     names = filtered.aggregate_array(_TEHSIL_DIST_P).distinct().sort().getInfo()
-    logger.info("fetch_districts_in_state(%r): %d districts", state, len(names or []))
+    logger.info("fetch_districts_in_state(%r → filter=%r): %d districts", state, state_filter_val, len(names or []))
     return sorted(str(n) for n in (names or []) if n)
 
 
@@ -668,9 +696,10 @@ def fetch_district_geometry(state: str, district: str) -> dict:
     """
     _init_ee()
     fc = ee.FeatureCollection(ADMIN_ASSETS["tehsil"])
+    state_filter_val = _state_for_filter(state)
     matched = fc.filter(
         ee.Filter.And(
-            ee.Filter.stringContains(_TEHSIL_STATE_P, state.upper()),
+            ee.Filter.stringContains(_TEHSIL_STATE_P, state_filter_val),
             ee.Filter.stringContains(_TEHSIL_DIST_P, district.upper()),
         )
     )
@@ -682,7 +711,7 @@ def fetch_district_geometry(state: str, district: str) -> dict:
         "level": "district",
     }).getInfo()
     count = matched.size().getInfo()
-    logger.info("fetch_district_geometry(%r/%r) → matched %d SOI features", state, district, count)
+    logger.info("fetch_district_geometry(%r/%r → filter=%r) → matched %d SOI features", state, district, state_filter_val, count)
     if not feature_info or not feature_info.get("geometry"):
         raise ValueError(f"No district geometry found for {district} in {state}")
     return feature_info
@@ -719,9 +748,10 @@ def fetch_tehsils_in_state(state: str) -> list[str]:
     """
     _init_ee()
     fc = ee.FeatureCollection(ADMIN_ASSETS["tehsil"])
-    filtered = fc.filter(ee.Filter.stringContains(_TEHSIL_STATE_P, state.upper()))
+    state_filter_val = _state_for_filter(state)
+    filtered = fc.filter(ee.Filter.stringContains(_TEHSIL_STATE_P, state_filter_val))
     names = filtered.aggregate_array(_TEHSIL_NAME_P).distinct().sort().getInfo()
-    logger.info("fetch_tehsils_in_state(%r): %d tehsils", state, len(names or []))
+    logger.info("fetch_tehsils_in_state(%r → filter=%r): %d tehsils", state, state_filter_val, len(names or []))
     return sorted(str(n) for n in (names or []) if n)
 
 
