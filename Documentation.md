@@ -1,6 +1,6 @@
 # CSVAT — CoRE Stack Village Analytics Tool: Complete Technical Deep Dive
 
-> **Purpose of this document:** A comprehensive, interview-ready explanation of the entire CSVAT application — architecture, data flow, every API method, all mathematical formulas, and output generation.
+> **Purpose of this document:** A comprehensive, detailed documentation of the entire CSVAT application — architecture, data flow, every API method, all mathematical formulas, and output generation.
 
 ---
 
@@ -12,8 +12,8 @@
 4. [Infrastructure & Deployment (Docker Compose)](#4-infrastructure--deployment-docker-compose)
 5. [End-to-End Request Flow](#5-end-to-end-request-flow)
 6. [Boundary Selection (3 Input Methods)](#6-boundary-selection-3-input-methods)
-7. [Dual Execution Modes: WASM vs SERVER](#7-dual-execution-modes-wasm-vs-server)
-8. [Primary Pipeline: CoRE Stack MWS (10m Resolution)](#8-primary-pipeline-core-stack-mws-10m-resolution)
+7. [Execution Modes (100% Client-Side)](#7-execution-modes-100-client-side)
+8. [High Accuracy Raster & MWS Vector Pipelines](#8-high-accuracy-raster--mws-vector-pipelines)
    - 8.1 [Data Fetching from CoRE Stack API](#81-data-fetching-from-core-stack-api)
    - 8.2 [Spatial Intersection Mathematics (Shapely)](#82-spatial-intersection-mathematics-shapely)
    - 8.3 [Weighted Aggregation Formulas](#83-weighted-aggregation-formulas)
@@ -23,21 +23,13 @@
    - 8.7 [Terrain Composition](#87-terrain-composition)
    - 8.8 [Crop Intensity Change Detection](#88-crop-intensity-change-detection)
    - 8.9 [Waterbodies](#89-waterbodies)
-9. [Fallback Pipeline: Google Earth Engine (500m Resolution)](#9-fallback-pipeline-google-earth-engine-500m-resolution)
-   - 9.1 [GEE Data Fetching (ee Library)](#91-gee-data-fetching-ee-library)
-   - 9.2 [MODIS LULC → Cropping Intensity Mathematics](#92-modis-lulc--cropping-intensity-mathematics)
-   - 9.3 [JRC Global Surface Water → Water Analytics Mathematics](#93-jrc-global-surface-water--water-analytics-mathematics)
-   - 9.4 [MODIS NDVI → Vegetation Change Mathematics](#94-modis-ndvi--vegetation-change-mathematics)
 10. [All Backend API Endpoints](#10-all-backend-api-endpoints)
 11. [All CoRE Stack API Methods Used](#11-all-core-stack-api-methods-used)
 12. [Output Generation & Visualization](#12-output-generation--visualization)
 13. [Export Formats](#13-export-formats)
 14. [Authentication System](#14-authentication-system)
 15. [Database Models](#15-database-models)
-16. [FastAPI Background Task System (Server Mode)](#16-fastapi-background-task-system-server-mode)
-17. [Complete Mathematical Formula Reference](#17-complete-mathematical-formula-reference)
-18. [Interview-Ready Summary Points](#18-interview-ready-summary-points)
-
+16. [Complete Mathematical Formula Reference](#16-complete-mathematical-formula-reference)
 ---
 
 ## 1. What is CSVAT?
@@ -45,9 +37,7 @@
 **CSVAT (CoRE Stack Village Analytics Tool)** is a full-stack geospatial analytics platform that generates village-level socio-ecological reports for any village in India. It combines:
 
 - **CoRE Stack** satellite data (10m resolution, Micro-Watershed indexed)
-- **Google Earth Engine** data (500m MODIS, 30m JRC) as a fallback
 - **Client-side Python WASM** (Pyodide) for in-browser computation
-- **Server-side FastAPI BackgroundTasks** as an alternate execution mode
 
 **The core problem it solves:** CoRE Stack stores satellite-derived analytics at the **Micro-Watershed (MWS)** level, but users need data at the **village** level. A village boundary can overlap multiple MWS polygons partially. CSVAT computes the geometric intersection of village boundaries with MWS polygons and produces area-weighted village-level analytics.
 
@@ -63,9 +53,9 @@
 │  │  Boundary     │  │  Layer       │  │  Dashboard.jsx            │  │
 │  │  Selector     │  │  Selector    │  │  (orchestration)          │  │
 │  │  (3 modes)    │  │  (checkboxes)│  │                           │  │
-│  └──────┬───────┘  └──────┬───────┘  │  WASM Mode: Pyodide +     │  │
-│         │                 │           │    wasmEngine.js           │  │
-│         │                 │           │  SERVER Mode: POST /jobs   │  │
+│  └──────┬───────┘  └──────┬───────┘  │  Client-Side execution:   │  │
+│         │                 │           │   wasmEngine/rasterEngine │  │
+│         │                 │           │                           │  │
 │         └────────┬────────┘           └───────────┬───────────────┘  │
 │                  │                                │                   │
 │     ┌────────────┴────────────────────────────────┘                  │
@@ -74,7 +64,6 @@
 │  │  wasmEngine.js  (MWS-first pipeline)                        │    │
 │  │   ├─ tryMWSAnalytics()  → Pyodide + Shapely (WASM)         │    │
 │  │   │   └─ Spatial intersection + weighted aggregation        │    │
-│  │   └─ runGEEFallbackPipeline() → Pyodide + numpy (WASM)     │    │
 │  └──┬──────────────────────────────────────────────────────────┘    │
 │     │                                                                │
 └─────┼────────────────────────────────────────────────────────────────┘
@@ -86,10 +75,7 @@
 │  ┌──────────────────────────────────────────────────────────────┐   │
 │  │  API Routers:                                                 │   │
 │  │   /api/v1/corestack/*     → CoRE Stack API proxy             │   │
-│  │   /api/v1/gee/*           → GEE data proxy (ee library)      │   │
-│  │   /api/v1/analytics/mws   → Server-side MWS intersection     │   │
 │  │   /api/v1/boundaries/*    → Boundary resolution & search     │   │
-│  │   /api/v1/jobs/*          → Async job CRUD + assets          │   │
 │  │   /api/v1/layers          → Available layer metadata         │   │
 │  │   /api/v1/auth/*          → JWT token management             │   │
 │  └──────────────┬───────────────────────────────────────────────┘   │
@@ -98,7 +84,6 @@
 │  │  Services:                                                    │   │
 │  │   MWSIntersectionService  — Shapely spatial intersection      │   │
 │  │   CoreStackClient         — httpx HTTP client (X-API-Key)     │   │
-│  │   GEEService              — ee library + service account      │   │
 │  │   BoundaryService         — GeoJSON validation                │   │
 │  │   ReportService           — Jinja2 HTML + CSV generation      │   │
 │  │   PDFService              — Playwright PDF rendering          │   │
@@ -134,9 +119,8 @@
 | **Backend**        | FastAPI (Python 3.11)                 | Async REST API server                 |
 | **HTTP Client**    | httpx (async)                         | CoRE Stack API calls                  |
 | **Geospatial**     | Shapely, GeoAlchemy2                  | Polygon intersection, PostGIS         |
-| **Earth Engine**   | ee (Python library) + Service Account | MODIS, JRC satellite data             |
-| **Task Queue**     | FastAPI BackgroundTasks               | Async server-side analytics           |
-| **Database**       | PostgreSQL 15 + PostGIS 3.3           | Jobs, cached boundaries               |
+| **Earth Engine**   | ee (Python library) + Service Account | IndiaSAT LULC raster extraction       |
+| **Database**       | PostgreSQL 15 + PostGIS 3.3           | Cached boundaries                     |
 | **ORM**            | SQLAlchemy 2.0                        | Database models                       |
 | **Auth**           | python-jose (JWT)                     | Token-based authentication            |
 | **Templating**     | Jinja2                                | Server-side HTML reports              |
@@ -157,7 +141,7 @@ services:
 
 | Container      | Image                    | Role                                              | Port |
 | -------------- | ------------------------ | ------------------------------------------------- | ---- |
-| `csvat_db`     | `postgis/postgis:15-3.3` | Persistent storage for jobs and cached boundaries | 5435 |
+| `csvat_db`     | `postgis/postgis:15-3.3` | Persistent storage for cached boundaries          | 5435 |
 | `csvat_api`    | Custom (Dockerfile)      | FastAPI server                                    | 8006 |
 
 **Health checks** ensure proper startup order: `api` waits for `db` to be healthy.
@@ -166,7 +150,7 @@ services:
 
 ## 5. End-to-End Request Flow
 
-### Complete User Journey (WASM Mode — Default)
+### Complete User Journey (Client-Side Pipeline)
 
 ```
 User Action                           System Response
@@ -194,18 +178,7 @@ User Action                           System Response
    ├─ Run weighted aggregation         → Python WASM: aggregate_cropping(), etc.
    └─ Return village-level results     → { cropping_intensity, surface_water, ... }
 
-7. If MWS unavailable:
-   ├─ Show prompt to user             → "Use GEE instead? (lower resolution)"
-   └─ User confirms                   → Dashboard.handleGEEConfirm()
-
-8. [GEE Fallback] Fetch + compute     → wasmEngine.runGEEFallbackPipeline()
-   ├─ Fetch LULC data                 → POST /api/v1/gee/all
-   ├─ Load Pyodide + numpy            → CDN load + loadPackage('numpy')
-   ├─ Run cropping analysis           → Python WASM: analyze_cropping_intensity()
-   ├─ Run water analysis              → Python WASM: analyze_surface_water()
-   └─ Run vegetation analysis         → Python WASM: analyze_vegetation_change()
-
-9. Render results                     → ReportViewer.jsx
+7. Render results                     → ReportViewer.jsx
    ├─ Summary statistics cards
    ├─ Chart.js stacked bar charts
    ├─ Data tables
@@ -260,9 +233,9 @@ function computeAreaHectares(geojson) {
 
 ---
 
-## 7. Dual Execution Modes: WASM vs SERVER
+## 7. Execution Modes (100% Client-Side)
 
-### WASM Mode (Default — Client-Side)
+### High Accuracy Raster & MWS Vector Pipelines
 
 | Step                    | Where                        | What Happens                             |
 | ----------------------- | ---------------------------- | ---------------------------------------- |
@@ -272,19 +245,6 @@ function computeAreaHectares(geojson) {
 | Visualization           | Browser (React + Chart.js)   | Direct rendering                         |
 
 **Why WASM?** Zero server compute cost. The browser runs Python via WebAssembly. Multiple users can run analytics simultaneously without loading the server.
-
-### SERVER Mode (Alternate — Server-Side)
-
-| Step            | Where                                 | What Happens                            |
-| --------------- | ------------------------------------- | --------------------------------------- |
-| Submit job      | `POST /api/v1/jobs`                   | Creates Job row in PostgreSQL           |
-| Task dispatch   | FastAPI BackgroundTasks               | Task added to async execution queue     |
-| **Analytics**   | **FastAPI BackgroundTasks**           | Same MWS intersection pipeline          |
-| Results storage | PostgreSQL                            | JSONB column in jobs table              |
-| Polling         | `GET /api/v1/jobs/{id}`               | Frontend polls until complete           |
-| Assets          | `GET /api/v1/jobs/{id}/assets/{type}` | HTML/CSV/PDF download                   |
-
-In SERVER mode, the frontend can also compute results client-side then push them to the server via `POST /api/v1/jobs/{id}/client-results`, which stores WASM-computed results in the job record for later download.
 
 ---
 
@@ -645,195 +605,6 @@ Fetched for the tehsil level (not intersection-weighted since waterbodies are po
 
 ---
 
-## 9. Fallback Pipeline: Google Earth Engine (500m Resolution)
-
-When CoRE Stack data is unavailable (tehsil not active), the system falls back to GEE. The user is **explicitly prompted** before this happens.
-
-### 9.1 GEE Data Fetching (ee Library)
-
-The backend uses the `ee` Python library with a Google Cloud service account to query GEE servers.
-
-#### LULC: MODIS MCD12Q1 (500m resolution)
-
-```python
-# Backend: gee_service.py
-image = (
-    ee.ImageCollection("MODIS/061/MCD12Q1")
-    .filterDate(f"{year}-01-01", f"{year}-12-31")
-    .first()
-    .select("LC_Type1")
-)
-
-result = image.reduceRegion(
-    reducer=ee.Reducer.frequencyHistogram(),
-    geometry=geom,
-    scale=500,
-    bestEffort=True,
-).getInfo()
-```
-
-Returns pixel counts per MODIS LC_Type1 class:
-
-| Class ID | Name                                    |
-| -------- | --------------------------------------- |
-| 1–5      | Various Forest types                    |
-| 6–7      | Shrublands                              |
-| 8–9      | Savannas                                |
-| 10       | Grasslands                              |
-| 11       | Permanent Wetlands                      |
-| **12**   | **Croplands**                           |
-| 13       | Urban and Built-up Lands                |
-| **14**   | **Cropland/Natural Vegetation Mosaics** |
-| 15       | Permanent Snow and Ice                  |
-| 16       | Barren                                  |
-| 17       | Water Bodies                            |
-
-#### Water: JRC Global Surface Water (30m resolution)
-
-```python
-# Global occurrence (time-aggregated, 0-100%)
-occurrence = ee.Image("JRC/GSW1_4/GlobalSurfaceWater").select("occurrence")
-occ_stats = occurrence.reduceRegion(
-    reducer=ee.Reducer.mean(),
-    geometry=geom,
-    scale=30,
-    bestEffort=True,
-).getInfo()
-
-# Yearly water classification
-yearly = (
-    ee.ImageCollection("JRC/GSW1_4/YearlyHistory")
-    .filterDate(f"{year}-01-01", f"{year}-12-31")
-    .first()
-)
-
-hist_result = yearly.reduceRegion(
-    reducer=ee.Reducer.frequencyHistogram(),
-    geometry=geom,
-    scale=30,
-    bestEffort=True,
-).getInfo()
-```
-
-JRC `waterClass` values:
-| Class | Meaning |
-|-------|---------|
-| 0 | No data |
-| 1 | Not water |
-| 2 | Seasonal water |
-| 3 | Permanent water |
-
-#### NDVI: MODIS MOD13A2 (500m, 16-day composite)
-
-```python
-ndvi = (
-    ee.ImageCollection("MODIS/061/MOD13A2")
-    .filterDate(f"{year}-01-01", f"{year}-12-31")
-    .select("NDVI")
-)
-
-# Annual mean
-mean_img = ndvi.mean()
-mean_stats = mean_img.reduceRegion(
-    reducer=ee.Reducer.mean(), geometry=geom, scale=500, bestEffort=True
-).getInfo()
-
-# Apply MODIS NDVI scale factor
-ndvi_mean = raw_value * 0.0001  # MODIS stores NDVI × 10000
-```
-
-### 9.2 MODIS LULC → Cropping Intensity Mathematics
-
-The GEE fallback estimates cropping intensity from MODIS LULC pixel classifications.
-
-**Pixel area:** MODIS at 500m resolution → each pixel = $500 \times 500 = 250{,}000 \text{ m}^2 = 25 \text{ ha}$
-
-**Algorithm (`analyze_cropping_intensity()` in Pyodide):**
-
-```
-1. Extract cropland pixel counts:
-   - Class 12 (Croplands) → cropland_pixels
-   - Class 14 (Cropland/Vegetation Mosaics) → mosaic_pixels
-   - total_crop_pixels = cropland_pixels + mosaic_pixels
-
-2. Compute crop ratio:
-   crop_ratio = cropland_pixels / total_crop_pixels
-
-3. Estimate intensity fractions:
-   single_frac = max(0.3, 0.7 - (1 - crop_ratio) × 0.4)
-   double_frac = min(0.5, 0.2 + crop_ratio × 0.3)
-   triple_frac = max(0, 1.0 - single_frac - double_frac)
-
-4. Convert to hectares:
-   single_ha = total_crop_pixels × 25 × single_frac
-   double_ha = total_crop_pixels × 25 × double_frac
-   triple_ha = total_crop_pixels × 25 × triple_frac
-```
-
-**Interpretation:** Higher pure cropland ratio (class 12 vs. 14) indicates more intensive farming. The fractions are heuristic estimates since MODIS 500m cannot directly detect crop cycling.
-
-### 9.3 JRC Global Surface Water → Water Analytics Mathematics
-
-**Pixel area:** JRC at 30m resolution → each pixel = $30 \times 30 = 900 \text{ m}^2 = 0.09 \text{ ha}$
-
-**Algorithm (`analyze_surface_water()` in Pyodide):**
-
-```
-1. Extract pixel counts from JRC water_class_hist:
-   - permanent_pixels = hist["3"]  (permanent water)
-   - seasonal_pixels  = hist["2"]  (seasonal water)
-
-2. Convert to hectares:
-   perennial_ha = permanent_pixels × 0.09
-
-3. Split seasonal into Indian seasons:
-   monsoon_ha = seasonal_pixels × 0.09 × 0.7  (70% monsoon)
-   winter_ha  = seasonal_pixels × 0.09 × 0.3  (30% winter)
-
-4. If no JRC yearly data, estimate from occurrence mean:
-   norm = min(occurrence_mean / 100, 1.0)
-   perennial_ha = norm² × 50
-   monsoon_ha   = norm × (1-norm) × 120
-   winter_ha    = (1-norm)² × 30
-```
-
-**The 70/30 monsoon/winter split** is a domain heuristic based on India's monsoon climate where the majority of seasonal water bodies fill during the Kharif (monsoon) season.
-
-### 9.4 MODIS NDVI → Vegetation Change Mathematics
-
-**NDVI (Normalized Difference Vegetation Index)** ranges from -1 to 1:
-
-$$\text{NDVI} = \frac{NIR - Red}{NIR + Red}$$
-
-| NDVI Range | Interpretation                 |
-| ---------- | ------------------------------ |
-| > 0.6      | Dense vegetation / forest      |
-| 0.3–0.6    | Moderate vegetation / cropland |
-| 0.2–0.3    | Sparse vegetation              |
-| < 0.2      | Barren / urban                 |
-
-**MODIS scale factor:** Raw NDVI values are stored as integers × 10,000. Applied: `ndvi_mean = raw × 0.0001`
-
-**Algorithm (`analyze_vegetation_change()` in Pyodide):**
-
-```python
-# Estimate tree cover from NDVI (per year)
-village_area_ha = 500  # approximate
-veg_fraction = min(ndvi_mean / 0.8, 1.0)
-tree_cover_ha = village_area_ha × veg_fraction × 0.4
-
-# Over the time series:
-start_ha = tree_cover_ha[first_year]
-end_ha   = tree_cover_ha[last_year]
-loss = max(start_ha - end_ha, 0)
-gain = max(end_ha - start_ha, 0)
-net_change = end_ha - start_ha
-degraded_land_ha = loss × 0.6  # heuristic: 60% of loss → degradation
-```
-
-**The 0.4 multiplier** accounts for the fact that not all vegetation is tree cover. The 0.6 degradation factor assumes most tree loss leads to land degradation.
-
----
 
 ## 10. All Backend API Endpoints
 
@@ -850,39 +621,6 @@ degraded_land_ha = loss × 0.6  # heuristic: 60% of loss → degradation
 | GET    | `/layer-urls?state=&district=&tehsil=`         | GeoServer layer URLs                    |
 | GET    | `/waterbodies?state=&district=&tehsil=`        | Waterbody records                       |
 | GET    | `/villages/search?query=`                      | Search villages by name                 |
-
-### GEE Proxy (`/api/v1/gee/`)
-
-| Method | Endpoint | Purpose                            |
-| ------ | -------- | ---------------------------------- |
-| POST   | `/lulc`  | MODIS MCD12Q1 land-cover histogram |
-| POST   | `/water` | JRC surface water statistics       |
-| POST   | `/ndvi`  | MODIS MOD13A2 NDVI mean/max        |
-| POST   | `/all`   | Fetch LULC + Water + NDVI combined |
-
-Request body for all GEE endpoints:
-
-```json
-{
-  "geojson": { "type": "Polygon", "coordinates": [...] },
-  "years": [2019, 2020, 2021, 2022, 2023]
-}
-```
-
-### Analytics (`/api/v1/analytics/`)
-
-| Method | Endpoint | Purpose                                |
-| ------ | -------- | -------------------------------------- |
-| POST   | `/mws`   | Server-side MWS intersection analytics |
-
-### Jobs (`/api/v1/jobs/`)
-
-| Method | Endpoint                   | Purpose                     |
-| ------ | -------------------------- | --------------------------- |
-| POST   | `/`                        | Create a new analytics job  |
-| GET    | `/{job_id}`                | Get job status and results  |
-| POST   | `/{job_id}/client-results` | Store WASM-computed results |
-| GET    | `/{job_id}/assets/{type}`  | Download HTML/CSV/PDF       |
 
 ### Boundaries (`/api/v1/boundaries/`)
 
@@ -942,7 +680,7 @@ The report viewer renders results into these sections:
 #### 1. Header & Summary Stats
 
 - Village name, state, district, tehsil
-- Data source badge (CoRE Stack 10m or GEE 500m)
+- Data source badge (CoRE Stack MWS Vector or IndiaSAT LULC Raster)
 - MWS count (how many micro-watersheds were intersected)
 
 #### 2. Cropping Intensity Chart & Table
@@ -1011,7 +749,7 @@ function generateNarrative(results) {
 | **HTML** | `wasmEngine.generateHTMLReport()` — full standalone HTML with inline Chart.js, CSS, and data tables |
 | **CSV**  | `wasmEngine.generateCSV()` — comma-separated values for all metrics                                 |
 | **JSON** | `JSON.stringify(results)` — raw JSON data                                                           |
-| **PDF**  | `GET /api/v1/jobs/{id}/assets/pdf` — server-side Playwright rendering                               |
+| **PDF**  | Client-side generation (html2pdf)                                                                   |
 
 ### Server-Side Report Generation
 
@@ -1102,56 +840,9 @@ class CachedBoundary(Base):
 
 ---
 
-## 16. FastAPI Background Task System (Server Mode)
-
-### Task Definition (`analytics_task.py`)
-
-```python
-def run_analytics_task(job_id: str, parameters: dict):
-    """FastAPI BackgroundTask: try MWS first, fallback to GEE."""
-
-    # Update job status to "running"
-    update_job_status(job_id, "running")
-
-    try:
-        results = _run_pipeline(parameters)
-        update_job_results(job_id, results)
-        update_job_status(job_id, "completed")
-    except Exception as e:
-        update_job_error(job_id, str(e))
-        update_job_status(job_id, "failed")
-```
-
-### Pipeline Strategy (`_run_pipeline()`)
-
-```python
-def _run_pipeline(parameters):
-    # 1. Try MWS intersection (CoRE Stack 10m)
-    try:
-        results = mws_service.compute_village_analytics(
-            village_geojson=params["boundary_geojson"],
-            state=params["state"],
-            district=params["district"],
-            tehsil=params["tehsil"],
-            layers=params["layers"],
-            years=params["years"],
-        )
-        results["data_source"] = "corestack_mws"
-        return results
-    except ValueError:
-        pass  # MWS not available
-
-    # 2. Fallback to GEE
-    gee_data = gee_service.fetch_all(params["boundary_geojson"], ...)
-    # Process with cropping.py, water.py, vegetation.py
-    results["data_source"] = "gee"
-    results["data_warning"] = "Lower resolution (MODIS 500m)"
-    return results
-```
-
 ---
 
-## 17. Complete Mathematical Formula Reference
+## 16. Complete Mathematical Formula Reference
 
 ### Spatial Intersection
 
@@ -1175,56 +866,6 @@ Where:
 - $f_i$ = overlap fraction of MWS $i$ with village
 - $n$ = number of overlapping MWS polygons
 
-### MODIS Pixel Area
-
-$$A_{pixel} = 500 \times 500 \text{ m}^2 = 250{,}000 \text{ m}^2 = 25 \text{ ha}$$
-
-### JRC Pixel Area
-
-$$A_{pixel} = 30 \times 30 \text{ m}^2 = 900 \text{ m}^2 = 0.09 \text{ ha}$$
-
-### NDVI Scale Factor
-
-$$\text{NDVI}_{actual} = \text{NDVI}_{raw} \times 0.0001$$
-
-### GEE Cropping Intensity Estimation
-
-$$\text{crop\_ratio} = \frac{\text{cropland\_pixels}}{\text{cropland\_pixels} + \text{mosaic\_pixels}}$$
-
-$$\text{single\_frac} = \max(0.3, \ 0.7 - (1 - \text{crop\_ratio}) \times 0.4)$$
-
-$$\text{double\_frac} = \min(0.5, \ 0.2 + \text{crop\_ratio} \times 0.3)$$
-
-$$\text{triple\_frac} = \max(0, \ 1.0 - \text{single\_frac} - \text{double\_frac})$$
-
-$$\text{area\_ha} = \text{total\_pixels} \times 25 \times \text{fraction}$$
-
-### GEE Surface Water (JRC)
-
-$$\text{perennial\_ha} = \text{permanent\_pixels} \times 0.09$$
-
-$$\text{monsoon\_ha} = \text{seasonal\_pixels} \times 0.09 \times 0.7$$
-
-$$\text{winter\_ha} = \text{seasonal\_pixels} \times 0.09 \times 0.3$$
-
-**Fallback from occurrence mean:**
-
-$$\text{norm} = \min\left(\frac{\text{occurrence\_mean}}{100}, 1.0\right)$$
-
-$$\text{perennial\_ha} = \text{norm}^2 \times 50$$
-
-$$\text{monsoon\_ha} = \text{norm} \times (1 - \text{norm}) \times 120$$
-
-$$\text{winter\_ha} = (1 - \text{norm})^2 \times 30$$
-
-### GEE Vegetation from NDVI
-
-$$\text{veg\_fraction} = \min\left(\frac{\text{ndvi\_mean}}{0.8}, 1.0\right)$$
-
-$$\text{tree\_cover\_ha} = 500 \times \text{veg\_fraction} \times 0.4$$
-
-$$\text{degraded\_land\_ha} = \text{loss\_ha} \times 0.6$$
-
 ### Area (Bounding Box Approximation)
 
 $$\text{width}_{km} = \Delta\text{lng} \times 111.32 \times \cos\left(\frac{\text{lat}_{avg} \times \pi}{180}\right)$$
@@ -1241,27 +882,7 @@ Example: $\text{fiscal\_year}(2023) = \text{"2022-2023"}$
 
 ---
 
-## 18. Interview-Ready Summary Points
 
-### Architecture Highlights
-
-1. **CSVAT solves a geometric mismatch problem.** Satellite data is indexed by micro-watersheds; users need village-level reports. The app computes polygon intersections to bridge this gap.
-
-2. **Dual execution model.** WASM mode (default) runs Python in the browser via Pyodide — zero server compute cost. Server mode uses FastAPI background tasks for users who prefer traditional cloud processing.
-
-3. **MWS-first strategy with graceful fallback.** CoRE Stack (10m, India-specific) is always tried first. GEE (500m, global) is only used when the user's tehsil isn't active on CoRE Stack, and only after explicit user confirmation.
-
-4. **Backend acts as a smart proxy.** It protects API keys and service account credentials. External APIs are never called directly from the browser.
-
-### Data Science Highlights
-
-5. **Spatial intersection using Shapely.** The Shapely library computes exact polygon-polygon intersections (not approximations). The overlap fraction determines each MWS's contribution to the village-level aggregate.
-
-6. **Weighted aggregation is context-aware.** Area-based metrics (hectares) use weighted sum; ratio/index metrics (cropping intensity) use weighted average. This distinction is mathematically important — you can't average areas, and you can't sum intensities.
-
-7. **Multiple satellite data sources.** CoRE Stack uses IndiaSAT (10m). GEE uses MODIS MCD12Q1 (LULC, 500m), JRC GSW (water, 30m), and MODIS MOD13A2 (NDVI, 500m). Each has different resolution and processing pipelines.
-
-8. **NDVI scale factor.** MODIS stores NDVI as integers × 10,000. The `0.0001` scale factor converts back to the ecological -1 to +1 range.
 
 ### Engineering Highlights
 
@@ -1275,11 +896,10 @@ Example: $\text{fiscal\_year}(2023) = \text{"2022-2023"}$
 
 ### Key Technical Decisions
 
-13. **Why proxy GEE through backend?** GEE requires a service account key (credentials). Embedding this in the frontend would be a security risk. The backend handles authentication and returns only aggregated data.
+13. **Why proxy GEE through backend?** GEE requires a service account key (credentials). Embedding this in the frontend would be a security risk. The backend handles authentication and returns only signed download URLs for the client to safely download the GeoTIFF.
 
 14. **Why fiscal years for CoRE Stack?** India's agricultural year runs April–March. CoRE Stack stores data by fiscal year (e.g., "2022-2023" for crops harvested in that period). The conversion `year Y → "${Y-1}-${Y}"` aligns calendar year inputs with CoRE Stack keys.
 
-15. **Why is the MWS intersection done on both client and server?** The code is mirrored in `wasmEngine.js` (embedded Python for Pyodide) and `mws_intersection_service.py` (backend). This enables either execution mode to produce identical results.
 
 ---
 
@@ -1288,8 +908,8 @@ Example: $\text{fiscal\_year}(2023) = \text{"2022-2023"}$
 | File                                                | Lines | Role                                                  |
 | --------------------------------------------------- | ----- | ----------------------------------------------------- |
 | `frontend/src/pages/Dashboard.jsx`                  | 487   | Main orchestration — mode switching, state management |
-| `frontend/src/services/wasmEngine.js`               | 815   | MWS pipeline + GEE fallback + CSV/HTML generation     |
-| `frontend/src/services/pyodideEngine.js`            | 372   | Pyodide loader + GEE data analytics Python code       |
+| `frontend/src/services/wasmEngine.js`               | 815   | Raster & MWS pipelines + CSV/HTML generation          |
+| `frontend/src/services/pyodideEngine.js`            | 372   | Pyodide loader + raster analytics Python code         |
 | `frontend/src/components/BoundarySelector.jsx`      | 857   | 3-mode boundary input component                       |
 | `frontend/src/components/ReportViewer.jsx`          | 711   | Results visualization + narrative generation          |
 | `frontend/src/components/ExportManager.jsx`         | ~120  | Export buttons + blob generation                      |
@@ -1301,14 +921,14 @@ Example: $\text{fiscal\_year}(2023) = \text{"2022-2023"}$
 | `backend/app/database.py`                           | —     | SQLAlchemy engine + session factory                   |
 | `backend/app/api/analytics.py`                      | 152   | POST /api/v1/analytics/mws endpoint                   |
 | `backend/app/api/corestack.py`                      | —     | CoRE Stack proxy routes                               |
-| `backend/app/api/gee.py`                            | ~105  | GEE proxy routes                                      |
+| `backend/app/api/gee.py`                            | ~105  | GEE raster download URL proxy routes                  |
 | `backend/app/api/jobs.py`                           | ~250  | Job CRUD + asset delivery                             |
 | `backend/app/api/boundaries.py`                     | —     | Boundary resolution routes                            |
 | `backend/app/api/auth.py`                           | —     | JWT token endpoint                                    |
 | `backend/app/api/layers.py`                         | —     | Layer metadata endpoint                               |
 | `backend/app/services/mws_intersection_service.py`  | 615   | **Core engine** — spatial intersection + aggregation  |
 | `backend/app/services/corestack_client.py`          | 325   | httpx client for all CoRE Stack APIs                  |
-| `backend/app/services/gee_service.py`               | ~285  | ee library GEE data fetching                          |
+| `backend/app/services/gee_service.py`               | ~285  | ee library GEE URL signing                            |
 | `backend/app/services/boundary_service.py`          | ~140  | GeoJSON validation + admin resolution                 |
 | `backend/app/services/report_service.py`            | 452   | Jinja2 HTML report + CSV generation                   |
 | `backend/app/services/pdf_service.py`               | —     | Playwright HTML → PDF                                 |
@@ -1339,7 +959,6 @@ Example: $\text{fiscal\_year}(2023) = \text{"2022-2023"}$
 | `REQUIRE_AUTH`                  | Enable/disable authentication                                       |
 | `VITE_API_BASE`                 | Frontend API URL (e.g., `http://localhost:8000`)                    |
 | `VITE_GOOGLE_MAPS_API_KEY`      | Google Maps JavaScript API key                                      |
+| `GROQ_API_KEY`                  | Groq API key for LLM                                                |
 
 ---
-
-_This document was generated from a complete analysis of the CSVAT codebase. Every formula, endpoint, and data flow described here is traced directly from the source code._

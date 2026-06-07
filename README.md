@@ -158,7 +158,7 @@ The frontend will be available at **http://localhost:5173**.
 | Key                    | Provider                      | Used For                                 |
 | ---------------------- | ----------------------------- | ---------------------------------------- |
 | `CORESTACK_API_KEY`    | [CoRE Stack](https://core-stack.org/) | MWS data, village geometries, raster layers |
-| `GEE_SERVICE_ACCOUNT`  | [Google Earth Engine](https://earthengine.google.com/) | IndiaSAT LULC raster extraction, GEE fallback |
+| `GEE_SERVICE_ACCOUNT`  | [Google Earth Engine](https://earthengine.google.com/) | IndiaSAT LULC raster extraction |
 | `VITE_GOOGLE_MAPS_KEY` | [Google Cloud Console](https://console.cloud.google.com/) | Maps display, Places autocomplete |
 
 ---
@@ -232,8 +232,8 @@ cd backend && python scripts/seed_stories.py app/data/village_stories_batch_1_ou
 │                  FastAPI Backend                          │
 │  ┌──────────┐  ┌───────┴──────┐  ┌─────────────────────┐ │
 │  │ CoRE     │  │ GEE Proxy    │  │ Raster Proxy        │ │
-│  │ Stack    │  │ (LULC/Water/ │  │ (GeoServer/GEE      │ │
-│  │ Proxy    │  │  NDVI)       │  │  tile URLs)         │ │
+│  │ Stack    │  │ (Signed      │  │ (GeoServer/GEE      │ │
+│  │ Proxy    │  │  URLs)       │  │  tile URLs)         │ │
 │  └────┬─────┘  └──────┬───────┘  └──────┬──────────────┘ │
 │       │               │                 │                 │
 │  ┌────┴───────────────┴─────────────────┴──────────────┐ │
@@ -246,9 +246,8 @@ cd backend && python scripts/seed_stories.py app/data/village_stories_batch_1_ou
 
 | Path             | Resolution | Where           | When                                     |
 | ---------------- | ---------- | --------------- | ---------------------------------------- |
-| **Raster Tiled** | 10m        | 100% Browser    | Default — downloads GeoTIFF tiles client-side |
+| **High Accuracy Raster** | 10m | 100% Browser    | Default — downloads GeoTIFF tiles client-side |
 | **MWS Vector**   | 10m        | Browser (WASM)  | Fallback — spatial intersection of MWS polygons |
-| **GEE Fallback** | 500m       | Browser (WASM)  | When CoRE Stack data unavailable         |
 
 ---
 
