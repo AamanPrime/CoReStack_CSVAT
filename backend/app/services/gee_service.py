@@ -9,6 +9,7 @@ All heavy computation happens on GEE servers; aggregated results are returned.
 import os
 import json
 import logging
+import tempfile
 import ee
 from functools import lru_cache
 from app.config import get_settings
@@ -26,15 +27,23 @@ def _init_ee():
     if _ee_initialised:
         return
 
-    key_file = get_settings().GEE_KEY_FILE
-    service_account = get_settings().GEE_SERVICE_ACCOUNT
-    project = get_settings().GEE_PROJECT
+    settings = get_settings()
+    key_file = settings.GEE_KEY_FILE
+    key_json = settings.GEE_KEY_JSON
+    service_account = settings.GEE_SERVICE_ACCOUNT
+    project = settings.GEE_PROJECT
+
+    if key_json:
+        tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False)
+        tmp.write(key_json)
+        tmp.close()
+        key_file = tmp.name
+        logger.info("Using GEE_KEY_JSON env var -> temp file %s", key_file)
 
     if not key_file or not os.path.exists(key_file):
         raise RuntimeError(
-            f"GEE service account key file not found: {key_file}. "
-            "Set GEE_KEY_FILE in backend/.env to the path of your "
-            "service account JSON key."
+            f"GEE auth failed: no GEE_KEY_JSON env var and GEE_KEY_FILE not found at '{key_file}'. "
+            "Set one of them in your environment."
         )
 
     # Disable GCE metadata check (causes hangs outside GCE)
