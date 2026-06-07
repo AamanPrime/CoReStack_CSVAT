@@ -703,7 +703,28 @@ class CachedBoundary(Base):
 
 ---
 
-## 15. Complete Mathematical Formula Reference
+## 15. AI Storyboard Generation
+
+The CSVAT platform includes an automated AI Storyboard generator that synthesizes the complex raster/vector analytics into a 14-slide narrative presentation.
+
+### Data Preparation (Frontend)
+Before calling the AI, the frontend (`sc.py` or equivalent via `llmEngine.js`) orchestrates data collection:
+1. **Satellite Analytics**: Extracts the computed LULC metrics, crop intensity changes, and vegetation transitions.
+2. **OSM Overpass**: Queries OpenStreetMap via the Overpass API to fetch local infrastructure (road types, building counts, amenities) and **named landmarks** (rivers, forests, heritage sites).
+3. **Data Structuring**: Aggregates this raw data into a dense JSON payload (`insights`, `osm_summary`, `landmarks`).
+
+### LLM Prompting (Backend)
+The frontend sends the structured JSON to the backend proxy (`POST /api/v1/storyboard/generate`). The backend injects this data into a highly constrained system prompt instructing the model to act as a GIS analyst.
+- **Model Used**: `meta-llama/llama-4-scout-17b-16e-instruct` (via Groq).
+- **Constraints**: Strict JSON output, no filler text, mandatory 14-slide structure.
+- **Security**: The `GROQ_API_KEY` remains securely on the server; the frontend only passes data.
+
+### Storage & Retrieval
+Once Groq returns the JSON slides, the frontend sends them to `POST /api/v1/storyboard/{village_id}` to be cached in the PostgreSQL database. Subsequent requests for the same village fetch the cached slides via `GET /api/v1/storyboard/{village_id}`.
+
+---
+
+## 16. Complete Mathematical Formula Reference
 
 ### Spatial Intersection
 
