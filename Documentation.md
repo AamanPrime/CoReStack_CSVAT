@@ -61,9 +61,11 @@
 │     ┌────────────┴────────────────────────────────┘                  │
 │     │                                                                │
 │  ┌──┴──────────────────────────────────────────────────────────┐    │
-│  │  wasmEngine.js  (MWS-first pipeline)                        │    │
-│  │   ├─ tryMWSAnalytics()  → Pyodide + Shapely (WASM)         │    │
-│  │   │   └─ Spatial intersection + weighted aggregation        │    │
+│  │  Client-Side Computation Engines                            │    │
+│  │   ├─ rasterEngine.js (Primary: High Accuracy Raster)        │    │
+│  │   │   └─ Pyodide (WASM) + geotiff.js (Pixel Histogram)      │    │
+│  │   ├─ wasmEngine.js (Secondary: MWS Vector)                  │    │
+│  │       └─ Pyodide (WASM) + Shapely (Spatial Intersection)    │    │
 │  └──┬──────────────────────────────────────────────────────────┘    │
 │     │                                                                │
 └─────┼────────────────────────────────────────────────────────────────┘
@@ -74,19 +76,18 @@
 │                                                                     │
 │  ┌──────────────────────────────────────────────────────────────┐   │
 │  │  API Routers:                                                 │   │
+│  │   /api/v1/gee/*           → GEE GeoTIFF URL signing          │   │
 │  │   /api/v1/corestack/*     → CoRE Stack API proxy             │   │
 │  │   /api/v1/boundaries/*    → Boundary resolution & search     │   │
-│  │   /api/v1/layers          → Available layer metadata         │   │
-│  │   /api/v1/auth/*          → JWT token management             │   │
+│  │   /api/v1/storyboard/*    → Village Stories LLM Generation   │   │
 │  └──────────────┬───────────────────────────────────────────────┘   │
 │                 │                                                    │
 │  ┌──────────────┴───────────────────────────────────────────────┐   │
 │  │  Services:                                                    │   │
-│  │   MWSIntersectionService  — Shapely spatial intersection      │   │
+│  │   GEEService              — ee.Image().getDownloadURL()       │   │
 │  │   CoreStackClient         — httpx HTTP client (X-API-Key)     │   │
 │  │   BoundaryService         — GeoJSON validation                │   │
-│  │   ReportService           — Jinja2 HTML + CSV generation      │   │
-│  │   PDFService              — Playwright PDF rendering          │   │
+│  │   VillageStoryService     — LLM generation with Meta Llama 4  │   │
 │  └──────────────────────────────────────────────────────────────┘   │
 │                                                                     │
 │  ┌────────────────┐                                                 │
@@ -116,15 +117,14 @@
 | **Charts**         | Chart.js 4                            | Bar, line, stacked charts             |
 | **Maps**           | Google Maps JavaScript API + Leaflet  | Boundary display, Places Autocomplete |
 | **Client Compute** | Pyodide (Python 3.11 in WebAssembly)  | In-browser numpy + Shapely            |
+| **Raster Parsing** | geotiff.js + turf.js                  | In-browser GeoTIFF parsing & masking  |
 | **Backend**        | FastAPI (Python 3.11)                 | Async REST API server                 |
 | **HTTP Client**    | httpx (async)                         | CoRE Stack API calls                  |
-| **Geospatial**     | Shapely, GeoAlchemy2                  | Polygon intersection, PostGIS         |
-| **Earth Engine**   | ee (Python library) + Service Account | IndiaSAT LULC raster extraction       |
-| **Database**       | PostgreSQL 15 + PostGIS 3.3           | Cached boundaries                     |
+| **Earth Engine**   | ee (Python library) + Service Account | GEE URL signing for raster extraction |
+| **Database**       | PostgreSQL 15 + PostGIS 3.3           | Village Stories & cached boundaries   |
 | **ORM**            | SQLAlchemy 2.0                        | Database models                       |
 | **Auth**           | python-jose (JWT)                     | Token-based authentication            |
-| **Templating**     | Jinja2                                | Server-side HTML reports              |
-| **PDF**            | Playwright (headless Chromium)        | HTML → PDF conversion                 |
+| **LLM Inference**  | Groq API (Meta Llama 4 Scout)         | Narrative storyboard generation       |
 | **Container**      | Docker Compose                        | 2-service orchestration               |
 
 ---
@@ -165,26 +165,33 @@ User Action                           System Response
 
 4. Click "Run Analysis"               → Dashboard.handleWASMSubmit()
 
-5. [WASM] Resolve boundary            → wasmEngine.resolveBoundary()
-   ├─ CoRE Stack villages?            → GET /api/v1/boundaries/village/{id}
-   ├─ Google Places?                  → Uses stored GeoJSON
-   └─ Custom GeoJSON?                 → Uses uploaded geometry
+5. [WASM] Pipeline Selection          → Determines Primary (Raster) or Secondary (MWS)
+   
+6. [Primary: Raster]                  → rasterEngine.js
+   ├─ Fetch Signed GEE URL            → GET /api/v1/gee/signed-url (bbox)
+   ├─ Load Pyodide + NumPy            → CDN load
+   ├─ Sequential Year Loop            → For each selected fiscal year:
+   │  ├─ Download GeoTIFF             → Fetches full TIFF from GEE
+   │  ├─ Parse & Mask                 → geotiff.js + turf.booleanPointInPolygon
+   │  ├─ Compute Pixel Histogram      → Python WASM: numpy.bincount
+   │  └─ Free Memory                  → Clear ArrayBuffer + Pyodide namespace
+   └─ Return village-level results    → { cropping_intensity, surface_water, ... }
 
-6. [WASM] Try MWS Analytics           → wasmEngine.tryMWSAnalytics()
+7. [Secondary: MWS Vector]            → wasmEngine.tryMWSAnalytics()
    ├─ Fetch MWS geometries            → GET /api/v1/corestack/mws-geometries
    ├─ Fetch tehsil analytics data     → GET /api/v1/corestack/tehsil-data
    ├─ Load Pyodide + Shapely          → CDN load + micropip install
-   ├─ Run spatial intersection         → Python WASM: compute_intersections()
-   ├─ Run weighted aggregation         → Python WASM: aggregate_cropping(), etc.
-   └─ Return village-level results     → { cropping_intensity, surface_water, ... }
+   ├─ Run spatial intersection        → Python WASM: compute_intersections()
+   ├─ Run weighted aggregation        → Python WASM: aggregate_cropping(), etc.
+   └─ Return village-level results    → { cropping_intensity, surface_water, ... }
 
-7. Render results                     → ReportViewer.jsx
+8. Render results                     → ReportViewer.jsx
    ├─ Summary statistics cards
    ├─ Chart.js stacked bar charts
    ├─ Data tables
    ├─ Deforestation transitions
-   ├─ Auto-generated narrative
-   └─ Export buttons (HTML/CSV/JSON/PDF)
+   ├─ Auto-generated narrative        → LLM generation (Village Stories)
+   └─ Export buttons                  → Client-side HTML/CSV/JSON/PDF
 ```
 
 ---
@@ -193,16 +200,17 @@ User Action                           System Response
 
 The `BoundarySelector.jsx` component (857 lines) supports three boundary input methods:
 
-### Method 1: CoRE Stack Cascading Selector
+### Method 1: Cascading Selector (GEE + CoRE Stack)
 
 ```
 State → District → Tehsil → Village
 ```
 
-- Fetches hierarchy from `GET /api/v1/corestack/active-locations`
-- Each dropdown populates the next level
-- Village selection fetches GeoJSON geometry from `GET /api/v1/corestack/village-geometries`
-- Returns: `{ state, district, tehsil, village_name, boundary_geojson, boundary_id }`
+- Fetches the pan-India administrative hierarchy (States, Districts, Tehsils) dynamically from GEE proxy routes.
+- Checks MWS availability for the selected tehsil by validating against CoRE Stack's `GET /api/v1/corestack/active-locations`.
+- Each dropdown populates the next level. If a district or tehsil has no data, the selector intelligently skips it.
+- Village selection fetches GeoJSON geometry from the GEE `Village_pan_india` dataset. If no villages exist, it gracefully falls back to the tehsil or district boundary.
+- Returns: `{ state, district, tehsil, village_name, boundary_geojson, boundary_id, mwsAvailable }`
 
 ### Method 2: Google Places Autocomplete
 
@@ -248,199 +256,84 @@ function computeAreaHectares(geojson) {
 
 ---
 
-## 8. Primary Pipeline: CoRE Stack MWS (10m Resolution)
+## 8. Analytics Pipelines
 
-This is the **preferred** data path. CoRE Stack provides India-specific satellite-derived land analytics at 10m resolution indexed by Micro-Watersheds.
+The application features a dual-tier execution architecture to ensure maximum accuracy when possible, with robust fallbacks.
 
-### 8.1 Data Fetching from CoRE Stack API
+### 8.1 Primary Pipeline: High Accuracy Raster (IndiaSAT LULC)
 
-**Step 1: Fetch MWS Polygon Geometries**
+The **primary and preferred** data path uses the **10m IndiaSAT LULC v3** dataset directly from Google Earth Engine. The browser fetches a signed GeoTIFF URL, downloads the full-resolution raster, and processes the pixels natively in WebAssembly.
 
-```
-GET /api/v1/get_mws_geometries/?state=...&district=...&tehsil=...
-```
+#### A. Pixel Extraction & Masking
+1. The backend proxy generates a signed GEE download URL for a bounding box covering the village polygon.
+2. The browser downloads the GeoTIFF using `geotiff.js`.
+3. The browser generates a mask: for every pixel in the bounding box, it calculates the geographic coordinates and uses `turf.booleanPointInPolygon` to determine if the pixel falls exactly within the village boundary.
+4. Masked pixels are fed into a NumPy array (via Pyodide) to generate a histogram of LULC classes.
 
-Returns a GeoJSON `FeatureCollection` where each Feature is an MWS polygon:
+#### B. Pixel Area Calculation
+Unlike vector data which provides pre-calculated areas, the raster path calculates physical area by multiplying the count of pixels by the physical area of a single pixel. 
+The area of a pixel (in hectares) varies slightly by latitude and is calculated as:
 
-```json
-{
-  "type": "FeatureCollection",
-  "features": [
-    {
-      "type": "Feature",
-      "geometry": { "type": "MultiPolygon", "coordinates": [...] },
-      "properties": { "uid": "12_234647" }
-    }
-  ]
-}
-```
+$$\text{pixel\_area\_ha} = \text{width}_{km} \times \text{height}_{km} \times 100 / \text{total\_pixels\_in\_bbox}$$
 
-**Step 2: Fetch Tehsil-Level Analytics Data**
+#### C. LULC Class Mappings
+Metrics are derived by grouping specific pixel classes from the IndiaSAT classification:
 
-```
-GET /api/v1/get_tehsil_data/?state=...&district=...&tehsil=...
-```
+**Cropping Intensity**
+- **Single Crop Area:** Class 8 (Kharif) + Class 9 (Non-Kharif)
+- **Double Crop Area:** Class 10
+- **Triple Crop Area:** Class 11
+- **Total Cropped Area (NSA):** Single + Double + Triple
+- **Intensity Index:** `(Single*1 + Double*2 + Triple*3) / NSA`
 
-Returns a dict keyed by data vector type:
+**Surface Water (Cumulative Seasons)**
+- **Kharif Water:** Classes 2 + 3 + 4
+- **Rabi Water:** Classes 3 + 4
+- **Zaid Water:** Class 4
+- **Total Water:** Classes 2 + 3 + 4 (unique pixels)
 
-```json
-{
-  "data": {
-    "croppingIntensity_annual": [
-      {
-        "uid": "12_234647",
-        "single_cropped_area_in_ha_2022-2023": 45.6,
-        "doubly_cropped_area_in_ha_2022-2023": 23.1,
-        "triply_cropped_area_in_ha_2022-2023": 5.2,
-        "cropping_intensity_unit_less_2022-2023": 1.35
-      }
-    ],
-    "surfaceWaterBodies_annual": [
-      {
-        "uid": "12_234647",
-        "kharif_area_in_ha_2022-2023": 12.3,
-        "rabi_area_in_ha_2022-2023": 8.7,
-        "zaid_area_in_ha_2022-2023": 3.1,
-        "total_area_in_ha_2022-2023": 24.1
-      }
-    ],
-    "change_detection_deforestation": [
-      {
-        "uid": "12_234647",
-        "total_deforestation_area_in_ha": 2.5,
-        "forest_to_barren_area_in_ha": 0.8,
-        "forest_to_built_up_area_in_ha": 0.3,
-        "forest_to_farm_area_in_ha": 1.0,
-        "forest_to_scrub_land_area_in_ha": 0.4,
-        "forest_to_forest_area_in_ha": 120.5
-      }
-    ],
-    "change_detection_afforestation": [...],
-    "terrain": [
-      {
-        "uid": "12_234647",
-        "hill_slope_area_in_ha": 15.2,
-        "plain_area_in_ha": 80.3,
-        "ridge_area_in_ha": 5.0,
-        "slopy_area_in_ha": 12.1,
-        "valley_area_in_ha": 8.4
-      }
-    ],
-    "change_detection_cropintensity": [
-      {
-        "uid": "12_234647",
-        "single_to_double_area_in_ha": 5.3,
-        "double_to_triple_area_in_ha": 2.1,
-        ...
-      }
-    ]
-  },
-  "status": "ok"
-}
-```
+#### D. Raster Change Detection
+Because the raster pipeline processes raw pixels year-by-year, change detection is computed dynamically in Pyodide by comparing the pixel arrays of the *first available year* against the *last available year*.
 
-### 8.2 Spatial Intersection Mathematics (Shapely)
+**Crop Intensity Change**
+Pixels are grouped by cropping intensity level (Single=Classes 8 & 9, Double=Class 10, Triple=Class 11). For each pixel, the starting level is compared against the ending level. Any pixel where the ending level is higher than the starting level (e.g., Single → Double) is summed into the **Total Change CropIntensity**.
 
-The **core mathematical operation** of CSVAT. A village boundary can overlap multiple MWS polygons. We need to know _what fraction_ of each MWS falls within the village.
+**Vegetation & Tree Cover Change**
+Calculates pixel-by-pixel transitions involving Class 6 (Tree Cover):
+- **Afforestation (Gain):** Pixels that were *not* Class 6 in the start year, but *are* Class 6 in the end year.
+- **Deforestation (Loss):** Pixels that *were* Class 6 in the start year, but transitioned to a different class in the end year. The new class determines the transition label (e.g., Tree Cover → Built Up).
+- **Net Change:** Total Tree Cover (end year) - Total Tree Cover (start year).
 
-**Algorithm (from `compute_intersections()`):**
+---
 
-```python
-for each MWS polygon:
-    1. Validate geometries (buffer(0) fixes self-intersections)
+### 8.2 Secondary Pipeline: MWS Vector (CoRE Stack API)
 
-    2. Check if village.intersects(mws)
+When raw raster computation fails or is unavailable, the system falls back to the **MWS Vector pipeline**, utilizing pre-aggregated CoRE Stack API data indexed by Micro-Watersheds.
 
-    3. Compute intersection polygon:
-       overlap = village.intersection(mws)
-
-    4. Compute overlap fraction:
-       overlap_fraction = A(overlap) / A(mws)
-
-       where A() = area in degrees²
-
-    5. Convert to hectares (approximate):
-       area_ha = area_deg² × 111² × 100
-
-       Derivation: 1° latitude ≈ 111 km
-                   area_deg² × (111 km/°)² = area_km²
-                   area_km² × 100 ha/km² = area_ha
-```
-
-**Mathematical notation:**
+#### A. Spatial Intersection Mathematics (Shapely)
+A village boundary can overlap multiple MWS polygons. To determine the village's metrics, we compute the geometric intersection using Pyodide (WASM) and Shapely.
 
 For village polygon $V$ and MWS polygon $M_i$:
 
 $$f_i = \frac{A(V \cap M_i)}{A(M_i)}$$
 
 Where:
-
 - $f_i$ = overlap fraction for MWS $i$ (dimensionless, 0 to 1)
-- $V \cap M_i$ = geometric intersection of village and MWS polygons
-- $A(\cdot)$ = area function (in degrees²)
+- $V \cap M_i$ = geometric intersection polygon
+- $A(\cdot)$ = area function
 
-**Hectare conversion:**
-
-$$A_{ha} = A_{deg^2} \times 111^2 \times 100$$
-
-This is an equatorial approximation ($1° \approx 111$ km). Since CSVAT operates on villages in India (latitudes 8°–35°N), this introduces ~3-15% error, but is acceptable for relative comparisons.
-
-**Fallback (when Shapely is unavailable in Pyodide):**
-
-A bounding-box approximation is used:
-
-```python
-def _bbox_overlap(b1, b2):
-    # Compute intersection of two axis-aligned bounding boxes
-    ix0, iy0 = max(b1[0], b2[0]), max(b1[1], b2[1])
-    ix1, iy1 = min(b1[2], b2[2]), min(b1[3], b2[3])
-    inter = (ix1 - ix0) * (iy1 - iy0)  # if positive
-    mws_area = (b2[2] - b2[0]) * (b2[3] - b2[1])
-    return inter / mws_area
-```
-
-### 8.3 Weighted Aggregation Formulas
-
+#### B. Weighted Aggregation Formulas
 Once we have overlap fractions, we aggregate MWS-level metrics to the village level using two methods:
 
-**Weighted Sum** (for extensive properties — areas in hectares):
-
+**Weighted Sum** (for extensive properties like hectares):
 $$\text{village\_value} = \sum_{i} \text{mws\_value}_i \times f_i$$
+*Used for: cropped area, water area, forest area, etc.*
 
-Used for: all area measurements (cropped area, water area, forest area, etc.)
-
-**Weighted Average** (for intensive properties — percentages, indices):
-
+**Weighted Average** (for intensive properties like indices):
 $$\text{village\_value} = \frac{\sum_{i} \text{mws\_value}_i \times f_i}{\sum_{i} f_i}$$
+*Used for: cropping intensity index, density percentages.*
 
-Used for: cropping intensity index, density percentages
-
-**Implementation (from `aggregate_mws_metric()`):**
-
-```python
-def aggregate_mws_metric(intersections, mws_data_by_uid, metric_key, aggregation):
-    total_weight = 0.0
-    weighted_sum = 0.0
-
-    for ix in intersections:
-        uid = ix["mws_uid"]
-        fraction = ix["overlap_fraction"]
-        value = mws_data_by_uid.get(uid, {}).get(metric_key)
-
-        if value is not None:
-            weighted_sum += float(value) * fraction
-            total_weight += fraction
-
-    if total_weight == 0:
-        return None
-
-    if aggregation == "weighted_sum":
-        return weighted_sum
-    else:  # weighted_average
-        return weighted_sum / total_weight
-```
-
-### 8.4 Cropping Intensity Aggregation
+### 8.3 Cropping Intensity Aggregation
 
 **Data source:** `croppingIntensity_annual` vector from CoRE Stack
 
@@ -480,7 +373,7 @@ $$\text{total\_cropped\_ha} = \text{single\_crop\_ha} + \text{double\_crop\_ha} 
 - 2.0 = all land double-cropped
 - 3.0 = all land triple-cropped
 
-### 8.5 Surface Water Aggregation
+### 8.4 Surface Water Aggregation
 
 **Data source:** `surfaceWaterBodies_annual` vector from CoRE Stack
 
@@ -511,7 +404,7 @@ $$\text{total\_cropped\_ha} = \text{single\_crop\_ha} + \text{double\_crop\_ha} 
 }
 ```
 
-### 8.6 Vegetation & Deforestation Aggregation
+### 8.5 Vegetation & Deforestation Aggregation
 
 **Data source:** `change_detection_deforestation` and `change_detection_afforestation` vectors
 
@@ -551,21 +444,8 @@ $$\text{degraded\_land\_ha} = \text{forest\_to\_barren} + \text{forest\_to\_scru
 }
 ```
 
-### 8.7 Terrain Composition
 
-**Data source:** `terrain` vector from CoRE Stack
-
-**Categories aggregated (all weighted_sum):**
-
-- `hill_slope_area_in_ha`
-- `plain_area_in_ha`
-- `ridge_area_in_ha`
-- `slopy_area_in_ha`
-- `valley_area_in_ha`
-
-$$\text{total\_area\_ha} = \text{hill\_slope} + \text{plain} + \text{ridge} + \text{slopy} + \text{valley}$$
-
-### 8.8 Crop Intensity Change Detection
+### 8.6 Crop Intensity Change Detection
 
 **Data source:** `change_detection_cropintensity` vector from CoRE Stack
 
@@ -586,7 +466,7 @@ Tracks how land transitioned between cropping intensity classes over time:
 
 All aggregated using **weighted_sum**.
 
-### 8.9 Waterbodies
+### 8.7 Waterbodies
 
 **Data source:** Separate CoRE Stack API endpoint
 
@@ -606,7 +486,7 @@ Fetched for the tehsil level (not intersection-weighted since waterbodies are po
 ---
 
 
-## 10. All Backend API Endpoints
+## 9. All Backend API Endpoints
 
 ### CoRE Stack Proxy (`/api/v1/corestack/`)
 
@@ -644,7 +524,7 @@ Fetched for the tehsil level (not intersection-weighted since waterbodies are po
 
 ---
 
-## 11. All CoRE Stack API Methods Used
+## 10. All CoRE Stack API Methods Used
 
 The `CoreStackClient` class (`corestack_client.py`) wraps these CoRE Stack REST API endpoints:
 
@@ -671,7 +551,7 @@ Headers: { "X-API-Key": "<CORESTACK_API_KEY>" }
 
 ---
 
-## 12. Output Generation & Visualization
+## 11. Output Generation & Visualization
 
 ### ReportViewer.jsx (711 lines)
 
@@ -708,15 +588,12 @@ The report viewer renders results into these sections:
 
 - **Table:** All transition types (Single→Double, Double→Triple, etc.) with area
 
-#### 6. Terrain Composition
 
-- **Table:** Hill Slope, Plain, Ridge, Slopy, Valley with area in hectares
-
-#### 7. Waterbodies
+#### 6. Waterbodies
 
 - **Table:** Individual waterbody names, types, and areas
 
-#### 8. Auto-Generated Narrative (`generateNarrative()`)
+#### 7. Auto-Generated Narrative (`generateNarrative()`)
 
 The `ReportViewer` generates a natural-language "data story" summarizing key findings:
 
@@ -740,7 +617,7 @@ function generateNarrative(results) {
 
 ---
 
-## 13. Export Formats
+## 12. Export Formats
 
 ### Client-Side Exports (ExportManager.jsx)
 
@@ -751,48 +628,36 @@ function generateNarrative(results) {
 | **JSON** | `JSON.stringify(results)` — raw JSON data                                                           |
 | **PDF**  | Client-side generation (html2pdf)                                                                   |
 
-### Server-Side Report Generation
-
-**HTML Report (`report_service.py`):**
-
-- Jinja2 template rendering
-- Inline CSS (dark theme, glassmorphism design)
-- Embedded Chart.js scripts
-- Self-contained (no external dependencies needed to open)
-
-**PDF Report (`pdf_service.py`):**
-
-- Takes the HTML report
-- Renders via Playwright (headless Chromium)
-- Produces a pixel-perfect PDF
-
-**CSV Export (server-side):**
-
-- Tabular format with sections for each layer
-- Includes all raw numeric data
 
 ---
 
-## 14. Authentication System
+## 13. Authentication System
 
 ### JWT Token Flow
 
 ```python
-# auth_middleware.py
-async def verify_token(authorization: Optional[str] = Header(None)):
-    settings = get_settings()
+# app/utils/auth_middleware.py
+async def verify_token(
+    credentials: HTTPAuthorizationCredentials = Depends(HTTPBearer(auto_error=False)),
+) -> dict | None:
     if not settings.REQUIRE_AUTH:
-        return {"sub": "anonymous"}  # Auth disabled in dev
+        return None  # Auth disabled — allow all requests
 
-    # Decode JWT with python-jose
-    payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=["HS256"])
-    return payload
+    if credentials is None:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    try:
+        token = credentials.credentials
+        return jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
+    except JWTError as e:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
 ```
 
 - **REQUIRE_AUTH** setting controls whether authentication is enforced
 - JWT tokens signed with HS256 algorithm
-- Tokens include `sub` (subject) and `exp` (expiration) claims
-- All API endpoints use `Depends(verify_token)` for consistent auth
+- Tokens include `sub`, `exp`, and `api_key` claims
+- API endpoints use `Depends(verify_token)` to enforce auth only when configured
+
 
 ### Token Generation
 
@@ -804,26 +669,22 @@ Response: { "access_token": "eyJ...", "token_type": "bearer" }
 
 ---
 
-## 15. Database Models
+## 14. Database Models
 
-### Job Model (`models/job.py`)
+### Village Story Models (`models/village_story.py`, `models/custom_slide.py`)
+
+The database now primarily stores LLM-generated narrative content and cached slide configurations for the Village Storyboard.
 
 ```python
-class Job(Base):
-    __tablename__ = "jobs"
+class VillageStory(Base):
+    __tablename__ = "village_stories"
 
-    id          = Column(UUID, primary_key=True, default=uuid4)
-    status      = Column(Enum("pending", "running", "completed", "failed"))
-    job_type    = Column(String, default="village_analytics")
-    parameters  = Column(JSONB)       # Input: boundary, layers, years
-    results     = Column(JSONB)       # Output: analytics data
-    boundary    = Column(Geometry("MULTIPOLYGON", srid=4326))
-    error       = Column(Text)
-    created_at  = Column(DateTime, server_default=func.now())
-    updated_at  = Column(DateTime, onupdate=func.now())
+    id          = Column(UUID, primary_key=True)
+    village_name= Column(String, index=True)
+    state       = Column(String)
+    osm_data    = Column(JSONB)       # Contextual map data for LLM
+    narrative   = Column(Text)        # Generated text
 ```
-
-### CachedBoundary Model (`models/boundary.py`)
 
 ```python
 class CachedBoundary(Base):
@@ -842,7 +703,7 @@ class CachedBoundary(Base):
 
 ---
 
-## 16. Complete Mathematical Formula Reference
+## 15. Complete Mathematical Formula Reference
 
 ### Spatial Intersection
 
@@ -919,29 +780,23 @@ Example: $\text{fiscal\_year}(2023) = \text{"2022-2023"}$
 | `backend/app/main.py`                               | —     | FastAPI app + CORS + router mounting                  |
 | `backend/app/config.py`                             | —     | Pydantic settings (env-based config)                  |
 | `backend/app/database.py`                           | —     | SQLAlchemy engine + session factory                   |
-| `backend/app/api/analytics.py`                      | 152   | POST /api/v1/analytics/mws endpoint                   |
 | `backend/app/api/corestack.py`                      | —     | CoRE Stack proxy routes                               |
 | `backend/app/api/gee.py`                            | ~105  | GEE raster download URL proxy routes                  |
-| `backend/app/api/jobs.py`                           | ~250  | Job CRUD + asset delivery                             |
+| `backend/app/api/storyboard.py`                     | —     | LLM narrative generation controller                   |
+| `backend/app/api/village_stories.py`                | —     | Story caching / retrieval                             |
+| `backend/app/api/custom_slides.py`                  | —     | Custom slide configuration                            |
 | `backend/app/api/boundaries.py`                     | —     | Boundary resolution routes                            |
 | `backend/app/api/auth.py`                           | —     | JWT token endpoint                                    |
 | `backend/app/api/layers.py`                         | —     | Layer metadata endpoint                               |
-| `backend/app/services/mws_intersection_service.py`  | 615   | **Core engine** — spatial intersection + aggregation  |
 | `backend/app/services/corestack_client.py`          | 325   | httpx client for all CoRE Stack APIs                  |
 | `backend/app/services/gee_service.py`               | ~285  | ee library GEE URL signing                            |
 | `backend/app/services/boundary_service.py`          | ~140  | GeoJSON validation + admin resolution                 |
-| `backend/app/services/report_service.py`            | 452   | Jinja2 HTML report + CSV generation                   |
-| `backend/app/services/pdf_service.py`               | —     | Playwright HTML → PDF                                 |
 | `backend/app/services/village_search.py`            | —     | Village name search utility                           |
-| `backend/app/services/analytics/cropping.py`        | ~95   | Server-side cropping from MWS data                    |
-| `backend/app/services/analytics/water.py`           | ~90   | Server-side water from MWS data                       |
-| `backend/app/services/analytics/vegetation.py`      | ~100  | Server-side vegetation from MWS data                  |
-| `backend/app/tasks/analytics_task.py`               | ~270  | FastAPI background task — MWS-first pipeline          |
-| `backend/app/models/job.py`                         | —     | SQLAlchemy Job model                                  |
 | `backend/app/models/boundary.py`                    | —     | SQLAlchemy CachedBoundary model                       |
+| `backend/app/models/village_story.py`               | —     | SQLAlchemy VillageStory model                         |
 | `backend/app/schemas/__init__.py`                   | —     | Pydantic request/response schemas                     |
 | `backend/app/utils/auth_middleware.py`              | —     | JWT verification dependency                           |
-| `docker-compose.yml`                                | 78    | 4-service Docker orchestration                        |
+| `docker-compose.yml`                                | 78    | 2-service Docker orchestration                        |
 
 ---
 
