@@ -34,6 +34,7 @@ class Settings(BaseSettings):
     GEE_PROJECT: str = "earthengine-public"
     GEE_SERVICE_ACCOUNT: str = ""
     GEE_KEY_FILE: str = ""
+    GEE_KEY_JSON: str = ""
 
     # Google Maps (for static map proxy)
     GOOGLE_MAPS_KEY: str = ""
