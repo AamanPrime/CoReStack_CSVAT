@@ -11,7 +11,9 @@
  */
 
 const DB_NAME = 'csvat-tiff-store';
-const DB_VERSION = 1;
+// Bump version whenever cached TIFF format or affine convention changes.
+// The browser will drop the old store and start fresh on next open.
+const DB_VERSION = 2;
 const STORE_NAME = 'tiff-tiles';
 const MAX_VILLAGES = 5;
 
@@ -20,13 +22,17 @@ const MAX_VILLAGES = 5;
 function openDB() {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
-    request.onupgradeneeded = () => {
+    request.onupgradeneeded = (event) => {
       const db = request.result;
-      if (!db.objectStoreNames.contains(STORE_NAME)) {
-        const store = db.createObjectStore(STORE_NAME, { keyPath: 'key' });
-        store.createIndex('village', 'village', { unique: false });
-        store.createIndex('timestamp', 'timestamp', { unique: false });
+      // On version upgrade: drop the old store entirely so stale TIFFs
+      // (downloaded with incorrect EPSG:4326 affine) don't poison future runs.
+      if (event.oldVersion > 0 && db.objectStoreNames.contains(STORE_NAME)) {
+        db.deleteObjectStore(STORE_NAME);
+        console.info(`[TiffStore] DB upgraded v${event.oldVersion}→v${DB_VERSION}: cleared stale TIFF cache`);
       }
+      const store = db.createObjectStore(STORE_NAME, { keyPath: 'key' });
+      store.createIndex('village', 'village', { unique: false });
+      store.createIndex('timestamp', 'timestamp', { unique: false });
     };
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
@@ -82,6 +88,17 @@ export async function clearVillageTiles(villageName) {
     const cur = idx.openCursor(IDBKeyRange.only(safe));
     cur.onsuccess = () => { const c = cur.result; if (c) { c.delete(); c.continue(); } };
     tx.oncomplete = () => { db.close(); resolve(); };
+    tx.onerror = () => { db.close(); reject(tx.error); };
+  });
+}
+
+/** Clear ALL cached tiles from every village. Useful after CRS/format changes. */
+export async function clearAllTiles() {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    tx.objectStore(STORE_NAME).clear();
+    tx.oncomplete = () => { db.close(); console.info('[TiffStore] All TIFF tiles cleared.'); resolve(); };
     tx.onerror = () => { db.close(); reject(tx.error); };
   });
 }

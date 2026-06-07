@@ -148,7 +148,7 @@ HTML_REPORT_TEMPLATE = """<!DOCTYPE html>
 <body>
 <div class="container">
     <div class="header">
-        <h1>🌾 Village Analytics Report</h1>
+        <h1>{{ village_name }} Report</h1>
         <p class="subtitle">{{ village_name }} — Socio-Ecological Analysis</p>
         <div class="meta-row">
             <div class="meta-item"><label>State</label><span>{{ state }}</span></div>
@@ -160,7 +160,7 @@ HTML_REPORT_TEMPLATE = """<!DOCTYPE html>
 
     {% if cropping_intensity %}
     <div class="section">
-        <h2>🌱 Cropping Intensity Trends</h2>
+        <h2> Cropping Intensity Trends</h2>
         <div class="chart-container">
             <canvas id="croppingChart"></canvas>
         </div>
@@ -189,7 +189,7 @@ HTML_REPORT_TEMPLATE = """<!DOCTYPE html>
 
     {% if surface_water %}
     <div class="section">
-        <h2>💧 Seasonal Surface Water Availability</h2>
+        <h2> Seasonal Surface Water Availability</h2>
         <div class="chart-container">
             <canvas id="waterChart"></canvas>
         </div>
@@ -218,7 +218,7 @@ HTML_REPORT_TEMPLATE = """<!DOCTYPE html>
 
     {% if vegetation %}
     <div class="section">
-        <h2>🌳 Vegetation & Degradation Analysis</h2>
+        <h2> Vegetation & Degradation Analysis</h2>
         <div class="summary-grid">
             <div class="stat-card">
                 <div class="value neutral">{{ vegetation.tree_cover_start_ha }}</div>

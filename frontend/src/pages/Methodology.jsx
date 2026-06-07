@@ -41,46 +41,34 @@ export default function Methodology() {
             <li><strong>CRS:</strong> Downloaded in <strong>EPSG:4326</strong> — same coordinate system as the village boundary GeoJSON, eliminating CRS reprojection errors.</li>
             <li><strong>Processing:</strong> 100% client-side. The backend generates a single signed GEE download URL for the full village bbox per fiscal year. The browser downloads one contiguous GeoTIFF, parses it with <code>geotiff.js</code>, and masks pixels using <code>turf.booleanPointInPolygon</code>.</li>
             <li><strong>Memory Safety:</strong> Years are processed <strong>one at a time</strong> — each GeoTIFF ArrayBuffer is explicitly freed after analytics are extracted, preventing browser OOM crashes.</li>
-            <li><strong>Adaptive Resolution:</strong> The backend auto-selects scale (10m → 20m → 30m…) based on the bounding box size to stay under GEE's 48 MB per-request limit. Resolution used is logged in the browser console.</li>
+
             <li><strong>Storage:</strong> No caching — each GeoTIFF is downloaded, processed, and discarded in sequence.</li>
             <li><strong>Temporal Range:</strong> Agricultural years 2017-18 through 2024-25.</li>
           </ul>
         </SubSection>
 
-        <SubSection title="CoRE Stack Vector API (MWS Path &amp; Server Path)">
+        <SubSection title="CoRE Stack Vector API (MWS Path)">
           <ul className="meth-ul">
             <li><strong>Provider:</strong> CoRE Stack REST APIs — pre-computed analytics per Micro-Watershed (MWS).</li>
             <li><strong>Data Products:</strong> <code>croppingIntensity_annual</code>, <code>surfaceWaterBodies_annual</code> (with <code>kharif_area_in_ha</code>, <code>rabi_area_in_ha</code>, <code>zaid_area_in_ha</code> per agricultural year), change detection layers.</li>
             <li><strong>Coverage:</strong> Active tehsils only — requires CoRE Stack boundary selection (not available for uploaded GeoJSON boundaries).</li>
-            <li><strong>Village-level aggregation:</strong> MWS polygons are intersected with the village boundary using Shapely (Pyodide WASM client-side, or Python server-side). Values are weighted by overlap fraction.</li>
+            <li><strong>Village-level aggregation:</strong> MWS polygons are intersected with the village boundary using Shapely (Pyodide WASM client-side). Values are weighted by overlap fraction.</li>
           </ul>
         </SubSection>
 
-        <SubSection title="MODIS/JRC GEE Fallback (500m — Low Resolution)">
-          <ul className="meth-ul">
-            <li><strong>Triggered when:</strong> User explicitly selects "🌐 Use GEE" in the fallback dialog — only when CoRE Stack has no data for the selected tehsil.</li>
-            <li><strong>LULC:</strong> MODIS MCD12Q1 (500m, IGBP classification — 17 land cover classes).</li>
-            <li><strong>Water:</strong> JRC Global Surface Water v1.4 (30m — permanent vs. seasonal classification).</li>
-            <li><strong>Vegetation:</strong> MODIS MOD13A2 NDVI (500m, 16-day composite).</li>
-          </ul>
-          <WarningBox>
-            MODIS/JRC fallback has fundamentally different classification schemas.
-            Cropping intensity and seasonal water breakdowns are estimated via heuristic approximations.
-            See Section 5 (Limitations) for details.
-          </WarningBox>
-        </SubSection>
+
       </Section>
 
       {/* ─── 2. Boundary Selection ─── */}
       <Section num="2" title="Boundary Selection &amp; Village Identification" color="var(--accent-blue)">
         <p className="meth-p">Villages are identified through three methods:</p>
         <ul className="meth-ul">
-          <li><strong>CoRE Stack Registry:</strong> State → District → Tehsil → Village hierarchy. Village polygons are fetched as GeoJSON from the CoRE Stack API with verified administrative boundaries. Supports all three execution modes (High Accuracy Raster, MWS Vector, Server).</li>
+          <li><strong>CoRE Stack Registry:</strong> State → District → Tehsil → Village hierarchy. Village polygons are fetched as GeoJSON from the CoRE Stack API with verified administrative boundaries. Supports both execution modes (High Accuracy Raster, MWS Vector).</li>
           <li><strong>Places Search (Google Maps):</strong> Search any location in India by name. The polygon for the selected place is confirmed and optionally edited before analysis. Administrative metadata (State, District, Tehsil) is resolved automatically via GEE — see Section 2a below.</li>
           <li><strong>GeoJSON Upload (Pan-India):</strong> Upload any village boundary as a <code>.geojson</code> or <code>.json</code> file. Enables analysis for <em>any</em> Indian village — no CoRE Stack tehsil registration required. Admin metadata is resolved automatically.</li>
         </ul>
         <p className="meth-p">
-          For CoRE Stack boundaries, all three execution modes are available.
+          For CoRE Stack boundaries, both execution modes are available.
           For custom boundaries (Places Search or upload), analytics are computed exclusively via the High Accuracy Raster path.
         </p>
 
@@ -109,9 +97,9 @@ export default function Methodology() {
       </Section>
 
       {/* ─── 3. Spatial Processing (MWS Path) ─── */}
-      <Section num="3" title="Spatial Processing (MWS &amp; Server Path Only)" color="var(--accent-amber)">
+      <Section num="3" title="Spatial Processing (MWS Path Only)" color="var(--accent-amber)">
         <p className="meth-p">
-          This section applies only to the <strong>MWS Vector</strong> and <strong>Server</strong> paths.
+          This section applies only to the <strong>MWS Vector</strong> path.
           The High Accuracy Raster path skips this step — it works directly with individual pixels inside the village boundary.
         </p>
         <p className="meth-p">
@@ -126,7 +114,7 @@ export default function Methodology() {
           </FormulaBox>
           <p className="meth-p">
             Where f<sub>i</sub> is the <strong>overlap fraction</strong> — the proportion of MWS <em>i</em> that
-            falls within the village. Computed using Shapely (Python WASM via Pyodide client-side, or Python on the server).
+            falls within the village. Computed using Shapely (Python WASM via Pyodide client-side).
           </p>
         </SubSection>
 
@@ -293,19 +281,11 @@ export default function Methodology() {
             100 m² (one 10m pixel) will not be captured in the raster path. No sub-pixel correction is applied.
           </li>
           <li>
-            <strong>MWS Boundary Misalignment (MWS &amp; Server path):</strong> Village boundaries don't align perfectly
+            <strong>MWS Boundary Misalignment (MWS Vector path):</strong> Village boundaries don't align perfectly
             with MWS polygons. The weighted aggregation introduces small errors at boundary edges —
             typically &lt;5% for compact villages, potentially higher for irregular shapes.
           </li>
-          <li>
-            <strong>MODIS/JRC GEE Fallback (significant):</strong> When user explicitly selects the
-            low-resolution GEE path, MODIS (500m) and JRC (30m) data cannot directly measure:
-            <ul className="meth-ul" style={{ marginTop: '0.3rem' }}>
-              <li>Single/double/triple cropping — estimated from pixel class ratios</li>
-              <li>Kharif/Rabi/Zaid water split — estimated from JRC permanent/seasonal classes</li>
-              <li>Tree cover transition types — only net NDVI change, not transition matrices</li>
-            </ul>
-          </li>
+
           <li>
             <strong>Temporal Resolution:</strong> CoRE Stack data is aggregated per agricultural year.
             Sub-seasonal events (e.g., mid-season crop failure) may not be captured.
@@ -328,7 +308,7 @@ export default function Methodology() {
               <li><strong>100% browser-side</strong> — server signs GEE URLs only, zero raster data on server</li>
               <li>One <strong>full-village GeoTIFF</strong> per fiscal year</li>
               <li>Years processed <strong>one at a time</strong> — ArrayBuffer freed after each year</li>
-              <li><strong>Adaptive resolution</strong>: 10m default</li>
+
               <li>Parsed with <code>geotiff.js</code>, masked with <code>turf.booleanPointInPolygon</code></li>
               <li>Analytics via <strong>Pyodide (NumPy)</strong> — fast pixel histogram in Python WASM</li>
               <li>Surface water: <strong>pixel-level only</strong> — Classes 2+3+4</li>
@@ -347,23 +327,12 @@ export default function Methodology() {
               <li>CoRE Stack boundaries only (active tehsils)</li>
             </ul>
           </div>
-          <div className="meth-card">
-            <div style={{ fontWeight: 700, color: '#3b82f6', marginBottom: '0.5rem', fontSize: '0.9rem' }}>Server</div>
-            <ul className="meth-ul" style={{ fontSize: '0.78rem' }}>
-              <li>Same computation logic as MWS Vector</li>
-              <li>Dispatched to backend Celery workers</li>
-              <li>Pipeline: MWS intersection → GEE fallback (if MWS unavailable)</li>
-              <li>Good for batch/low-power clients</li>
-              <li>CoRE Stack boundaries only (active tehsils)</li>
-              <li>No local TIFF processing — server holds no raster data</li>
-            </ul>
-          </div>
         </div>
 
         <SubSection title="High Accuracy Full-Village Pipeline — Step by Step">
           <ol className="meth-ol" style={{ fontSize: '0.82rem' }}>
             <li><strong>Bbox Computation:</strong> <code>turf.bbox(villagePolygon)</code> gives the bounding box. The backend uses this to request a single contiguous GeoTIFF covering the full village extent.</li>
-            <li><strong>Adaptive Scale Selection:</strong> The backend computes the approximate download size at 10m. If it exceeds GEE's 48 MB hard limit, it steps up to 20m, 30m, etc. until within budget. The chosen resolution is logged to the browser console.</li>
+
             <li><strong>URL Signing:</strong> Backend calls <code>image.getDownloadURL()</code> for the full bbox at the selected scale in <code>EPSG:4326</code>. Returns a signed GEE URL — no TIFF data touches the server.</li>
             <li><strong>Sequential Year Loop:</strong> For each fiscal year (2017-18 … 2024-25), the browser downloads one GeoTIFF, processes it fully, then <strong>nulls the ArrayBuffer</strong> before the next year begins — preventing accumulation of large buffers in RAM.</li>
             <li><strong>Parse:</strong> <code>geotiff.js</code> decodes the TIFF. The affine transform is derived from the bbox + image dimensions to map pixel indices to geographic coordinates.</li>
@@ -371,14 +340,6 @@ export default function Methodology() {
             <li><strong>Analytics (Pyodide NumPy):</strong> Masked pixel array is passed to a Python WASM environment. <code>numpy.bincount</code> produces the class histogram instantly. Cropping intensity, water areas, and vegetation metrics are computed from the histogram.</li>
             <li><strong>Memory Release:</strong> After each year, the TIFF ArrayBuffer and Pyodide globals are explicitly cleared (<code>pyodide.runPython("del pixels")</code> + <code>buffer = null</code>) before moving to the next year.</li>
           </ol>
-        </SubSection>
-
-        <SubSection title="Server Pipeline — Strategy Flow">
-          <ol className="meth-ol" style={{ fontSize: '0.82rem' }}>
-            <li><strong>Strategy A — MWS Intersection:</strong> Fetch CoRE Stack tehsil data + MWS geometries. Run polygon intersection and weighted aggregation. If successful, return results. <em>(Primary path)</em></li>
-            <li><strong>Strategy B — GEE Fallback:</strong> Only triggered if CoRE Stack returns no data for the tehsil, or user explicitly selects GEE. Uses MODIS/JRC at lower resolution. <em>(Fallback only)</em></li>
-          </ol>
-          
         </SubSection>
 
         <p className="meth-p" style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
@@ -400,30 +361,17 @@ export default function Methodology() {
             <li><strong>Story Data Source:</strong> Village narratives are stored in the CSVAT PostgreSQL database (<code>village_stories</code> table), seeded from structured story objects covering demographics, economy, cultural context, and environmental chapters.</li>
             <li><strong>Chapter Structure:</strong> The storyboard merges database content with live analytics:
               <ul className="meth-ul" style={{ marginTop: '0.3rem', marginBottom: '0.3rem' }}>
-                <li><strong>Dynamic LLM Chapters:</strong> The first several chapters are generated by an LLM (Qwen 2.5 14B) running on the backend. This AI processes structured census and location data to create vivid, village-specific narratives and selects appropriate map actions.</li>
-                <li><strong>Static Analytics Slides:</strong> The final 4 sequence slides (e.g. Cropping, Water, Vegetation) are strictly deterministic. They are generated directly from the live spatial analytics calculated for that village, ensuring no AI hallucinations occur regarding core data.</li>
+                <li><strong>Dynamic LLM Slides (CoRE Stack Villages):</strong> For registered villages, 14 narrative slides are generated by an LLM (Meta Llama 4 Scout) running on the backend. If a story is not already cached in the database, it is generated in real-time. This AI processes <strong>OpenStreetMap (OSM)</strong> data (such as road networks, schools, hospitals, rivers, and heritage spots) alongside satellite insights to create vivid, village-specific context chapters.</li>
+                <li><strong>Static Analytics Slides (Manual Boundaries):</strong> When a custom boundary is uploaded or selected via Places Search, the storyboard bypasses the LLM entirely. It automatically generates a deterministic sequence of static slides (e.g., Cropping, Water, Vegetation) directly from the live spatial analytics.</li>
               </ul>
             </li>
-            <li><strong>Scroll-Driven Map:</strong> A sticky map panel shows the village satellite view. An IntersectionObserver tracks which chapter panel is in the viewport and triggers map transitions (zoom, tilt, layer toggle) accordingly.</li>
+            
 
           </ul>
         </SubSection>
 
-        <SubSection title="Sticky TOC Navigation">
-          <p className="meth-p">
-            A floating table-of-contents (TOC) navigation bar tracks active chapter progress.
-            Clicking a TOC dot scrolls directly to that chapter. The TOC appears only when
-            the storyboard section is visible in the viewport.
-          </p>
-        </SubSection>
+        
 
-        <SubSection title="Data Fallback">
-          <p className="meth-p">
-            If no village story exists in the database for the selected village, the storyboard
-            section is not rendered. The analytics report sections (cropping, water, vegetation) are
-            always shown regardless of storyboard availability.
-          </p>
-        </SubSection>
       </Section>
 
 
@@ -468,7 +416,7 @@ function FormulaBox({ children, small }) {
 function WarningBox({ children }) {
   return (
     <div className="meth-warning">
-      <span style={{ fontWeight: 600, color: '#f59e0b' }}>⚠️ Important: </span>
+      <span style={{ fontWeight: 600, color: '#f59e0b' }}> Important: </span>
       {children}
     </div>
   );
@@ -482,7 +430,7 @@ function ComparisonTable() {
           <tr>
             <th>Attribute</th>
             <th style={{ color: '#10b981' }}> High Accuracy Raster</th>
-            <th style={{ color: '#8b5cf6' }}> MWS Vector / Server</th>
+            <th style={{ color: '#8b5cf6' }}> MWS Vector</th>
           </tr>
         </thead>
         <tbody>
@@ -495,7 +443,7 @@ function ComparisonTable() {
             ['Surface Water Source', 'Pixel-level only (no MWS fallback)', 'surfaceWaterBodies_annual layer'],
             ['Tree Cover', 'Full pixel transition matrix (Class 6)', 'Weighted aggregation'],
             ['Coverage', 'Any village with boundary GeoJSON (pan-India)', 'Active tehsils only'],
-            ['Processing location', 'Browser (Pyodide NumPy + geotiff.js) — sequential year-by-year', 'Browser (Pyodide) or Server (Python/Celery)'],
+            ['Processing location', 'Browser (Pyodide NumPy + geotiff.js) — sequential year-by-year', 'Browser (Pyodide Shapely)'],
           ].map(([attr, raster, mws], i) => (
             <tr key={i}>
               <td style={{ fontWeight: 500 }}>{attr}</td>

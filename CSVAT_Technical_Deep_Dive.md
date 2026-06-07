@@ -34,7 +34,7 @@
 13. [Export Formats](#13-export-formats)
 14. [Authentication System](#14-authentication-system)
 15. [Database Models](#15-database-models)
-16. [Celery Task System (Server Mode)](#16-celery-task-system-server-mode)
+16. [FastAPI Background Task System (Server Mode)](#16-fastapi-background-task-system-server-mode)
 17. [Complete Mathematical Formula Reference](#17-complete-mathematical-formula-reference)
 18. [Interview-Ready Summary Points](#18-interview-ready-summary-points)
 
@@ -47,7 +47,7 @@
 - **CoRE Stack** satellite data (10m resolution, Micro-Watershed indexed)
 - **Google Earth Engine** data (500m MODIS, 30m JRC) as a fallback
 - **Client-side Python WASM** (Pyodide) for in-browser computation
-- **Server-side Celery workers** as an alternate execution mode
+- **Server-side FastAPI BackgroundTasks** as an alternate execution mode
 
 **The core problem it solves:** CoRE Stack stores satellite-derived analytics at the **Micro-Watershed (MWS)** level, but users need data at the **village** level. A village boundary can overlap multiple MWS polygons partially. CSVAT computes the geometric intersection of village boundaries with MWS polygons and produces area-weighted village-level analytics.
 
@@ -104,10 +104,10 @@
 │  │   PDFService              — Playwright PDF rendering          │   │
 │  └──────────────────────────────────────────────────────────────┘   │
 │                                                                     │
-│  ┌────────────────┐  ┌────────────────┐  ┌────────────────┐        │
-│  │ PostgreSQL/     │  │ Redis          │  │ Celery Worker  │        │
-│  │ PostGIS         │  │ (broker)       │  │ (async tasks)  │        │
-│  └────────────────┘  └────────────────┘  └────────────────┘        │
+│  ┌────────────────┐                                                 │
+│  │ PostgreSQL/     │                                                 │
+│  │ PostGIS         │                                                 │
+│  └────────────────┘                                                 │
 └─────────────────────────────────────────────────────────────────────┘
       │
       │  HTTPS (external)
@@ -135,36 +135,32 @@
 | **HTTP Client**    | httpx (async)                         | CoRE Stack API calls                  |
 | **Geospatial**     | Shapely, GeoAlchemy2                  | Polygon intersection, PostGIS         |
 | **Earth Engine**   | ee (Python library) + Service Account | MODIS, JRC satellite data             |
-| **Task Queue**     | Celery + Redis                        | Async server-side analytics           |
+| **Task Queue**     | FastAPI BackgroundTasks               | Async server-side analytics           |
 | **Database**       | PostgreSQL 15 + PostGIS 3.3           | Jobs, cached boundaries               |
 | **ORM**            | SQLAlchemy 2.0                        | Database models                       |
 | **Auth**           | python-jose (JWT)                     | Token-based authentication            |
 | **Templating**     | Jinja2                                | Server-side HTML reports              |
 | **PDF**            | Playwright (headless Chromium)        | HTML → PDF conversion                 |
-| **Container**      | Docker Compose                        | 4-service orchestration               |
+| **Container**      | Docker Compose                        | 2-service orchestration               |
 
 ---
 
 ## 4. Infrastructure & Deployment (Docker Compose)
 
-The application runs as **4 Docker containers** orchestrated by Docker Compose:
+The application runs as **2 Docker containers** orchestrated by Docker Compose:
 
 ```yaml
 services:
   db: # PostgreSQL 15 + PostGIS 3.3 (port 5435 → 5432)
-  redis: # Redis 7 Alpine (port 6379)
   api: # FastAPI backend (port 8006 → 8000)
-  worker: # Celery worker (same image as api, runs celery command)
 ```
 
 | Container      | Image                    | Role                                              | Port |
 | -------------- | ------------------------ | ------------------------------------------------- | ---- |
 | `csvat_db`     | `postgis/postgis:15-3.3` | Persistent storage for jobs and cached boundaries | 5435 |
-| `csvat_redis`  | `redis:7-alpine`         | Celery message broker + result backend            | 6379 |
 | `csvat_api`    | Custom (Dockerfile)      | FastAPI server                                    | 8006 |
-| `csvat_worker` | Same image               | Celery worker for async analytics                 | —    |
 
-**Health checks** ensure proper startup order: `api` and `worker` wait for `db` and `redis` to be healthy.
+**Health checks** ensure proper startup order: `api` waits for `db` to be healthy.
 
 ---
 
@@ -279,14 +275,14 @@ function computeAreaHectares(geojson) {
 
 ### SERVER Mode (Alternate — Server-Side)
 
-| Step            | Where                                 | What Happens                   |
-| --------------- | ------------------------------------- | ------------------------------ |
-| Submit job      | `POST /api/v1/jobs`                   | Creates Job row in PostgreSQL  |
-| Task dispatch   | Celery → Redis                        | Task queued for worker         |
-| **Analytics**   | **Celery Worker**                     | Same MWS intersection pipeline |
-| Results storage | PostgreSQL                            | JSONB column in jobs table     |
-| Polling         | `GET /api/v1/jobs/{id}`               | Frontend polls until complete  |
-| Assets          | `GET /api/v1/jobs/{id}/assets/{type}` | HTML/CSV/PDF download          |
+| Step            | Where                                 | What Happens                            |
+| --------------- | ------------------------------------- | --------------------------------------- |
+| Submit job      | `POST /api/v1/jobs`                   | Creates Job row in PostgreSQL           |
+| Task dispatch   | FastAPI BackgroundTasks               | Task added to async execution queue     |
+| **Analytics**   | **FastAPI BackgroundTasks**           | Same MWS intersection pipeline          |
+| Results storage | PostgreSQL                            | JSONB column in jobs table              |
+| Polling         | `GET /api/v1/jobs/{id}`               | Frontend polls until complete           |
+| Assets          | `GET /api/v1/jobs/{id}/assets/{type}` | HTML/CSV/PDF download                   |
 
 In SERVER mode, the frontend can also compute results client-side then push them to the server via `POST /api/v1/jobs/{id}/client-results`, which stores WASM-computed results in the job record for later download.
 
@@ -1106,14 +1102,13 @@ class CachedBoundary(Base):
 
 ---
 
-## 16. Celery Task System (Server Mode)
+## 16. FastAPI Background Task System (Server Mode)
 
 ### Task Definition (`analytics_task.py`)
 
 ```python
-@celery_app.task(bind=True, name="run_analytics")
-def run_analytics_task(self, job_id: str, parameters: dict):
-    """Celery task: try MWS first, fallback to GEE."""
+def run_analytics_task(job_id: str, parameters: dict):
+    """FastAPI BackgroundTask: try MWS first, fallback to GEE."""
 
     # Update job status to "running"
     update_job_status(job_id, "running")
@@ -1152,17 +1147,6 @@ def _run_pipeline(parameters):
     results["data_source"] = "gee"
     results["data_warning"] = "Lower resolution (MODIS 500m)"
     return results
-```
-
-### Celery Configuration
-
-```python
-# celery_app.py
-celery_app = Celery(
-    "csvat",
-    broker=settings.REDIS_URL,       # redis://csvat_redis:6379/0
-    backend=settings.REDIS_URL,
-)
 ```
 
 ---
@@ -1263,7 +1247,7 @@ Example: $\text{fiscal\_year}(2023) = \text{"2022-2023"}$
 
 1. **CSVAT solves a geometric mismatch problem.** Satellite data is indexed by micro-watersheds; users need village-level reports. The app computes polygon intersections to bridge this gap.
 
-2. **Dual execution model.** WASM mode (default) runs Python in the browser via Pyodide — zero server compute cost. Server mode uses Celery workers for users who prefer traditional cloud processing.
+2. **Dual execution model.** WASM mode (default) runs Python in the browser via Pyodide — zero server compute cost. Server mode uses FastAPI background tasks for users who prefer traditional cloud processing.
 
 3. **MWS-first strategy with graceful fallback.** CoRE Stack (10m, India-specific) is always tried first. GEE (500m, global) is only used when the user's tehsil isn't active on CoRE Stack, and only after explicit user confirmation.
 
@@ -1283,7 +1267,7 @@ Example: $\text{fiscal\_year}(2023) = \text{"2022-2023"}$
 
 9. **Pyodide enables zero-cost scaling.** By running Python (Shapely + numpy) in the browser, the server handles zero compute. Only data proxying costs bandwidth.
 
-10. **Docker Compose for reproducibility.** Four containers (PostGIS, Redis, FastAPI, Celery) with health checks and proper dependency ordering.
+10. **Docker Compose for reproducibility.** Two containers (PostGIS, FastAPI) with health checks.
 
 11. **GeoAlchemy2 for spatial persistence.** Job boundaries are stored as PostGIS `MULTIPOLYGON` geometries, enabling future spatial queries.
 
@@ -1332,8 +1316,7 @@ Example: $\text{fiscal\_year}(2023) = \text{"2022-2023"}$
 | `backend/app/services/analytics/cropping.py`        | ~95   | Server-side cropping from MWS data                    |
 | `backend/app/services/analytics/water.py`           | ~90   | Server-side water from MWS data                       |
 | `backend/app/services/analytics/vegetation.py`      | ~100  | Server-side vegetation from MWS data                  |
-| `backend/app/tasks/analytics_task.py`               | ~270  | Celery task — MWS-first pipeline                      |
-| `backend/app/tasks/celery_app.py`                   | —     | Celery app configuration                              |
+| `backend/app/tasks/analytics_task.py`               | ~270  | FastAPI background task — MWS-first pipeline          |
 | `backend/app/models/job.py`                         | —     | SQLAlchemy Job model                                  |
 | `backend/app/models/boundary.py`                    | —     | SQLAlchemy CachedBoundary model                       |
 | `backend/app/schemas/__init__.py`                   | —     | Pydantic request/response schemas                     |
@@ -1352,7 +1335,6 @@ Example: $\text{fiscal\_year}(2023) = \text{"2022-2023"}$
 | `GEE_KEY_JSON` / `GEE_KEY_FILE` | Service account credentials                                         |
 | `GEE_PROJECT`                   | Google Cloud project ID                                             |
 | `DATABASE_URL`                  | PostgreSQL connection string                                        |
-| `REDIS_URL`                     | Redis connection string                                             |
 | `JWT_SECRET_KEY`                | Secret for JWT signing                                              |
 | `REQUIRE_AUTH`                  | Enable/disable authentication                                       |
 | `VITE_API_BASE`                 | Frontend API URL (e.g., `http://localhost:8000`)                    |

@@ -92,7 +92,7 @@ class PDFService:
         district = results.get("district", "")
         tehsil = results.get("tehsil", "")
 
-        elements.append(Paragraph("🌾 Village Analytics Report", self.styles["CSVATTitle"]))
+        elements.append(Paragraph(f"{village} Report", self.styles["CSVATTitle"]))
         elements.append(Paragraph(
             f"{village} — Socio-Ecological Analysis",
             self.styles["CSVATSubtitle"],
@@ -119,7 +119,7 @@ class PDFService:
         # ── Cropping Intensity ──
         ci = results.get("cropping_intensity")
         if ci:
-            elements.append(Paragraph("🌱 Cropping Intensity Trends", self.styles["SectionHeader"]))
+            elements.append(Paragraph(" Cropping Intensity Trends", self.styles["SectionHeader"]))
             ci_data = ci.get("data", ci) if isinstance(ci, dict) else ci
             if isinstance(ci_data, list) and ci_data:
                 headers = ["Year", "Single (ha)", "Double (ha)", "Triple (ha)", "Total (ha)"]
@@ -139,7 +139,7 @@ class PDFService:
         # ── Surface Water ──
         sw = results.get("surface_water")
         if sw:
-            elements.append(Paragraph("💧 Seasonal Surface Water Availability", self.styles["SectionHeader"]))
+            elements.append(Paragraph(" Seasonal Surface Water Availability", self.styles["SectionHeader"]))
             sw_data = sw.get("data", sw) if isinstance(sw, dict) else sw
             if isinstance(sw_data, list) and sw_data:
                 headers = ["Year", "Perennial (ha)", "Monsoon (ha)", "Winter (ha)", "Total (ha)"]
@@ -159,7 +159,7 @@ class PDFService:
         # ── Vegetation ──
         veg = results.get("vegetation")
         if veg:
-            elements.append(Paragraph("🌳 Vegetation & Degradation Analysis", self.styles["SectionHeader"]))
+            elements.append(Paragraph(" Vegetation & Degradation Analysis", self.styles["SectionHeader"]))
             if isinstance(veg, dict):
                 veg_rows = [
                     ["Metric", "Value"],
