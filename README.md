@@ -77,8 +77,8 @@ Edit `backend/.env`:
 DATABASE_URL=postgresql://csvat:csvat_pass@db:5432/csvat_db
 
 # CoRE Stack API (required — get from https://core-stack.org/)
-CORESTACK_API_BASE_URL=https://api.core-stack.org
-CORESTACK_API_KEY=your-corestack-api-key
+CORESTACK_API_BASE_URL=https://api-doc.core-stack.org/api/v1
+CORESTACK_API_KEY=your-corestack-api-key-here
 
 # JWT Authentication
 JWT_SECRET_KEY=change-me-to-a-random-secret
@@ -86,10 +86,16 @@ JWT_ALGORITHM=HS256
 JWT_EXPIRY_MINUTES=60
 
 # Google Earth Engine (required for raster extraction)
-GEE_API_KEY=your-gee-api-key
-GEE_PROJECT=your-gcp-project-id
+GEE_API_KEY=your-gee-api-key-here
+GEE_PROJECT=your-gcp-project-id-here
 GEE_SERVICE_ACCOUNT=your-sa@project.iam.gserviceaccount.com
 GEE_KEY_FILE=path/to/gee-key.json
+
+# Google Maps (required for backend static map proxy)
+GOOGLE_MAPS_KEY=your-google-maps-api-key-here
+
+# Groq LLM (required for storyboard slide generation)
+GROQ_API_KEY=your-groq-api-key-here
 ```
 
 > **Important**: The `DATABASE_URL` value above uses Docker service names (`db`) — this resolves automatically inside Docker Compose. Do not change it unless you are running without Docker.
@@ -158,8 +164,11 @@ The frontend will be available at **http://localhost:5173**.
 | Key                    | Provider                      | Used For                                 |
 | ---------------------- | ----------------------------- | ---------------------------------------- |
 | `CORESTACK_API_KEY`    | [CoRE Stack](https://core-stack.org/) | MWS data, village geometries, raster layers |
+| `GEE_API_KEY`          | [Google Earth Engine](https://earthengine.google.com/) | IndiaSAT LULC raster extraction |
 | `GEE_SERVICE_ACCOUNT`  | [Google Earth Engine](https://earthengine.google.com/) | IndiaSAT LULC raster extraction |
+| `GOOGLE_MAPS_KEY`      | [Google Cloud Console](https://console.cloud.google.com/) | Backend static map proxy                 |
 | `VITE_GOOGLE_MAPS_KEY` | [Google Cloud Console](https://console.cloud.google.com/) | Maps display, Places autocomplete |
+| `GROQ_API_KEY`         | [Groq Console](https://console.groq.com/) | Storyboard narrative generation          |
 
 ---
 

@@ -827,14 +827,17 @@ Example: $\text{fiscal\_year}(2023) = \text{"2022-2023"}$
 | ------------------------------- | ------------------------------------------------------------------- |
 | `CORESTACK_API_BASE_URL`        | CoRE Stack API base (e.g., `https://api-doc.core-stack.org/api/v1`) |
 | `CORESTACK_API_KEY`             | X-API-Key for CoRE Stack authentication                             |
+| `GEE_API_KEY`                   | Google Earth Engine API Key                                         |
 | `GEE_SERVICE_ACCOUNT`           | Google service account email                                        |
 | `GEE_KEY_JSON` / `GEE_KEY_FILE` | Service account credentials                                         |
 | `GEE_PROJECT`                   | Google Cloud project ID                                             |
+| `GOOGLE_MAPS_KEY`               | Google Maps API key (for backend static map proxy)                  |
 | `DATABASE_URL`                  | PostgreSQL connection string                                        |
 | `JWT_SECRET_KEY`                | Secret for JWT signing                                              |
 | `REQUIRE_AUTH`                  | Enable/disable authentication                                       |
 | `VITE_API_BASE`                 | Frontend API URL (e.g., `http://localhost:8000`)                    |
-| `VITE_GOOGLE_MAPS_API_KEY`      | Google Maps JavaScript API key                                      |
+| `VITE_GOOGLE_MAPS_KEY`          | Google Maps JavaScript API key (for frontend MapView / search)      |
 | `GROQ_API_KEY`                  | Groq API key for LLM                                                |
+
 
 ---
