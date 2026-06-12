@@ -580,10 +580,14 @@ def fetch_tehsils_in_district(state: str, district: str) -> list[str]:
 def _get_tehsil_geometry(district: str, tehsil: str) -> "ee.Geometry | None":
     """Return the merged geometry of all SOI_tehsil features matching district+tehsil."""
     fc = ee.FeatureCollection(ADMIN_ASSETS["tehsil"])
+    # NOTE: SOI_tehsil District values are UPPERCASE, but TEHSIL values are
+    # mixed-case (e.g. "DAHOD" vs "Dhanpur"). stringContains is case-sensitive,
+    # so the tehsil must be matched verbatim — it already arrives with the exact
+    # casing stored in the asset (the dropdown is built from this same property).
     matched = fc.filter(
         ee.Filter.And(
             ee.Filter.stringContains(_TEHSIL_DIST_P, district.upper()),
-            ee.Filter.stringContains(_TEHSIL_NAME_P, tehsil.upper()),
+            ee.Filter.stringContains(_TEHSIL_NAME_P, tehsil),
         )
     )
     return matched.geometry()
@@ -639,10 +643,11 @@ def fetch_tehsil_geometry(state: str, district: str, tehsil: str) -> dict:
     """
     _init_ee()
     fc = ee.FeatureCollection(ADMIN_ASSETS["tehsil"])
+    # TEHSIL values are mixed-case in SOI_tehsil; match verbatim (see _get_tehsil_geometry).
     matched = fc.filter(
         ee.Filter.And(
             ee.Filter.stringContains(_TEHSIL_DIST_P, district.upper()),
-            ee.Filter.stringContains(_TEHSIL_NAME_P, tehsil.upper()),
+            ee.Filter.stringContains(_TEHSIL_NAME_P, tehsil),
         )
     )
     # Dissolve into a single geometry and return as a Feature
