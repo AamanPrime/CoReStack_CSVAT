@@ -23,7 +23,7 @@
 
 import { fromArrayBuffer } from 'geotiff';
 import * as turf from '@turf/turf';
-import { tileKey, storeTile, getTile, hasTile, autoCleanup } from './tiffStore';
+import { tileKey, storeTile, getTile, hasTile, autoCleanup, clearVillageTiles } from './tiffStore';
 
 const API_BASE = (import.meta.env.VITE_API_BASE || 'http://localhost:8000').replace(/\/$/, '');
 
@@ -87,7 +87,7 @@ async function parseTiffWithRealAffine(arrayBuffer) {
     // unexpected sign. Force negative to guarantee correctness.
     pixelHeight = -Math.abs(resolution[1]);
 
-    //console.log(`[FullTIFF] Real affine: origin=[${originX.toFixed(6)}, ${originY.toFixed(6)}], px=[${pixelWidth.toFixed(8)}, ${pixelHeight.toFixed(8)}], size=${width}×${height}`);
+    console.log(`[FullTIFF] Real affine: origin=[${originX.toFixed(6)}, ${originY.toFixed(6)}], px=[${pixelWidth.toFixed(8)}, ${pixelHeight.toFixed(8)}], size=${width}×${height}`);
   } catch (e) {
     // Fallback: compute from bounding box if TIFF metadata is missing
     console.warn('[FullTIFF] No affine in TIFF metadata, using getBoundingBox fallback:', e.message);
@@ -158,12 +158,11 @@ def mask_pixels_numpy(pixel_flat, width, height, origin_x, origin_y,
                       pixel_width, pixel_height, polygon_coords, is_multi):
     """Mask raster pixels to a village boundary polygon using numpy.
 
-    pixel_flat: flat array of pixel values (row-major, H*W)
-    polygon_coords: GeoJSON coordinates (list of rings for Polygon,
-                     list of list of rings for MultiPolygon)
-    is_multi: True if MultiPolygon
-
-    Returns: (histogram_dict, masked_pixels_list)
+    Returns: (histogram_dict, masked_pixels_list, raster_nonzero_count)
+      raster_nonzero_count: total non-zero pixels in the ENTIRE raster.
+      If 0, the downloaded TIFF has no data (area outside dataset coverage).
+      If >0 but masked_pixels_list is empty, the village boundary doesn't
+      overlap the non-zero pixels (geometry / CRS mismatch).
     """
     if hasattr(pixel_flat, 'to_py'):
         pixel_flat = pixel_flat.to_py()
@@ -177,6 +176,14 @@ def mask_pixels_numpy(pixel_flat, width, height, origin_x, origin_y,
     oy = float(origin_y)
     pw = float(pixel_width)
     ph = float(pixel_height)
+
+    # ── Coverage check BEFORE ray-casting (cheap O(N) scan) ──
+    # Count pixels with valid LULC class (1-12). 0 = background/nodata.
+    raster_nonzero = int(np.sum((pixels != 0) & ~np.isnan(pixels)))
+    if raster_nonzero == 0:
+        # Entire TIFF is nodata — area not in dataset coverage.
+        # Skip expensive ray-casting entirely.
+        return {}, [], 0
 
     # Build coordinate arrays for all pixel centers (vectorised — no per-pixel objects)
     cols = np.arange(w, dtype=np.float64)
@@ -210,7 +217,7 @@ def mask_pixels_numpy(pixel_flat, width, height, origin_x, origin_y,
             continue
         histogram[str(int(v))] = int(np.sum(masked == v))
 
-    return histogram, masked.tolist()
+    return histogram, masked.tolist(), raster_nonzero
 `;
 
 // ─── Event-loop yield helper ───
@@ -278,11 +285,26 @@ export async function runFullExtraction(boundaryGeojson, villageName, onProgress
       if (await hasTile(cacheKey)) {
         const cached = await getTile(cacheKey);
         arrayBuffer = cached.arrayBuffer;
-        onProgress?.(`[${fyIdx + 1}/${FISCAL_YEARS.length}] ${fyLabel}: loaded from cache`);
-      } else {
+        // Sanity-check: a valid GeoTIFF is never smaller than 512 bytes.
+        // If the cache holds a truncated or error response, evict it now.
+        if (!arrayBuffer || arrayBuffer.byteLength < 512) {
+          console.warn(`[FullTIFF] Cached entry for ${fyLabel} is corrupt/too small (${arrayBuffer?.byteLength ?? 0} bytes) — evicting`);
+          await clearVillageTiles(villageName);
+          arrayBuffer = null;
+        } else {
+          onProgress?.(`[${fyIdx + 1}/${FISCAL_YEARS.length}] ${fyLabel}: loaded from cache`);
+        }
+      }
+
+      if (!arrayBuffer) {
         onProgress?.(`[${fyIdx + 1}/${FISCAL_YEARS.length}] ${fyLabel}: downloading GeoTIFF…`);
         const urlInfo = await fetchFullDownloadUrl(bbox, startYear, endYear);
         arrayBuffer = await downloadTiff(urlInfo.url);
+
+        // Validate before caching: reject GEE error pages (JSON/HTML) stored as bytes
+        if (!arrayBuffer || arrayBuffer.byteLength < 512) {
+          throw new Error(`Downloaded TIFF is too small (${arrayBuffer?.byteLength ?? 0} bytes) — likely a GEE error response`);
+        }
 
         // Persist to IndexedDB — doesn't hold it in RAM (stored as bytes on disk)
         await storeTile(cacheKey, arrayBuffer, { bbox, fiscalYear: fyLabel });
@@ -330,11 +352,12 @@ mask_pixels_numpy(pixel_flat, width, height, origin_x, origin_y,
                   pixel_width, pixel_height, polygon_coords, is_multi)
       `);
 
-      // Convert Pyodide result → plain JS
-      let [histogram, maskedPixels] = maskResult.toJs();
+      // Convert Pyodide result → plain JS (3-tuple: histogram, pixels, rasterNonZero)
+      let [histogram, maskedPixels, rasterNonZero] = maskResult.toJs();
 
       if (histogram instanceof Map) histogram = Object.fromEntries(histogram);
       if (maskedPixels?.toJs) maskedPixels = maskedPixels.toJs();
+      const rasterNonZeroCount = typeof rasterNonZero === 'number' ? rasterNonZero : 0;
 
       if (maskedPixels.length > 0) {
         extractedYears.push({
@@ -345,9 +368,17 @@ mask_pixels_numpy(pixel_flat, width, height, origin_x, origin_y,
           pixel_area_ha: raster.pixelAreaHa,
         });
         onProgress?.(`[${fyIdx + 1}/${FISCAL_YEARS.length}] ${fyLabel}: ${maskedPixels.length.toLocaleString()} pixels inside village ✓`);
+      } else if (rasterNonZeroCount === 0) {
+        // Entire TIFF is nodata — area not in IndiaSAT LULC dataset coverage.
+        // Re-downloading will not help. Cache the TIFF so we don't waste bandwidth.
+        console.warn(`[FullTIFF] ${fyLabel}: TIFF has NO valid LULC pixels (all background). Area outside dataset coverage.`);
+        onProgress?.(`[${fyIdx + 1}/${FISCAL_YEARS.length}] ${fyLabel}: outside dataset coverage (no data)`);
       } else {
-        console.warn(`[FullTIFF] No valid pixels inside village for ${fyLabel}`);
-        onProgress?.(`[${fyIdx + 1}/${FISCAL_YEARS.length}] ${fyLabel}: no pixels inside boundary`);
+        // Non-zero pixels exist in the raster but NONE are inside the village polygon.
+        // This is a genuine geometry / CRS mismatch — evict cache so next run re-downloads.
+        console.warn(`[FullTIFF] ${fyLabel}: TIFF has ${rasterNonZeroCount.toLocaleString()} valid pixels globally but 0 inside village boundary (CRS/geometry mismatch).`);
+        onProgress?.(`[${fyIdx + 1}/${FISCAL_YEARS.length}] ${fyLabel}: boundary mismatch — re-fetching next run`);
+        try { await clearVillageTiles(villageName); } catch (_) {}
       }
     } catch (err) {
       console.warn(`[FullTIFF] Numpy masking failed for ${fyLabel}:`, err.message);
@@ -380,7 +411,12 @@ mask_pixels_numpy(pixel_flat, width, height, origin_x, origin_y,
   try { await autoCleanup(); } catch (e) { console.warn('[FullTIFF] autoCleanup:', e.message); }
 
   if (extractedYears.length === 0) {
-    throw new Error('No raster data could be extracted from any year.');
+    throw new Error(
+      'No LULC data found for this area across all years. ' +
+      'The IndiaSAT LULC v3 dataset covers mainland India river basins only — ' +
+      'islands (Andaman & Nicobar, Lakshadweep) and some border regions are not included. ' +
+      'Try selecting a village in mainland India, or use the GEE fallback pipeline.'
+    );
   }
 
   onProgress?.(`Extracted ${extractedYears.length}/${FISCAL_YEARS.length} years (full-TIFF, zero seam, memory-safe).`);
@@ -390,7 +426,7 @@ mask_pixels_numpy(pixel_flat, width, height, origin_x, origin_y,
     data: extractedYears,
     pixel_area_ha: globalPixelAreaHa,
     years_extracted: extractedYears.length,
-    source: 'GEE IndiaSAT LULC v3 (client-side full-TIFF, geotiff.js + numpy)',
+    source: 'Satellite land-use raster (10 m)',
     accuracy: 'exact',
   };
 }

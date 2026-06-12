@@ -149,6 +149,69 @@ out skel qt;`;
   return { elements: [] };
 }
 
+/**
+ * Pick out river / forest / landmark OSM features so they can be surfaced
+ * explicitly in the storyboard, rather than buried in the tag-count summary.
+ *
+ * Returns:
+ *  {
+ *    rivers:    [string]   — distinct waterway names (≤ 5)
+ *    forests:   [string]   — distinct forest/wood names (≤ 5)
+ *    landmarks: [string]   — temples, historic sites, tourist spots (≤ 10)
+ *    counts:    { rivers, forests, landmarks }  — totals before dedupe/cap
+ *  }
+ */
+export function extractLandmarks(osmData) {
+  const rivers = new Set();
+  const forests = new Set();
+  const landmarks = [];
+  let riverCount = 0, forestCount = 0, landmarkCount = 0;
+
+  for (const el of osmData?.elements || []) {
+    const t = el?.tags || {};
+    const name = t.name;
+
+    // Rivers / streams / canals
+    if (t.waterway === 'river' || t.waterway === 'stream' || t.waterway === 'canal') {
+      riverCount += 1;
+      if (name) rivers.add(name);
+    } else if (t.natural === 'water' && (t.water === 'river' || t.water === 'stream')) {
+      riverCount += 1;
+      if (name) rivers.add(name);
+    }
+
+    // Forests
+    if (t.natural === 'wood' || t.landuse === 'forest' || t.boundary === 'forest') {
+      forestCount += 1;
+      if (name) forests.add(name);
+    }
+
+    // Landmarks: temples, historic, tourism, notable amenities
+    const isLandmark =
+      t.historic ||
+      t.tourism ||
+      (t.amenity === 'place_of_worship') ||
+      (t.amenity === 'school' && t.name) ||
+      (t.amenity === 'hospital') ||
+      t.heritage;
+    if (isLandmark && name) {
+      landmarkCount += 1;
+      const kind = t.historic ? `historic ${t.historic}` :
+                   t.tourism ? `${t.tourism}` :
+                   t.amenity === 'place_of_worship' ? `${t.religion || 'place of worship'}` :
+                   t.amenity || 'landmark';
+      landmarks.push(`${name} (${kind})`);
+    }
+  }
+
+  return {
+    rivers:    Array.from(rivers).slice(0, 5),
+    forests:   Array.from(forests).slice(0, 5),
+    landmarks: landmarks.slice(0, 10),
+    counts:    { rivers: riverCount, forests: forestCount, landmarks: landmarkCount },
+  };
+}
+
 // ─── 3. OSM summary builder ────────────────────────────────────────────────────
 
 /**
@@ -247,6 +310,7 @@ export async function runStoryboardPipeline({ results, boundary, onProgress }) {
 
   progress(`Processing ${osmData.elements?.length || 0} OSM elements…`);
   const { osmSummary, topOsmTags } = buildOsmSummary(osmData);
+  const landmarkInfo = extractLandmarks(osmData);
 
   // Extract vegetation transitions
   const vegTransitions = results?.vegetation?.transitions || [];
@@ -270,6 +334,7 @@ export async function runStoryboardPipeline({ results, boundary, onProgress }) {
     vegetation_transitions: vegTransitions,
     osm_summary: osmSummary,
     top_osm_tags: topOsmTags,
+    landmarks: landmarkInfo,
   });
 
   return story;
@@ -295,6 +360,8 @@ export function buildTemplateSlides(results, boundary) {
   const veg = results?.vegetation || {};
   const latestCI = ciData[ciData.length - 1];
   const latestSW = swData[swData.length - 1];
+  // Optional landmark info passed in via `results.landmarks` (set by the AI pipeline).
+  const lm = results?.landmarks || {};
 
   const slides = [
     {
@@ -306,7 +373,7 @@ export function buildTemplateSlides(results, boundary) {
     },
     {
       slide_number: 2,
-      emoji: '📍',
+      emoji: '',
       title: 'Location Context',
       content: `The area was delineated via custom boundary. Geographic position and connectivity were assessed through the uploaded GeoJSON extent.`,
       insight: 'Custom boundary analysis',
@@ -327,18 +394,18 @@ export function buildTemplateSlides(results, boundary) {
     },
     {
       slide_number: 5,
-      emoji: '🌾',
+      emoji: '',
       title: 'Land Use',
       content: latestCI
         ? `Latest land use data shows ${latestCI.total_cropped_ha?.toFixed(2)} ha cropped area. Single crop: ${latestCI.single_crop_ha?.toFixed(2)} ha, Double crop: ${latestCI.double_crop_ha?.toFixed(2)} ha, Triple crop: ${latestCI.triple_crop_ha?.toFixed(2)} ha.`
-        : `Land use classification is derived from IndiaSAT LULC satellite data processed client-side.`,
+        : `Land-use figures come from satellite land-cover data processed right in your browser.`,
       insight: latestCI
         ? `${latestCI.total_cropped_ha?.toFixed(1)} ha cropped`
-        : 'LULC from satellite',
+        : 'From satellite',
     },
     {
       slide_number: 6,
-      emoji: '🌱',
+      emoji: '',
       title: 'Agricultural Profile',
       content: latestCI
         ? `Cropping intensity index: ${latestCI.cropping_intensity?.toFixed(3)}. The area supports ${latestCI.triple_crop_ha > 0 ? 'triple' : latestCI.double_crop_ha > 0 ? 'double' : 'single'} season cropping.`
@@ -362,7 +429,7 @@ export function buildTemplateSlides(results, boundary) {
     },
     {
       slide_number: 8,
-      emoji: '💧',
+      emoji: '',
       title: 'Water Availability',
       content: latestSW
         ? `In ${latestSW.year}, total surface water coverage was ${latestSW.total_water_ha?.toFixed(2)} ha — split across Kharif (${latestSW.kharif_ha?.toFixed(2)} ha), Rabi (${latestSW.rabi_ha?.toFixed(2)} ha), and Zaid seasons.`
@@ -373,7 +440,7 @@ export function buildTemplateSlides(results, boundary) {
     },
     {
       slide_number: 9,
-      emoji: '🌳',
+      emoji: '',
       title: 'Vegetation Change',
       content:
         veg.tree_cover_gain_ha != null
@@ -409,9 +476,21 @@ export function buildTemplateSlides(results, boundary) {
         'Infrastructure gap assessment is not available for custom boundaries as OSM data was not fetched. Administrative boundaries are required for OSM infrastructure analysis.',
       insight: 'OSM data skipped',
     },
+    // ─── Landmarks slide (river / forest / heritage / amenities from OSM) ───
+    (lm?.rivers?.length || lm?.forests?.length || lm?.landmarks?.length) && {
+      slide_number: 12,
+      emoji: '🏞️',
+      title: 'Rivers, Forests & Landmarks',
+      content: [
+        lm.rivers?.length ? `Rivers/streams nearby: ${lm.rivers.join(', ')}.` : null,
+        lm.forests?.length ? `Forests/woods nearby: ${lm.forests.join(', ')}.` : null,
+        lm.landmarks?.length ? `Notable places: ${lm.landmarks.slice(0, 6).join('; ')}.` : null,
+      ].filter(Boolean).join(' '),
+      insight: `${lm.counts?.rivers || 0} rivers · ${lm.counts?.forests || 0} forest patches · ${lm.counts?.landmarks || 0} landmarks`,
+    },
     {
       slide_number: 12,
-      emoji: '💡',
+      emoji: '',
       title: 'Opportunities',
       content: `Based on the satellite analytics, this area shows potential for ${veg.net_change_ha < 0 ? 'reforestation initiatives' : 'continued vegetation conservation'}. ${latestCI?.cropping_intensity < 1.2 ? 'Cropping intensity improvement is possible.' : 'Cropping patterns appear optimised.'}`,
       insight: 'Data-driven intervention potential',
@@ -425,7 +504,9 @@ export function buildTemplateSlides(results, boundary) {
     },
   ];
 
-  return { village: name, total_area: `${areaHa} ha`, slides };
+  // Drop any falsy slide entries that the conditional `(cond) && {...}` pattern
+  // above might have produced when their data wasn't available.
+  return { village: name, total_area: `${areaHa} ha`, slides: slides.filter(Boolean) };
 }
 
 // ─── 7. Save / fetch helpers (thin wrappers for cleaner imports) ──────────────
@@ -539,7 +620,7 @@ export function slidesToChapters(slides) {
     slide_number: s.slide_number,
     emoji: s.emoji,
     title: `${s.emoji} ${s.title}`,
-    narrative: `${s.content}\n\n💡 ${s.insight}`,
+    narrative: `${s.content}\n\n ${s.insight}`,
     map_action: MAP_ACTIONS[s.slide_number] || 'zoom_to_village',
     image_url: null,
     // Keep original fields for the editor

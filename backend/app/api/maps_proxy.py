@@ -32,6 +32,11 @@ async def static_map_proxy(
     size: str = Query("1280x900", regex=r"^\d{1,4}x\d{1,4}$"),
     maptype: str = Query("satellite", regex=r"^(satellite|roadmap|terrain|hybrid)$"),
     heading: int = Query(0, ge=0, le=360),
+    path: str | None = Query(
+        None,
+        description="Optional Google Static Maps path syntax, e.g. "
+        "'fillcolor:0xAA000033|color:0xffff00ff|weight:3|lat1,lng1|lat2,lng2|…'",
+    ),
 ):
     """Proxy Google Static Maps API, hiding the API key from clients.
 
@@ -62,6 +67,7 @@ async def static_map_proxy(
     if int(w) > 2048 or int(h) > 2048:
         raise HTTPException(status_code=400, detail="Max size is 2048x2048")
 
+    from urllib.parse import quote
     google_url = (
         f"https://maps.googleapis.com/maps/api/staticmap"
         f"?center={lat},{lng}"
@@ -71,6 +77,9 @@ async def static_map_proxy(
         f"&heading={heading}"
         f"&key={api_key}"
     )
+    if path:
+        # `path` is forwarded verbatim — caller is responsible for Google's syntax.
+        google_url += f"&path={quote(path, safe=':,|')}"
 
     try:
         client = _get_client()

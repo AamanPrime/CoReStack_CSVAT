@@ -29,9 +29,86 @@
 }
 
 .report-viewer-content {
-  max-width: 960px;
+  width: 60%;
+  max-width: 60%;
   margin: 0 auto;
   padding: 3rem 1.5rem 2rem;
+  font-size: 1.1rem;
+}
+
+/* Card typography styling */
+.report-viewer-content .card-header h3 {
+  font-size: 1.3rem;
+}
+
+.report-viewer-content .narrative {
+  font-size: 1.05rem;
+  line-height: 1.7;
+}
+
+.report-viewer-content .data-table td {
+  font-size: 1rem;
+}
+
+.report-viewer-content .data-table th {
+  font-size: 0.85rem;
+}
+
+.report-viewer-content .stat-card .value {
+  font-size: 1.8rem;
+}
+
+.report-viewer-content .stat-card .label {
+  font-size: 0.85rem;
+}
+
+.report-viewer-content .boundary-info-item .value {
+  font-size: 1rem;
+}
+
+.report-viewer-content .boundary-info-item .label {
+  font-size: 0.8rem;
+}
+
+@media (max-width: 1024px) {
+  .report-viewer-content {
+    width: 80%;
+    max-width: 80%;
+  }
+}
+
+@media (max-width: 768px) {
+  .report-viewer-content {
+    width: 95%;
+    max-width: 95%;
+    padding: 2rem 1rem 1.5rem;
+    font-size: 1rem;
+  }
+  .report-viewer-content .card-header h3 {
+    font-size: 1.15rem;
+  }
+  .report-viewer-content .narrative {
+    font-size: 0.9rem;
+  }
+  .report-viewer-content .data-table td {
+    font-size: 0.85rem;
+  }
+  .report-viewer-content .stat-card .value {
+    font-size: 1.5rem;
+  }
+}
+
+.chart-wrapper {
+  position: relative;
+  width: 100%;
+  height: auto !important;
+  aspect-ratio: 2.2 / 1;
+}
+
+@media (max-width: 768px) {
+  .chart-wrapper {
+    aspect-ratio: 1.5 / 1;
+  }
 }
 
 /* Light-themed close button for report viewer */
@@ -56,12 +133,13 @@
    TERRASO STORYBOARD — One Card At A Time
    ═══════════════════════════════════════════════════════════ */
 
-/* The entire storyboard component */
+/* The entire storyboard component — PPT-style 16:9 aspect ratio */
 .ts-storyboard {
   position: relative;
-  width: 80%;
-  max-width: 1200px;
-  height: 80vh;
+  width: 95%;
+  max-width: 1280px;
+  aspect-ratio: 16 / 9;
+  height: auto;
   margin: 2rem auto;
   border-radius: 16px;
   overflow: hidden;
@@ -290,8 +368,9 @@
 /* ─── Responsive: mobile ─── */
 @media (max-width: 768px) {
   .ts-storyboard {
-    width: 95%;
-    height: 70vh;
+    width: 96%;
+    aspect-ratio: 16 / 9;
+    height: auto;
     border-radius: 12px;
   }
 

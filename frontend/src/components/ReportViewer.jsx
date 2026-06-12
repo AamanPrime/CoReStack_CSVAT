@@ -64,11 +64,50 @@ function getStaticMapUrl(center, zoom = 14, size = '1280x900', heading = 0) {
 }
 
 /**
+ * Walk a GeoJSON Polygon / MultiPolygon and return one flat `lat,lng|lat,lng|…`
+ * string for the outer ring (downsampled to ≤ 100 points so the URL stays
+ * under Google Static Maps' length limit).
+ */
+function polygonToPath(geojson) {
+  if (!geojson) return null;
+  let outer = null;
+  if (geojson.type === 'FeatureCollection') outer = geojson.features?.[0]?.geometry;
+  else if (geojson.type === 'Feature') outer = geojson.geometry;
+  else outer = geojson;
+  if (!outer) return null;
+  const rings = outer.type === 'MultiPolygon' ? outer.coordinates[0] :
+                outer.type === 'Polygon' ? outer.coordinates : null;
+  if (!rings || !rings[0]) return null;
+  let coords = rings[0]; // outer ring only
+  // Downsample to ~80 points to keep URL short
+  if (coords.length > 80) {
+    const step = Math.ceil(coords.length / 80);
+    coords = coords.filter((_, i) => i % step === 0);
+    // Re-close
+    if (coords[coords.length - 1] !== coords[0]) coords.push(coords[0]);
+  }
+  return coords.map(([lng, lat]) => `${lat.toFixed(5)},${lng.toFixed(5)}`).join('|');
+}
+
+/**
+ * Build a static-map URL with the village boundary drawn on top as a
+ * semi-transparent yellow polygon.
+ */
+function getStaticMapUrlWithBoundary(center, geojson, zoom = 13, size = '1280x720') {
+  const base = getStaticMapUrl(center, zoom, size, 0);
+  if (!base) return null;
+  const pathCoords = polygonToPath(geojson);
+  if (!pathCoords) return base;
+  const path = `fillcolor:0xFFC10755|color:0xFFA500FF|weight:3|${pathCoords}`;
+  return `${base}&path=${encodeURIComponent(path)}`;
+}
+
+/**
  * StorySlides — Terraso-style storyboard component.
  * Shows ONE chapter at a time. Scroll-snap within the panel.
  * Background image changes per chapter with cross-fade transition.
  */
-function StorySlides({ slides, villageName, onSlideEdit, ciData, swData }) {
+function StorySlides({ slides, villageName, onSlideEdit, ciData, swData, boundaryMapUrl }) {
   const scrollRef = useRef(null);
   const cardRefs = useRef([]);
   const [activeIdx, setActiveIdx] = React.useState(0);
@@ -136,17 +175,31 @@ function StorySlides({ slides, villageName, onSlideEdit, ciData, swData }) {
 
   return (
     <div className="ts-storyboard">
-      {/* Background images — cross-fade via opacity */}
-      {slides.map((slide, idx) => (
+      {/* Background:
+       *   - If `boundaryMapUrl` is provided, use it as a single calm background
+       *     for ALL slides (the village boundary outlined on satellite imagery).
+       *   - Otherwise, fall back to per-slide map URLs that cross-fade between
+       *     chapters (the original Terraso-style behaviour). */}
+      {boundaryMapUrl ? (
         <div
-          key={idx}
-          className={`ts-bg-layer ${idx === activeIdx ? 'ts-bg-layer--active' : ''}`}
+          className="ts-bg-layer ts-bg-layer--active"
           style={{
-            backgroundImage: slide.mapUrl ? `url(${slide.mapUrl})` : 'none',
-            backgroundColor: slide.mapUrl ? undefined : '#1a1a2e',
+            backgroundImage: `url(${boundaryMapUrl})`,
+            backgroundColor: '#1a1a2e',
           }}
         />
-      ))}
+      ) : (
+        slides.map((slide, idx) => (
+          <div
+            key={idx}
+            className={`ts-bg-layer ${idx === activeIdx ? 'ts-bg-layer--active' : ''}`}
+            style={{
+              backgroundImage: slide.mapUrl ? `url(${slide.mapUrl})` : 'none',
+              backgroundColor: slide.mapUrl ? undefined : '#1a1a2e',
+            }}
+          />
+        ))
+      )}
 
       {/* Dark overlay */}
       <div className="ts-map-overlay" />
@@ -603,11 +656,73 @@ async function downloadReportAsHTML(results, storySlides, villageName) {
     }
     .html-nav a:hover { background: rgba(139,92,246,0.1); }
 
-    /* ─── Report Content Section ─── */
     .report-viewer-content {
-      max-width: 960px;
+      width: 60%;
+      max-width: 60%;
       margin: 0 auto;
       padding: 2rem 1.5rem;
+      font-size: 1.1rem;
+    }
+
+    /* Card typography styling */
+    .report-viewer-content .card-header h3 {
+      font-size: 1.3rem;
+    }
+
+    .report-viewer-content .narrative {
+      font-size: 1.05rem;
+      line-height: 1.7;
+    }
+
+    .report-viewer-content .data-table td {
+      font-size: 1rem;
+    }
+
+    .report-viewer-content .data-table th {
+      font-size: 0.85rem;
+    }
+
+    .report-viewer-content .stat-card .value {
+      font-size: 1.8rem;
+    }
+
+    .report-viewer-content .stat-card .label {
+      font-size: 0.85rem;
+    }
+
+    .report-viewer-content .boundary-info-item .value {
+      font-size: 1rem;
+    }
+
+    .report-viewer-content .boundary-info-item .label {
+      font-size: 0.8rem;
+    }
+
+    @media (max-width: 1024px) {
+      .report-viewer-content {
+        width: 80%;
+        max-width: 80%;
+      }
+    }
+
+    @media (max-width: 768px) {
+      .report-viewer-content {
+        width: 95%;
+        max-width: 95%;
+        font-size: 1rem;
+      }
+      .report-viewer-content .card-header h3 {
+        font-size: 1.15rem;
+      }
+      .report-viewer-content .narrative {
+        font-size: 0.9rem;
+      }
+      .report-viewer-content .data-table td {
+        font-size: 0.85rem;
+      }
+      .report-viewer-content .stat-card .value {
+        font-size: 1.5rem;
+      }
     }
 
     /* ─── Cards ─── */
@@ -656,9 +771,11 @@ async function downloadReportAsHTML(results, storySlides, villageName) {
     .data-table th { color: var(--heading); font-weight: 600; font-size: 0.72rem; text-transform: uppercase; background: #f8fafc; letter-spacing: 0.05em; }
     .data-table th:first-child, .data-table td:first-child { text-align: left; }
 
-    /* ─── Chart Wrapper ─── */
-    .chart-wrapper { position: relative; height: 300px; margin: 1rem 0; }
+    .chart-wrapper { position: relative; width: 100%; height: auto !important; aspect-ratio: 2.2 / 1; margin: 1rem 0; }
     .chart-wrapper img { width: 100%; height: 100%; object-fit: contain; }
+    @media (max-width: 768px) {
+      .chart-wrapper { aspect-ratio: 1.5 / 1; }
+    }
 
     /* ─── Narrative ─── */
     .narrative { color: var(--text); line-height: 1.7; font-size: 0.9rem; margin-top: 1rem; background: #f1f5f9; padding: 1rem; border-radius: 8px; border-left: 4px solid #3b82f6; }
@@ -675,9 +792,10 @@ async function downloadReportAsHTML(results, storySlides, villageName) {
     /* ═══ TERRASO STORYBOARD (fully interactive in HTML export) ═══ */
     .ts-storyboard {
       position: relative;
-      width: 90%;
-      max-width: 1200px;
-      height: 80vh;
+      width: 95%;
+      max-width: 1280px;
+      aspect-ratio: 16 / 9;
+      height: auto;
       margin: 2rem auto;
       border-radius: 16px;
       overflow: hidden;
@@ -837,7 +955,7 @@ async function downloadReportAsHTML(results, storySlides, villageName) {
 
     /* Responsive */
     @media (max-width: 768px) {
-      .ts-storyboard { width: 95%; height: 70vh; }
+      .ts-storyboard { width: 96%; aspect-ratio: 16 / 9; height: auto; }
       .ts-snap-page { padding: 1.5rem 1rem; }
       .ts-card { padding: 1.25rem; }
       .ts-card-title { font-size: 1.15rem; }
@@ -860,7 +978,7 @@ async function downloadReportAsHTML(results, storySlides, villageName) {
 </head>
 <body>
   <div style="text-align:center;padding:1.5rem 1.5rem 1.25rem;background:linear-gradient(135deg,#1a1a2e,#16213e);color:#fff;">
-    <h1 style="font-family:'Playfair Display',serif;font-size:1.6rem;margin:0;">CSVAT Village Analytics Report</h1>
+    <h1 style="font-family:'Playfair Display',serif;font-size:1.6rem;margin:0;">CSVAT ${villageName || 'Village'} Report</h1>
     <p style="color:rgba(255,255,255,0.6);font-size:0.85rem;margin-top:0.35rem;">${villageName || 'Village'} — Generated ${new Date().toLocaleDateString()}</p>
   </div>
   <nav class="html-nav">
@@ -905,7 +1023,7 @@ function generateStorySlides(results, ciData, swData, center) {
   // Slide 1: Village Introduction
   slides.push({
     title: `The Story of ${village_name || 'This Village'}`,
-    icon: '🌾',
+    icon: '',
     narrative: `${village_name || 'This village'}${district ? `, nestled in ${district} district` : ''}${state ? ` of ${state}` : ''}, tells a story written in its land, water, and people. This data story draws from satellite imagery and geospatial analytics to paint a picture of how this landscape has evolved — tracking cropping patterns, surface water availability, vegetation health, and terrain composition across multiple years.`,
     mapUrl: getStaticMapUrl(center, 13, '1280x900', 0),
     imageUrl: 'https://images.unsplash.com/photo-1500382017468-9049fed747ef?w=600&h=300&fit=crop',
@@ -920,7 +1038,7 @@ function generateStorySlides(results, ciData, swData, center) {
     const intensityTrend = latest.cropping_intensity > earliest.cropping_intensity ? 'intensified' : 'weakened';
     slides.push({
       title: 'Cropping Patterns Over Time',
-      icon: '🌱',
+      icon: '',
       narrative: `Over ${ciData.length} fiscal years (${earliest.year} to ${latest.year}), the total cropped area has ${trend} from ${earliest.total_cropped_ha?.toFixed(2)} ha to ${latest.total_cropped_ha?.toFixed(2)} ha. The cropping intensity index has ${intensityTrend}, moving from ${earliest.cropping_intensity?.toFixed(3) || '—'} to ${latest.cropping_intensity?.toFixed(3) || '—'}. In the most recent year, single crop covers ${latest.single_crop_ha?.toFixed(2)} ha, double crop covers ${latest.double_crop_ha?.toFixed(2)} ha, and triple crop covers ${latest.triple_crop_ha?.toFixed(2)} ha — revealing how farmers have adapted their practices to the changing climate and water availability.`,
       mapUrl: getStaticMapUrl(center, 15, '1280x900', 90),
       imageUrl: 'https://images.unsplash.com/photo-1574943320219-553eb213f72d?w=600&h=300&fit=crop',
@@ -938,7 +1056,7 @@ function generateStorySlides(results, ciData, swData, center) {
     const zaid = latest.zaid_ha ?? latest.perennial_ha ?? 0;
     slides.push({
       title: 'Water — The Lifeblood',
-      icon: '💧',
+      icon: '',
       narrative: `In ${latest.year}, the village's surface water footprint measured ${(latest.total_water_ha ?? 0).toFixed(2)} hectares — split across Kharif season (${kharif.toFixed(2)} ha during the monsoon), Rabi season (${rabi.toFixed(2)} ha in winter), and Zaid season (${zaid.toFixed(2)} ha in summer). Tracking ${swData.length} years of data from ${earliest.year} to ${latest.year}, we can see the seasonal rhythm of water availability that dictates what grows, when it grows, and whether the harvest succeeds.`,
       mapUrl: getStaticMapUrl(center, 14, '1280x900', 180),
       imageUrl: 'https://images.unsplash.com/photo-1470071459604-3b5ec3a7fe05?w=600&h=300&fit=crop',
@@ -956,7 +1074,7 @@ function generateStorySlides(results, ciData, swData, center) {
     const direction = net >= 0 ? 'a net gain' : 'a net loss';
     slides.push({
       title: 'The Green Canopy',
-      icon: '🌳',
+      icon: '',
       narrative: `The vegetation story reveals ${direction} of ${Math.abs(net ?? 0).toFixed(2)} hectares of tree cover. The analysis detected ${gain} ha of tree cover gain against ${loss} ha of loss. ${vegetation.degraded_land_ha ? `An additional ${vegetation.degraded_land_ha.toFixed(2)} ha is classified as degraded land.` : ''} ${vegetation.transitions?.length > 0 ? `The primary transitions show tree cover converting to ${vegetation.transitions.filter(t => (t.to_label || t.to) !== 'Tree Cover').map(t => t.to_label || t.to).slice(0, 3).join(', ')}.` : ''} These shifts reflect the ongoing balance between agricultural expansion and environmental conservation.`,
       mapUrl: getStaticMapUrl(center, 14, '1280x900', 270),
       imageUrl: 'https://images.unsplash.com/photo-1441974231531-c6227db76b6e?w=600&h=300&fit=crop',
@@ -1071,7 +1189,7 @@ export default function ReportViewer({
     // Build chapter slides (include ALL chapters)
     const chapterSlides = dbStory.story_chapters.map((ch, idx) => ({
       title: ch.title,
-      icon: idx === 0 ? '📖' : idx === 1 ? '🌾' : '💧',
+      icon: idx === 0 ? '📖' : idx === 1 ? '' : '',
       narrative: ch.narrative,
       imageUrl: DB_CHAPTER_IMAGES[ch.map_action] || DB_CHAPTER_IMAGES.zoom_to_village,
       mapUrl: getStaticMapUrl(
@@ -1216,7 +1334,7 @@ export default function ReportViewer({
       let newContent = baseSlide.content;
       let newInsight = baseSlide.insight;
       if (updatedData.narrative) {
-        const parts = updatedData.narrative.split('\n\n💡 ');
+        const parts = updatedData.narrative.split('\n\n ');
         newContent = parts[0].trim();
         newInsight = parts.length > 1 ? parts[1].trim() : '';
       }
@@ -1333,7 +1451,7 @@ export default function ReportViewer({
         return {
           title: s.emoji ? `${s.emoji} ${s.title}` : s.title,
           icon: s.emoji || '',
-          narrative: `${s.content}\n\n💡 ${s.insight}`,
+          narrative: `${s.content}\n\n ${s.insight}`,
           mapUrl: getStaticMapUrl(mapCenter, mapCfg.zoom, '1280x900', mapCfg.heading),
           imageUrl: s.image_url || null,
           isAiGenerated: true,
@@ -1345,7 +1463,7 @@ export default function ReportViewer({
       //console.log('[Storyboard] Falling back to allSlides:', allSlides.length);
     }
 
-    // Apply any inline session edits the user made
+    // Apply any inline session edits the user made.
     return baseSlides.map((slide, idx) => {
       const override = slideOverrides[idx];
       if (override) {
@@ -1374,7 +1492,7 @@ export default function ReportViewer({
           background: 'linear-gradient(135deg, #8B5CF6, #6366f1)',
           WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
         }}>
-          🌾 Village Analytics Report
+           {village_name || 'Village'} Report
         </h2>
         <p style={{ color: 'var(--text-secondary)', marginTop: '0.5rem' }}>
           {village_name}{(district || state) ? ` — ${[district, state].filter(Boolean).join(', ')}` : ' — Pan-India (Upload)'}
@@ -1412,31 +1530,94 @@ export default function ReportViewer({
         </div>
       </div>
 
+      {/* Village Boundary card removed — it's now the storyboard's first slide. */}
+
+
+      {/* ─── Overview + Land Use (text version of storyboard's opening slides) ─── */}
+      {(() => {
+        const slides = finalSlidesWithOverrides || [];
+        const overview = slides[0];
+        const landUseSlide = slides.find(s => {
+          const t = (s.title || '').toLowerCase();
+          return t.includes('cropping') || t.includes('land use') || t.includes('land-use');
+        });
+        if (!overview && !landUseSlide) return null;
+        const staticMapUrl = getStaticMapUrlWithBoundary(
+          mapCenter,
+          boundary?.boundary_geojson || boundary?.geojson || results?.geojson,
+          13,
+          '1280x720',
+        );
+        return (
+          <div className="card animate-slide-up" style={{ marginBottom: '1.5rem' }}>
+            {overview && (
+              <>
+                {staticMapUrl && (
+                  <div style={{ 
+                    margin: '0 auto 1.5rem auto', 
+                    overflow: 'hidden', 
+                    borderRadius: 'var(--radius-md)', 
+                    border: '1px solid var(--border-light)',
+                    aspectRatio: '16 / 9',
+                    width: '100%',
+                    maxWidth: '800px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    background: '#0f172a'
+                  }}>
+                    <img
+                      src={staticMapUrl}
+                      alt="Village Boundary Map"
+                      style={{ width: '100%', height: '100%', display: 'block', objectFit: 'cover' }}
+                    />
+                  </div>
+                )}
+                <div className="card-header">
+                  <span className="icon">{overview.icon || '📖'}</span>
+                  <h3>Overview</h3>
+                </div>
+                <div className="narrative" style={{ whiteSpace: 'pre-wrap' }}>
+                  {overview.narrative}
+                </div>
+              </>
+            )}
+            {landUseSlide && (
+              <>
+                <div className="card-header" style={{ marginTop: overview ? '1.25rem' : 0 }}>
+                  <span className="icon">{landUseSlide.icon || ''}</span>
+                  <h3>Land Use</h3>
+                </div>
+                <div className="narrative" style={{ whiteSpace: 'pre-wrap' }}>
+                  {landUseSlide.narrative}
+                </div>
+              </>
+            )}
+          </div>
+        );
+      })()}
+
       {/* ─── Summary Stats ─── */}
       <div className="card animate-slide-up" style={{ marginBottom: '1.5rem' }}>
         <div className="stats-grid">
-          {mws_count != null && (
-            <div className="stat-card stat-blue">
-              <div className="value">{mws_count}</div>
-              <div className="label">Micro-Watersheds</div>
-            </div>
-          )}
-          {ciData && (
-            <div className="stat-card stat-green">
-              <div className="value">{ciData.length}</div>
-              <div className="label">Years of Data</div>
-            </div>
-          )}
+
+          {ciData && ciData.length > 0 && (() => {
+            const years = ciData.map(d => parseInt(d.year, 10)).filter(y => !isNaN(y));
+            if (years.length === 0) return null;
+            const startYear = Math.min(...years);
+            const endYear = Math.max(...years);
+            return (
+              <div className="stat-card stat-green">
+                <div className="value" style={{ fontSize: '1.2rem' }}>{startYear} - {endYear}</div>
+                <div className="label">Years of Data</div>
+              </div>
+            );
+          })()}
           <div className="stat-card stat-amber">
             <div className="value">{totalAreaHa.toFixed(2)}</div>
             <div className="label">Total Area (ha)</div>
           </div>
-          {vegetation && (
-            <div className="stat-card stat-red">
-              <div className="value">{vegetation.transitions?.filter(t => (t.to_label || t.to) !== 'Tree Cover' && (t.to_label || t.to) !== 'Forest' && t.area_ha > 0).length || 0}</div>
-              <div className="label">Tree Cover Loss Types</div>
-            </div>
-          )}
+          {/* Tree-cover KPI removed per design — replaced by inline narrative below */}
         </div>
       </div>
 
@@ -1444,7 +1625,7 @@ export default function ReportViewer({
       {ciData && ciData.length > 0 && (
         <div className="card animate-slide-up">
           <div className="card-header">
-            <span className="icon">🌱</span>
+            <span className="icon"></span>
             <h3>Cropping Intensity Trends</h3>
           </div>
           <div className="chart-wrapper">
@@ -1452,9 +1633,10 @@ export default function ReportViewer({
               data={{
                 labels: ciData.map(d => d.year),
                 datasets: [
-                  { label: 'Single Crop (ha)', data: ciData.map(d => d.single_crop_ha), backgroundColor: 'rgba(34, 197, 94, 0.7)', borderRadius: 6 },
-                  { label: 'Double Crop (ha)', data: ciData.map(d => d.double_crop_ha), backgroundColor: 'rgba(59, 130, 246, 0.7)', borderRadius: 6 },
+                  // Order: Triple → Double → Single (top of stack to bottom)
                   { label: 'Triple Crop (ha)', data: ciData.map(d => d.triple_crop_ha), backgroundColor: 'rgba(245, 158, 11, 0.7)', borderRadius: 6 },
+                  { label: 'Double Crop (ha)', data: ciData.map(d => d.double_crop_ha), backgroundColor: 'rgba(59, 130, 246, 0.7)', borderRadius: 6 },
+                  { label: 'Single Crop (ha)', data: ciData.map(d => d.single_crop_ha), backgroundColor: 'rgba(34, 197, 94, 0.7)', borderRadius: 6 },
                 ],
               }}
               options={{
@@ -1465,25 +1647,133 @@ export default function ReportViewer({
             />
           </div>
           <table className="data-table">
-            <thead><tr><th>Year</th><th>Single Crop (ha)</th><th>Double Crop (ha)</th><th>Triple Crop (ha)</th><th>Total (ha)</th><th>Intensity Index</th></tr></thead>
+            <thead><tr><th>Year</th><th>Triple Crop (ha)</th><th>Double Crop (ha)</th><th>Single Crop (ha)</th><th>Total (ha)</th><th>Intensity Index</th></tr></thead>
             <tbody>
               {ciData.map(d => (
-                <tr key={d.year}><td>{d.year}</td><td>{d.single_crop_ha?.toFixed(2)}</td><td>{d.double_crop_ha?.toFixed(2)}</td><td>{d.triple_crop_ha?.toFixed(2)}</td><td>{d.total_cropped_ha?.toFixed(2)}</td><td>{d.cropping_intensity?.toFixed(3) ?? '—'}</td></tr>
+                <tr key={d.year}><td>{d.year}</td><td>{d.triple_crop_ha?.toFixed(2)}</td><td>{d.double_crop_ha?.toFixed(2)}</td><td>{d.single_crop_ha?.toFixed(2)}</td><td>{d.total_cropped_ha?.toFixed(2)}</td><td>{d.cropping_intensity?.toFixed(3) ?? '—'}</td></tr>
               ))}
             </tbody>
           </table>
           <div className="narrative">
-            Cropping intensity analysis shows how agricultural land use patterns have changed within the village boundary.
-            The intensity index represents the average number of crop cycles per year across the analyzed area.
+            This chart shows how many crop cycles the village's farmland goes through each year.
+            Triple-cropped land is harvested three times a year (usually irrigated), double-cropped twice, and single-cropped once (usually rainfed).
+            The "Intensity Index" is the average number of harvests per hectare per year — higher means more intensive farming.
           </div>
         </div>
       )}
+
+      {/* ─── Cropping Intensity Change Transitions ─── */}
+      {crop_intensity_change && crop_intensity_change.length > 0 && (() => {
+        const getTransitionPriority = (t) => {
+          const lbl = (t.category || t.label || '').toLowerCase();
+          if (lbl.includes('total')) return 4;
+          if (lbl.includes('double to single') || lbl.includes('triple to double') || lbl.includes('triple to single')) {
+            return 1; // Decline
+          }
+          if (lbl.includes('single to double') || lbl.includes('double to triple') || lbl.includes('single to triple')) {
+            return 3; // Improvement
+          }
+          return 2; // Stable
+        };
+        const sortedTransitions = [...crop_intensity_change].sort(
+          (a, b) => getTransitionPriority(a) - getTransitionPriority(b)
+        );
+        return (
+          <div className="card animate-slide-up">
+            <div className="card-header">
+              <span className="icon"></span>
+              <h3>Cropping Intensity Change Detection</h3>
+            </div>
+            <div className="chart-wrapper" style={{ height: '320px' }}>
+              <Bar
+                data={{
+                  labels: sortedTransitions.filter(t => !(t.category || t.label || '').includes('Total')).map(t => t.category || t.label),
+                  datasets: [{
+                    label: 'Area (ha)',
+                    data: sortedTransitions.filter(t => !(t.category || t.label || '').includes('Total')).map(t => t.area_ha),
+                    backgroundColor: sortedTransitions.filter(t => !(t.category || t.label || '').includes('Total')).map(t => {
+                      const lbl = t.category || t.label || '';
+                      if (lbl.includes('Single To Double') || lbl.includes('Double To Triple') || lbl.includes('Single To Triple')) return 'rgba(34,197,94,0.7)';
+                      if (lbl.includes('Double To Single') || lbl.includes('Triple To Double') || lbl.includes('Triple To Single')) return 'rgba(239,68,68,0.7)';
+                      return 'rgba(59,130,246,0.7)';
+                    }),
+                    borderRadius: 6,
+                  }],
+                }}
+                options={{ responsive: true, maintainAspectRatio: false, indexAxis: 'y', scales: { x: { title: { display: true, text: 'Area (Hectares)' } } }, plugins: { legend: { display: false } } }}
+              />
+            </div>
+            <table className="data-table">
+              <thead><tr><th>Transition</th><th>Area (ha)</th><th>Direction</th></tr></thead>
+              <tbody>
+                {sortedTransitions.map((t, idx) => {
+                  const lbl = t.category || t.label || '';
+                  return (
+                    <tr key={idx}>
+                      <td>{lbl}</td>
+                      <td>{t.area_ha?.toFixed(2)}</td>
+                      <td>{lbl.includes('Total') ? '—' : (lbl.includes('Single To Double') || lbl.includes('Double To Triple') || lbl.includes('Single To Triple')) ? '↑ Improvement' : (lbl.includes('Double To Single') || lbl.includes('Triple To Double') || lbl.includes('Triple To Single')) ? '↓ Decline' : '→ Stable'}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            <div className="narrative">
+              Cropping intensity change detection shows how agricultural practices have shifted between
+              single, double, and triple cropping patterns. Green bars indicate improvement (single→double,
+              double→triple), while red bars indicate decline.
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ─── Rainfed vs Irrigated (estimated from cropping intensity) ─── */}
+      {ciData && ciData.length > 0 && (() => {
+        const latest = ciData[ciData.length - 1];
+        const rainfed = latest.rainfed_ha ?? (latest.single_crop_ha || 0);
+        const irrigated = latest.irrigated_ha ?? ((latest.double_crop_ha || 0) + (latest.triple_crop_ha || 0));
+        const total = rainfed + irrigated;
+        const rainfedPct = total > 0 ? (rainfed / total) * 100 : 0;
+        const irrigatedPct = total > 0 ? (irrigated / total) * 100 : 0;
+        if (total <= 0) return null;
+        return (
+          <div className="card animate-slide-up">
+            <div className="card-header">
+              <span className="icon">🌧️</span>
+              <h3>Rainfed vs Irrigated Area ({latest.year})</h3>
+            </div>
+            <div className="stats-grid">
+              <div className="stat-card stat-amber">
+                <div className="value">{rainfed.toFixed(2)}</div>
+                <div className="label">Rainfed (ha) — {rainfedPct.toFixed(0)}%</div>
+              </div>
+              <div className="stat-card stat-blue">
+                <div className="value">{irrigated.toFixed(2)}</div>
+                <div className="label">Irrigated (ha) — {irrigatedPct.toFixed(0)}%</div>
+              </div>
+              <div className="stat-card stat-green">
+                <div className="value">{total.toFixed(2)}</div>
+                <div className="label">Total cropped (ha)</div>
+              </div>
+            </div>
+            {/* Simple proportional bar */}
+            <div style={{ marginTop: '1rem', display: 'flex', height: '22px', borderRadius: '6px', overflow: 'hidden', border: '1px solid var(--border-light, #e2e8f0)' }}>
+              <div style={{ width: `${rainfedPct}%`, background: 'rgba(245, 158, 11, 0.85)' }} title={`Rainfed: ${rainfedPct.toFixed(1)}%`} />
+              <div style={{ width: `${irrigatedPct}%`, background: 'rgba(59, 130, 246, 0.85)' }} title={`Irrigated: ${irrigatedPct.toFixed(1)}%`} />
+            </div>
+            <div className="narrative" style={{ marginTop: '0.75rem' }}>
+              Rainfed land is harvested once a year (depends on the monsoon), while irrigated land supports two or three crop cycles a year.
+              These figures are estimated from the cropping intensity above — single-crop pixels are counted as rainfed; double- and triple-crop pixels as irrigated.
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ─── Surface Water (Kharif / Rabi / Zaid) ─── */}
       {swData && swData.length > 0 && (
         <div className="card animate-slide-up">
           <div className="card-header">
-            <span className="icon">💧</span>
+            <span className="icon"></span>
             <h3>Seasonal Surface Water Availability</h3>
           </div>
           <div className="chart-wrapper">
@@ -1523,12 +1813,10 @@ export default function ReportViewer({
       {vegetation && (
         <div className="card animate-slide-up">
           <div className="card-header">
-            <span className="icon">🌳</span>
+            <span className="icon"></span>
             <h3>Vegetation & Tree Cover Change Analysis</h3>
           </div>
           <div className="stats-grid">
-            <div className="stat-card stat-green"><div className="value">{vegetation.tree_cover_gain_ha?.toFixed(2) ?? '—'}</div><div className="label">Tree Cover Gain (ha)</div></div>
-            <div className="stat-card stat-red"><div className="value">{vegetation.tree_cover_loss_ha?.toFixed(2) ?? '—'}</div><div className="label">Tree Cover Loss (ha)</div></div>
             <div className={`stat-card ${(vegetation.net_change_ha ?? 0) >= 0 ? 'stat-green' : 'stat-red'}`}><div className="value">{vegetation.net_change_ha?.toFixed(2) ?? '—'}</div><div className="label">Net Change (ha)</div></div>
             <div className="stat-card stat-amber"><div className="value">{vegetation.degraded_land_ha?.toFixed(2) ?? '—'}</div><div className="label">Degraded Land (ha)</div></div>
           </div>
@@ -1569,54 +1857,6 @@ export default function ReportViewer({
         </div>
       )}
 
-      {/* ─── Cropping Intensity Change Transitions ─── */}
-      {crop_intensity_change && crop_intensity_change.length > 0 && (
-        <div className="card animate-slide-up">
-          <div className="card-header">
-            <span className="icon"></span>
-            <h3>Cropping Intensity Change Detection</h3>
-          </div>
-          <div className="chart-wrapper" style={{ height: '320px' }}>
-            <Bar
-              data={{
-                labels: crop_intensity_change.filter(t => !(t.category || t.label || '').includes('Total')).map(t => t.category || t.label),
-                datasets: [{
-                  label: 'Area (ha)',
-                  data: crop_intensity_change.filter(t => !(t.category || t.label || '').includes('Total')).map(t => t.area_ha),
-                  backgroundColor: crop_intensity_change.filter(t => !(t.category || t.label || '').includes('Total')).map(t => {
-                    const lbl = t.category || t.label || '';
-                    if (lbl.includes('Single To Double') || lbl.includes('Double To Triple') || lbl.includes('Single To Triple')) return 'rgba(34,197,94,0.7)';
-                    if (lbl.includes('Double To Single') || lbl.includes('Triple To Double') || lbl.includes('Triple To Single')) return 'rgba(239,68,68,0.7)';
-                    return 'rgba(59,130,246,0.7)';
-                  }),
-                  borderRadius: 6,
-                }],
-              }}
-              options={{ responsive: true, maintainAspectRatio: false, indexAxis: 'y', scales: { x: { title: { display: true, text: 'Area (Hectares)' } } }, plugins: { legend: { display: false } } }}
-            />
-          </div>
-          <table className="data-table">
-            <thead><tr><th>Transition</th><th>Area (ha)</th><th>Direction</th></tr></thead>
-            <tbody>
-              {crop_intensity_change.map((t, idx) => {
-                const lbl = t.category || t.label || '';
-                return (
-                  <tr key={idx}>
-                    <td>{lbl}</td>
-                    <td>{t.area_ha?.toFixed(2)}</td>
-                    <td>{lbl.includes('Total') ? '—' : (lbl.includes('Single To Double') || lbl.includes('Double To Triple') || lbl.includes('Single To Triple')) ? '↑ Improvement' : (lbl.includes('Double To Single') || lbl.includes('Triple To Double') || lbl.includes('Triple To Single')) ? '↓ Decline' : '→ Stable'}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-          <div className="narrative">
-            Cropping intensity change detection shows how agricultural practices have shifted between
-            single, double, and triple cropping patterns. Green bars indicate improvement (single→double,
-            double→triple), while red bars indicate decline.
-          </div>
-        </div>
-      )}
 
 
       {/* ─── Waterbodies ─── */}
@@ -1649,6 +1889,71 @@ export default function ReportViewer({
           </div>
         </div>
       )}
+
+      {/* ─── STORYBOARD — moved to below the main cards (boundary intro is its first slide) ─── */}
+      <div style={{ position: 'relative', marginBottom: '1.5rem' }}>
+        {/* Action bar */}
+        <div className="storyboard-action-bar">
+          {aiSlides && (
+            <button
+              className="storyboard-action-btn storyboard-edit-btn"
+              onClick={() => setShowSlideEditor(true)}
+              title="Edit storyboard slides"
+            >
+               Edit Story
+            </button>
+          )}
+          {isCoReStack && (
+            <button
+              className="storyboard-action-btn storyboard-regen-btn"
+              onClick={() => triggerAiStoryboard(true)}
+              disabled={isGenerating}
+              title="Regenerate storyboard from scratch"
+            >
+              {isGenerating ? '⏳ Generating…' : ' Regenerate'}
+            </button>
+          )}
+          {!aiSlides && !isGenerating && (
+            <button
+              className="storyboard-action-btn storyboard-edit-btn"
+              onClick={() => setShowSlideEditor(true)}
+              title="Edit story slides"
+            >
+               Edit Story
+            </button>
+          )}
+        </div>
+
+        {/* Full-screen loading placeholder */}
+        {isGenerating ? (
+          <div style={{ height: '80vh', width: '100%', background: '#0f172a', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#fff' }}>
+            <div className="storyboard-gen-spinner" style={{ width: '48px', height: '48px', borderTopColor: '#3b82f6', borderRightColor: '#3b82f6', marginBottom: '1.5rem', borderWidth: '4px' }} />
+            <h3 style={{ fontFamily: 'Inter', fontWeight: 600, fontSize: '1.5rem', margin: '0 0 0.5rem 0' }}>Loading Storyboard</h3>
+            <p style={{ color: '#94a3b8', margin: 0 }}>{genProgress || 'Please wait while we fetch the village narrative...'}</p>
+          </div>
+        ) : genError ? (
+          <div style={{ height: '80vh', width: '100%', background: '#0f172a', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#ef4444' }}>
+            <span style={{ fontSize: '3rem', marginBottom: '1rem' }}></span>
+            <h3 style={{ fontFamily: 'Inter', fontWeight: 600, margin: '0 0 0.5rem 0' }}>Storyboard generation failed</h3>
+            <p style={{ color: '#fca5a5', margin: 0 }}>{genError}</p>
+            <button className="btn btn-primary" style={{ marginTop: '1.5rem' }} onClick={() => triggerAiStoryboard(true)}>Retry Generation</button>
+          </div>
+        ) : (
+          <StorySlides
+            slides={finalSlidesWithOverrides}
+            villageName={village_name}
+            onSlideEdit={handleSlideEdit}
+            ciData={ciData}
+            swData={swData}
+            boundaryMapUrl={getStaticMapUrlWithBoundary(
+              mapCenter,
+              boundary?.boundary_geojson || boundary?.geojson || results?.geojson,
+              13,
+              '1280x720',
+            )}
+          />
+        )}
+      </div>
 
       {/* ─── Export / Download Section ─── */}
       <div className="card animate-slide-up" style={{ marginTop: '1.5rem' }}>
@@ -1725,65 +2030,6 @@ export default function ReportViewer({
       </div>
 
         </div>{/* end .report-viewer-content */}
-
-        {/* ─── TERRASO FULLSCREEN SLIDE STORYBOARD ─── */}
-        <div style={{ position: 'relative' }}>
-          {/* Action bar */}
-          <div className="storyboard-action-bar">
-            {aiSlides && (
-              <button
-                className="storyboard-action-btn storyboard-edit-btn"
-                onClick={() => setShowSlideEditor(true)}
-                title="Edit storyboard slides"
-              >
-                 Edit Story
-              </button>
-            )}
-            {isCoReStack && (
-              <button
-                className="storyboard-action-btn storyboard-regen-btn"
-                onClick={() => triggerAiStoryboard(true)}
-                disabled={isGenerating}
-                title="Regenerate storyboard from scratch"
-              >
-                {isGenerating ? '⏳ Generating…' : ' Regenerate'}
-              </button>
-            )}
-            {!aiSlides && !isGenerating && (
-              <button
-                className="storyboard-action-btn storyboard-edit-btn"
-                onClick={() => setShowSlideEditor(true)}
-                title="Edit story slides"
-              >
-                 Edit Story
-              </button>
-            )}
-          </div>
-
-          {/* Full-screen loading placeholder */}
-          {isGenerating ? (
-            <div style={{ height: '80vh', width: '100%', background: '#0f172a', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#fff' }}>
-              <div className="storyboard-gen-spinner" style={{ width: '48px', height: '48px', borderTopColor: '#3b82f6', borderRightColor: '#3b82f6', marginBottom: '1.5rem', borderWidth: '4px' }} />
-              <h3 style={{ fontFamily: 'Inter', fontWeight: 600, fontSize: '1.5rem', margin: '0 0 0.5rem 0' }}>Loading Storyboard</h3>
-              <p style={{ color: '#94a3b8', margin: 0 }}>{genProgress || 'Please wait while we fetch the village narrative...'}</p>
-            </div>
-          ) : genError ? (
-            <div style={{ height: '80vh', width: '100%', background: '#0f172a', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#ef4444' }}>
-              <span style={{ fontSize: '3rem', marginBottom: '1rem' }}>⚠️</span>
-              <h3 style={{ fontFamily: 'Inter', fontWeight: 600, margin: '0 0 0.5rem 0' }}>Storyboard generation failed</h3>
-              <p style={{ color: '#fca5a5', margin: 0 }}>{genError}</p>
-              <button className="btn btn-primary" style={{ marginTop: '1.5rem' }} onClick={() => triggerAiStoryboard(true)}>Retry Generation</button>
-            </div>
-          ) : (
-            <StorySlides 
-              slides={finalSlidesWithOverrides} 
-              villageName={village_name} 
-              onSlideEdit={handleSlideEdit} 
-              ciData={ciData}
-              swData={swData}
-            />
-          )}
-        </div>
 
       </div>{/* end .report-viewer-scroll */}
 

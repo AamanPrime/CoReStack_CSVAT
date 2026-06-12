@@ -1,9 +1,62 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { computeAreaHectares, usePlacesAutocomplete } from './GoogleMapsIntegration';
-import { getGEEStates, getGEEDistricts, getGEETehsils, getGEETehsilsByState, getGEEVillageGeometries, getGEEVillagesByDistrict, getVillageGeometries, getGEETehsilGeometry, getGEEDistrictGeometry, getGEEStateGeometry } from '../services/api';
+import { getGEEStates, getGEEDistricts, getGEETehsils, getGEETehsilsByState, getGEEVillageGeometries, getGEEVillagesByDistrict, getVillageGeometries, getActiveLocations, getGEETehsilGeometry, getGEEDistrictGeometry, getGEEStateGeometry } from '../services/api';
 import { resolveAdminHierarchy } from '../services/adminResolver';
 
+// Module-level cache for CoRE Stack active locations (fetched once, reused across selections)
+let _activeLocationsCache = null;
+let _activeLocationsFetchPromise = null;
+
+/**
+ * Return CoRE Stack active locations, fetching only once per page load.
+ * Returns the raw array from the API or [] on failure.
+ */
+async function getCachedActiveLocations() {
+  if (_activeLocationsCache) return _activeLocationsCache;
+  if (_activeLocationsFetchPromise) return _activeLocationsFetchPromise;
+  _activeLocationsFetchPromise = getActiveLocations()
+    .then(data => {
+      _activeLocationsCache = Array.isArray(data) ? data : [];
+      return _activeLocationsCache;
+    })
+    .catch(() => { _activeLocationsCache = []; return []; });
+  return _activeLocationsFetchPromise;
+}
+
+/**
+ * Check whether a specific state/district/tehsil combo exists in CoRE Stack
+ * active locations. Returns true if found (MWS data likely available).
+ */
+function isTehsilInActiveLocations(activeLocations, state, district, tehsil) {
+  const norm = s => (s || '').toLowerCase().trim();
+  for (const stateObj of activeLocations) {
+    if (norm(stateObj.label) !== norm(state)) continue;
+    for (const distObj of stateObj.district || []) {
+      if (norm(distObj.label) !== norm(district)) continue;
+      for (const block of distObj.blocks || []) {
+        if (norm(block.label) === norm(tehsil)) return true;
+      }
+    }
+  }
+  return false;
+}
+
+
 const MAX_AREA_HA = 20000; // Maximum boundary area allowed for analysis
+
+// States/UTs NOT covered by IndiaSAT LULC v3 (river basin dataset = mainland India only).
+// These are filtered out of the state dropdown to prevent users from selecting an area
+// that will produce all-zero TIFFs and fail with a "no dataset coverage" error.
+const INDIASAT_EXCLUDED_STATES = new Set([
+  // Island territories — outside all river basin coverages
+  'Andaman & Nicobar',
+  'Lakshadweep',
+  // Union territories with limited / no IndiaSAT river-basin coverage
+  'Dadra and Nagar Haveli And Daman And Diu',
+  'Dadra and Nagar Haveli',
+  'Daman and Diu',
+  'Dadra and Nagar Haveli and Daman and Diu'
+]);
 
 export default function BoundarySelector({ onBoundarySelect, onMapUpdate }) {
   const [activeTab, setActiveTab] = useState('corestack');
@@ -80,13 +133,19 @@ export default function BoundarySelector({ onBoundarySelect, onMapUpdate }) {
   useEffect(() => {
     if (activeTab === 'corestack' && geeStates.length === 0) {
       getGEEStates()
-        .then((names) => setGeeStates(Array.isArray(names) ? names : []))
+        .then((names) => {
+          const all = Array.isArray(names) ? names : [];
+          // Filter out states/UTs not covered by IndiaSAT LULC v3
+          const covered = all.filter(s => !INDIASAT_EXCLUDED_STATES.has(s));
+          setGeeStates(covered);
+        })
         .catch(() => setGeeStates([]));
     }
   }, [activeTab]);
 
   // State selected → fetch districts; if none, auto-skip to tehsil level
   const handleCsStateChange = async (val) => {
+    onBoundarySelect(null);
     setCsSelectedState(val);
     setCsSelectedDistrict('');
     setCsSelectedTehsil('');
@@ -143,6 +202,7 @@ export default function BoundarySelector({ onBoundarySelect, onMapUpdate }) {
 
   // District selected → fetch tehsils; if none, auto-skip to village level
   const handleCsDistrictChange = async (val) => {
+    onBoundarySelect(null);
     setCsSelectedDistrict(val);
     setCsSelectedTehsil('');
     setCsVillages([]);
@@ -199,8 +259,9 @@ export default function BoundarySelector({ onBoundarySelect, onMapUpdate }) {
   };
 
   // Tehsil selected → fetch villages from GEE Village_pan_india
-  // Also fire CoReStack village-geometries in parallel to build MWS lookup map
+  // Also call CoRE Stack active locations in parallel to determine MWS availability
   const handleCsTehsilChange = async (val) => {
+    onBoundarySelect(null);
     setCsSelectedTehsil(val);
     setCsVillages([]);
     setMwsStatus('idle');
@@ -211,13 +272,20 @@ export default function BoundarySelector({ onBoundarySelect, onMapUpdate }) {
 
     setCsLoading(true);
     try {
-      // Fire GEE + CoReStack requests in parallel
-      const [geeData, csData] = await Promise.allSettled([
+      // Fire GEE villages + CoRE Stack village-geometries + active locations in parallel.
+      // Active locations are cached after the first fetch so subsequent calls are instant.
+      const [geeData, csData, activeLocData] = await Promise.allSettled([
         getGEEVillageGeometries(csSelectedState, csSelectedDistrict, val),
         getVillageGeometries(csSelectedState, csSelectedDistrict, val),
+        getCachedActiveLocations(),
       ]);
 
-      // Build CoReStack lookup: normalised-name → { vill_ID, vill_name }
+      // Is this tehsil listed in CoRE Stack active locations?
+      const activeLocs = activeLocData.status === 'fulfilled' ? activeLocData.value : [];
+      const hasMwsCoverage = isTehsilInActiveLocations(activeLocs, csSelectedState, csSelectedDistrict, val);
+
+      // Build per-village CoReStack lookup: normalised-name → { vill_ID, vill_name }
+      // (used to pass the specific vill_ID when a village is selected)
       if (csData.status === 'fulfilled') {
         const csFeatures = csData.value?.features || (Array.isArray(csData.value) ? csData.value : []);
         const lookup = new Map();
@@ -230,6 +298,9 @@ export default function BoundarySelector({ onBoundarySelect, onMapUpdate }) {
         }
         csCoreLookup.current = lookup;
       }
+
+      // Store tehsil-level MWS flag — used in selectCsVillage to enable the button
+      csCoreLookup.current.set('__tehsil_has_mws__', hasMwsCoverage);
 
       // Process GEE features
       const rawFeatures = geeData.status === 'fulfilled'
@@ -303,11 +374,14 @@ export default function BoundarySelector({ onBoundarySelect, onMapUpdate }) {
 
     setSelectedVillageName(name);
 
-    // Check CoReStack lookup: if village name matches a CoReStack-active village, MWS is available
+    // Check CoReStack lookup: if village name matches a CoReStack-active village, MWS is available.
+    // Fallback: if the tehsil itself has MWS coverage (from getMWSGeometries), enable for all villages.
     const csEntry = csCoreLookup.current.get(name.toLowerCase().trim()) || null;
+    const tehsilHasMws = csCoreLookup.current.get('__tehsil_has_mws__') === true;
     const villageId = csEntry?.vill_ID || feature.properties?.vill_ID || feature.properties?.village_id || feature.id || null;
-    const isMwsAvailable = !!csEntry;
+    const isMwsAvailable = !!(csEntry || tehsilHasMws);
     const mwsUidVal = csEntry?.vill_ID || null;
+
 
     // Boundary select with instant MWS status
     onBoundarySelect({
@@ -333,6 +407,7 @@ export default function BoundarySelector({ onBoundarySelect, onMapUpdate }) {
   };
 
   const handleSelectPlace = async (prediction) => {
+    onBoundarySelect(null);
     setSearchQuery(prediction.main_text);
     clearPredictions();
     const details = await getPlaceDetails(prediction.place_id);
@@ -422,9 +497,9 @@ export default function BoundarySelector({ onBoundarySelect, onMapUpdate }) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', marginBottom: '1rem' }}>
       {/* Tab toggle */}
       <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.2rem' }}>
-        <button onClick={() => handleTabChange('corestack')} style={{ background: 'none', border: 'none', color: activeTab === 'corestack' ? '#8b5cf6' : '#94a3b8', fontSize: '0.7rem', fontWeight: 600, cursor: 'pointer' }}>CORESTACK</button>
-        <button onClick={() => handleTabChange('search')} style={{ background: 'none', border: 'none', color: activeTab === 'search' ? '#8b5cf6' : '#94a3b8', fontSize: '0.7rem', fontWeight: 600, cursor: 'pointer' }}>SEARCH</button>
-        <button onClick={() => handleTabChange('upload')} style={{ background: 'none', border: 'none', color: activeTab === 'upload' ? '#8b5cf6' : '#94a3b8', fontSize: '0.7rem', fontWeight: 600, cursor: 'pointer' }}>UPLOAD</button>
+        <button onClick={() => handleTabChange('corestack')} style={{ background: 'none', border: 'none', color: activeTab === 'corestack' ? '#8b5cf6' : '#94a3b8', fontSize: '0.7rem', fontWeight: 600, cursor: 'pointer' }}>PICK A VILLAGE</button>
+        <button onClick={() => handleTabChange('search')} style={{ background: 'none', border: 'none', color: activeTab === 'search' ? '#8b5cf6' : '#94a3b8', fontSize: '0.7rem', fontWeight: 600, cursor: 'pointer' }}>SEARCH MAP</button>
+        <button onClick={() => handleTabChange('upload')} style={{ background: 'none', border: 'none', color: activeTab === 'upload' ? '#8b5cf6' : '#94a3b8', fontSize: '0.7rem', fontWeight: 600, cursor: 'pointer' }}>UPLOAD FILE</button>
       </div>
 
       {/* ═══ CoRE Stack Tab ═══ */}
@@ -465,7 +540,7 @@ export default function BoundarySelector({ onBoundarySelect, onMapUpdate }) {
           )}
           {skipDistrict && csSelectedState && (
             <div style={{ fontSize: '0.72rem', color: '#64748b', padding: '0.3rem 0.5rem', background: '#f1f5f9', borderRadius: '5px', fontStyle: 'italic' }}>
-              ℹ️ No district data for {csSelectedState} — selecting tehsil directly
+               {csSelectedState} doesn't have district-level data. Pick a tehsil/taluka instead.
             </div>
           )}
 
@@ -488,50 +563,50 @@ export default function BoundarySelector({ onBoundarySelect, onMapUpdate }) {
           )}
           {skipTehsil && csSelectedDistrict && (
             <div style={{ fontSize: '0.72rem', color: '#64748b', padding: '0.3rem 0.5rem', background: '#f1f5f9', borderRadius: '5px', fontStyle: 'italic' }}>
-              ℹ️ No tehsil data for {csSelectedDistrict} — showing villages directly
+               {csSelectedDistrict} doesn't have tehsil-level data. Pick a village below.
             </div>
           )}
 
-          {/* Village loading spinner */}
+          {/* Village dropdown (replaces previous button list) */}
           {csLoading && (
-            <div style={{ marginTop: '0.75rem', padding: '1.5rem', textAlign: 'center', background: '#f8fafc', border: '1px dashed #cbd5e1', borderRadius: '6px' }}>
-              <span className="spinner" style={{ width: 24, height: 24, borderWidth: 3, borderColor: 'rgba(139, 92, 246, 0.2)', borderTopColor: '#8b5cf6', margin: '0 auto', display: 'block' }}></span>
-              <div style={{ marginTop: '0.6rem', fontSize: '0.85rem', color: '#64748b', fontWeight: 500 }}>Fetching villages from GEE…</div>
+            <div style={{ marginTop: '0.5rem', padding: '0.75rem', textAlign: 'center', background: '#f8fafc', border: '1px dashed #cbd5e1', borderRadius: '6px' }}>
+              <span className="spinner" style={{ width: 18, height: 18, borderWidth: 2, borderColor: 'rgba(139, 92, 246, 0.2)', borderTopColor: '#8b5cf6', verticalAlign: 'middle', display: 'inline-block', marginRight: '0.5rem' }}></span>
+              <span style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: 500 }}>Loading villages…</span>
             </div>
           )}
-
-          {/* Village list */}
           {!csLoading && csVillages.length > 0 && (
-            <div style={{ marginTop: '0.75rem', maxHeight: '35vh', overflowY: 'auto', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '0.4rem' }}>
-              {csVillages.map((feat, idx) => {
-                const name = feat.properties?.vill_name || feat.properties?.name || 'Village';
-                const isSelected = selectedVillageName === name;
-                return (
-                  <button
-                    key={idx}
-                    onClick={() => selectCsVillage(feat)}
-                    style={{
-                      display: 'block', width: '100%', textAlign: 'left',
-                      padding: '0.6rem 0.75rem',
-                      background: isSelected ? '#ede9fe' : 'transparent',
-                      border: 'none', borderRadius: '4px',
-                      fontSize: '0.95rem',
-                      color: isSelected ? '#6d28d9' : '#0f172a',
-                      fontWeight: isSelected ? 600 : 400,
-                      borderBottom: '1px solid #f1f5f9', cursor: 'pointer', marginBottom: '2px',
-                    }}
-                  >
-                    {name}
-                  </button>
-                );
-              })}
+            <div className="selector-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span style={{ fontSize: '0.9rem', color: '#475569', minWidth: '70px', fontWeight: 500 }}>Village</span>
+              <div className="select-wrapper" style={{ flex: 1 }}>
+                <select
+                  value={selectedVillageName}
+                  onChange={(e) => {
+                    const name = e.target.value;
+                    if (!name) {
+                      setSelectedVillageName('');
+                      onBoundarySelect(null);
+                      onMapUpdate(null, null, null);
+                      return;
+                    }
+                    const feat = csVillages.find(f => (f.properties?.vill_name || f.properties?.name) === name);
+                    if (feat) selectCsVillage(feat);
+                  }}
+                  style={{ width: '100%', padding: '0.5rem 0.6rem', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.9rem', color: '#1e293b' }}
+                >
+                  <option value="">Select Village</option>
+                  {csVillages.map((feat, idx) => {
+                    const name = feat.properties?.vill_name || feat.properties?.name || 'Village';
+                    return <option key={idx} value={name}>{name}</option>;
+                  })}
+                </select>
+              </div>
             </div>
           )}
 
           {/* Area boundary fallback — shown when no villages exist at the selected level */}
           {!csLoading && areaFallback && csVillages.length === 0 && (() => {
             const { feature, label, level } = areaFallback;
-            const levelEmoji = level === 'state' ? '🗺️' : level === 'district' ? '🏛️' : '📍';
+            const levelEmoji = level === 'state' ? '' : level === 'district' ? '🏛️' : '';
             const levelName = level.charAt(0).toUpperCase() + level.slice(1);
             const isSelected = selectedVillageName === label;
             return (
@@ -553,7 +628,7 @@ export default function BoundarySelector({ onBoundarySelect, onMapUpdate }) {
                     color: isSelected ? '#6d28d9' : '#b45309',
                   }}
                 >
-                  {isSelected ? '✓ ' : ''}Select {levelName} Boundary — {label}
+                  {isSelected ? ' ' : ''}Select {levelName} Boundary — {label}
                 </button>
               </div>
             );
@@ -566,21 +641,10 @@ export default function BoundarySelector({ onBoundarySelect, onMapUpdate }) {
             </div>
           )}
 
-          {/* MWS availability badge */}
+          {/* Selected-village confirmation */}
           {selectedVillageName && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginTop: '0.25rem', fontSize: '0.75rem' }}>
-              {mwsStatus === 'checking' && (
-                <>
-                  <span className="spinner" style={{ width: 10, height: 10, borderWidth: 2, borderColor: 'rgba(139,92,246,0.2)', borderTopColor: '#8b5cf6', flexShrink: 0 }}></span>
-                  <span style={{ color: '#64748b' }}>Checking MWS coverage…</span>
-                </>
-              )}
-              {mwsStatus === 'ok' && (
-                <span style={{ color: '#16a34a', fontWeight: 500 }}>✓ MWS data available — all analysis modes active</span>
-              )}
-              {mwsStatus === 'none' && (
-                <span style={{ color: '#d97706', fontWeight: 500 }}>⚠ No MWS data — High Accuracy mode only</span>
-              )}
+              <span style={{ color: '#16a34a', fontWeight: 500 }}> {selectedVillageName} selected — ready to run analysis</span>
             </div>
           )}
         </>
@@ -689,7 +753,10 @@ export default function BoundarySelector({ onBoundarySelect, onMapUpdate }) {
               {/* Edit/Draw Mode Buttons */}
               <div style={{ display: 'flex', gap: '0.4rem', marginTop: '0.6rem' }}>
                 <button
-                  onClick={() => setEditMode(editMode === 'edit' ? null : 'edit')}
+                  onClick={() => {
+                    onBoundarySelect(null);
+                    setEditMode(editMode === 'edit' ? null : 'edit');
+                  }}
                   style={{
                     flex: 1, padding: '0.45rem', borderRadius: '6px', fontSize: '0.75rem',
                     fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s',
@@ -702,6 +769,7 @@ export default function BoundarySelector({ onBoundarySelect, onMapUpdate }) {
                 </button>
                 <button
                   onClick={() => {
+                    onBoundarySelect(null);
                     setEditMode(editMode === 'draw' ? null : 'draw');
                     setEditedGeojson(null);
                   }}
@@ -726,8 +794,8 @@ export default function BoundarySelector({ onBoundarySelect, onMapUpdate }) {
                   lineHeight: 1.5,
                 }}>
                   {editMode === 'edit'
-                    ? '💡 Drag the yellow vertices to reshape the boundary. Drag the polygon to move it.'
-                    : '💡 Click on the map to place vertices. Need ≥3 points to form a polygon.'}
+                    ? ' Drag the yellow vertices to reshape the boundary. Drag the polygon to move it.'
+                    : ' Click on the map to place vertices. Need ≥3 points to form a polygon.'}
                 </div>
               )}
 
@@ -778,8 +846,7 @@ export default function BoundarySelector({ onBoundarySelect, onMapUpdate }) {
                Upload Village Boundary
             </div>
             <div style={{ fontSize: '0.72rem', color: '#64748b', marginBottom: '0.6rem', lineHeight: 1.5 }}>
-              Upload a GeoJSON/JSON polygon for any Indian village.
-              IndiaSAT LULC v3 (10m) covers all of India — no location selection needed.
+              Have your own village boundary file? Upload a GeoJSON (.json / .geojson) and we'll analyse the area you drew. Works anywhere in India.
             </div>
 
             {resolvingLocation ? (
@@ -807,6 +874,7 @@ export default function BoundarySelector({ onBoundarySelect, onMapUpdate }) {
               </div>
             ) : (
               <input type="file" accept=".json,.geojson" onChange={async (e) => {
+              onBoundarySelect(null);
               const file = e.target.files[0];
               if (file) {
                 const reader = new FileReader();

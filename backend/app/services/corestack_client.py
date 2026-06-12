@@ -132,14 +132,24 @@ class CoreStackClient:
 
         Returns GeoJSON FeatureCollection with MultiPolygon geometries,
         each feature has properties: { "vill_ID": ..., "vill_name": "..." }
+
+        Returns an empty FeatureCollection if the tehsil is not yet in CoRE Stack
+        coverage (404), consistent with get_mws_geometries behaviour.
         """
         async with httpx.AsyncClient(timeout=120, **_CLIENT_KWARGS) as client:
             resp = await client.get(
                 f"{self.base_url}/get_village_geometries/",
                 params={"state": state, "district": district, "tehsil": tehsil},
             )
+            if resp.status_code == 404:
+                logger.warning(
+                    "CoRE Stack village-geometries 404 (not in coverage) for %s/%s/%s",
+                    state, district, tehsil,
+                )
+                return {"type": "FeatureCollection", "features": []}
             resp.raise_for_status()
             return resp.json()
+
 
     async def get_generated_layer_urls(self, state: str, district: str, tehsil: str) -> list:
         """Get GeoServer download URLs for raster/vector layers.

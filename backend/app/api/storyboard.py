@@ -84,12 +84,14 @@ class GeneratePayload(BaseModel):
     # OSM tag groups from Overpass (done client-side)
     osm_summary: Optional[Dict[str, int]] = {}
     top_osm_tags: Optional[List[str]] = []
+    # Named rivers / forests / heritage spots extracted from OSM (client-side)
+    landmarks: Optional[Dict[str, Any]] = None
 
 
 # ─── Helpers ────────────────────────────────────────────────────────────────
 
 SLIDE_DEFINITIONS = """
-Required slides (generate ALL 13):
+Required slides (generate ALL 14):
 1.  Overview              — Village name, area, state/district/tehsil context
 2.  Location Context      — Geographic position, nearby features, connectivity
 3.  Settlement Pattern    — Type and distribution of habitation
@@ -101,8 +103,13 @@ Required slides (generate ALL 13):
 9.  Vegetation Change     — Tree cover gain/loss/net, trend interpretation
 10. Land Transition       — Key LULC transitions (from transitions[] data)
 11. Infrastructure Gaps   — Missing or limited amenities from OSM
-12. Opportunities         — Actionable interventions based on data
-13. Conclusion            — Summary and forward-looking statement
+12. Rivers, Forests & Landmarks
+                          — Named rivers/streams, forest patches, temples,
+                            heritage and other notable spots from the
+                            NAMED LANDMARKS block. If that block is empty,
+                            say so plainly. Otherwise name specific items.
+13. Opportunities         — Actionable interventions based on data
+14. Conclusion            — Summary and forward-looking statement
 """
 
 SLIDE_SCHEMA = """
@@ -146,7 +153,7 @@ def _serialize(s: VillageStoryboardSlide) -> dict:
 
 # ─── Endpoints ──────────────────────────────────────────────────────────────
 
-# ⚠️  Static routes MUST be registered before /{village_id} to avoid
+#   Static routes MUST be registered before /{village_id} to avoid
 #    FastAPI matching 'generate' and '' as a village_id integer.
 
 @router.delete("/")
@@ -179,6 +186,7 @@ async def generate_storyboard(payload: GeneratePayload):
     veg_transitions_json = json.dumps(payload.vegetation_transitions or [], indent=2)
     osm_summary_json = json.dumps(payload.osm_summary or {}, indent=2)
     top_tags_str = ", ".join(payload.top_osm_tags or [])
+    landmarks_json = json.dumps(payload.landmarks or {}, indent=2)
 
     prompt = f"""You are a GIS data analyst generating a factual village storyboard.
 
@@ -212,6 +220,11 @@ OSM TAG GROUPS (infrastructure signal):
 
 TOP OSM TAGS:
 {top_tags_str}
+
+NAMED LANDMARKS (rivers, forests, heritage / amenity spots from OSM — use these
+to ground the storyboard in real local features. If non-empty, you MUST mention
+at least one item in the relevant slide):
+{landmarks_json}
 
 {SLIDE_DEFINITIONS}
 
@@ -253,8 +266,8 @@ OUTPUT FORMAT (return ONLY this JSON, nothing else):
         raise HTTPException(status_code=502, detail=f"Groq returned invalid JSON: {str(e)}")
 
     slides = story.get("slides", [])
-    if not slides or len(slides) < 13:
-        logger.warning("Groq returned only %d slides (expected 13)", len(slides))
+    if not slides or len(slides) < 14:
+        logger.warning("Groq returned only %d slides (expected 14)", len(slides))
 
     logger.info("[Storyboard] Returning %d slides for %s", len(slides), payload.village_name)
     return {

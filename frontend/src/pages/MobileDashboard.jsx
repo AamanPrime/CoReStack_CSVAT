@@ -10,7 +10,6 @@ import ReportViewer from '../components/ReportViewer';
 import { MapView } from '../components/GoogleMapsIntegration';
 import {
   runAnalyticsPipeline,
-  MWSUnavailableError,
   generateCSV,
 } from '../services/wasmEngine';
 import { createJob, pollJob, getLayers } from '../services/api';
@@ -34,6 +33,33 @@ export default function MobileDashboard() {
   const [isRunning, setIsRunning] = useState(false);
   const [error, setError] = useState(null);
   const [progress, setProgress] = useState('');
+  const [progressPct, setProgressPct] = useState(0);
+
+  // 0–100 progress derived from message text. See DesktopDashboard for rationale.
+  const updateProgress = useCallback((msg) => {
+    setProgress(msg);
+    if (typeof msg !== 'string') return;
+    const m = msg.match(/\[(\d+)\/(\d+)\]/);
+    if (m) {
+      const cur = parseInt(m[1], 10);
+      const total = parseInt(m[2], 10);
+      if (total > 0) {
+        setProgressPct(Math.min(85, Math.round(15 + (cur / total) * 70)));
+        return;
+      }
+    }
+    const lower = msg.toLowerCase();
+    if (lower.includes('starting analysis')) setProgressPct(1);
+    else if (lower.includes('resolving')) setProgressPct(3);
+    else if (lower.includes('loading python') || lower.includes('loading pyodide')) setProgressPct(6);
+    else if (lower.includes('installing')) setProgressPct(10);
+    else if (lower.includes('starting') && lower.includes('client-side')) setProgressPct(12);
+    else if (lower.includes('extracted') && lower.includes('years')) setProgressPct(82);
+    else if (lower.includes('running raster analytics')) setProgressPct(88);
+    else if (lower.includes('building report')) setProgressPct(92);
+    else if (lower.includes('building your report')) setProgressPct(95);
+    else if (lower.includes('complete')) setProgressPct(99);
+  }, []);
 
   // Polling ref
   const stopPollingRef = useRef(null);
@@ -61,15 +87,17 @@ export default function MobileDashboard() {
     setIsRunning(true);
     setError(null);
     setResults(null);
+    setProgressPct(0);
 
     try {
-      setProgress(`Starting client-side analytics pipeline (${computePath.toUpperCase()})…`);
+      updateProgress('Starting analysis…');
       const result = await runAnalyticsPipeline(
         boundary, selectedLayers, selectedYears,
-        (msg) => setProgress(msg),
+        updateProgress,
         computePath
       );
-      setProgress('Rendering report…');
+      updateProgress('Building your report…');
+      setProgressPct(100);
       await delay(200);
       setResults(result);
     } catch (err) {
@@ -77,6 +105,7 @@ export default function MobileDashboard() {
     }
     setIsRunning(false);
     setProgress('');
+    setProgressPct(0);
   };
 
   const handleSubmit = (path) => {
@@ -144,8 +173,34 @@ export default function MobileDashboard() {
           }}>
             <div className="spinner"></div>
             <div className="loading-text">{progress}</div>
+            <div style={{ width: 320, maxWidth: '85vw', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
+              <div style={{
+                fontSize: '2.5rem',
+                fontWeight: 800,
+                lineHeight: 1,
+                color: '#059669',
+                letterSpacing: '-0.02em',
+                fontVariantNumeric: 'tabular-nums',
+              }}>
+                {Math.round(progressPct)}%
+              </div>
+              <div style={{
+                width: '100%',
+                height: 12,
+                background: 'rgba(0,0,0,0.08)',
+                borderRadius: 7,
+                overflow: 'hidden',
+              }}>
+                <div style={{
+                  width: `${Math.max(0, Math.min(100, progressPct))}%`,
+                  height: '100%',
+                  background: 'linear-gradient(90deg, #10b981 0%, #059669 100%)',
+                  transition: 'width 0.25s ease-out',
+                }} />
+              </div>
+            </div>
             <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-              Running analytics in your browser
+              
             </div>
           </div>
         )}
@@ -210,55 +265,77 @@ export default function MobileDashboard() {
 
 
 
-          {/* Execution Mode & Run */}
-          {boundary && (boundary.source === 'corestack' || boundary.source === 'upload' || boundary.source === 'places') && (() => {
-            const mwsAvailable =
-              (boundary.source === 'upload' || boundary.source === 'places')
-                ? true
-                : boundary.mwsAvailable ?? null;
-            const mwsChecking = mwsAvailable === null;
-            return (
+          {/* Get Analysis Report — dual-path: Satellite Raster vs MWS Vector */}
+          {boundary && (
             <div className="analytics-section">
-              <div style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '0.35rem' }}>
-                Run Analytics
+              <div style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '0.5rem' }}>
+                Run the analysis
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.5rem' }}>
-                <button
-                  className="btn btn-primary btn-lg"
-                  onClick={() => handleSubmit('raster_tiled')}
-                  disabled={isRunning}
-                  id="run-analytics-tiled-btn"
-                  style={{ width: '100%', background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', borderColor: '#059669' }}
-                >
-                  {isRunning ? (
-                    <><span className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }}></span> Processing…</>
-                  ) : ' High Accuracy Analysis'}
-                </button>
-                <button
-                  className="btn btn-secondary btn-lg"
-                  onClick={() => handleSubmit('mws')}
-                  disabled={isRunning || !mwsAvailable || mwsChecking}
-                  id="run-analytics-mws-btn"
-                  title={
-                    mwsChecking ? 'Checking MWS availability…' :
-                    !mwsAvailable ? 'No MWS data for this village — use High Accuracy instead' : undefined
-                  }
-                  style={{
-                    width: '100%',
-                    opacity: (!mwsAvailable || mwsChecking) ? 0.45 : 1,
-                    cursor: (!mwsAvailable || mwsChecking) ? 'not-allowed' : 'pointer',
-                  }}
-                >
-                  {isRunning ? (
-                    <><span className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }}></span> Processing…</>
-                  ) : mwsChecking ? (
-                    <><span className="spinner" style={{ width: 14, height: 14, borderWidth: 2 }}></span> Checking MWS…</>
-                  ) : '🌿 MWS Path (Vector)'}
-                </button>
+
+              {/* Satellite Raster button — always available */}
+              <button
+                className="btn btn-primary btn-lg"
+                onClick={() => handleSubmit('raster_tiled')}
+                disabled={isRunning}
+                id="run-analytics-tiled-btn"
+                title="Download village GeoTIFFs from IndiaSAT LULC v3 and compute LULC analytics client-side (most accurate)"
+                style={{ width: '100%', background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', borderColor: '#059669', marginBottom: '0.5rem' }}
+              >
+                {isRunning ? (
+                  <><span className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }}></span> Working…</>
+                ) : 'Get Report (Slow, Most Accurate)'}
+              </button>
+              <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginBottom: '0.6rem', lineHeight: 1.4 }}>
+                IndiaSAT LULC v3 · 10 m 
               </div>
+
+              {/* MWS Vector button — disabled for uploads/places */}
+              {boundary.source === 'upload' || boundary.source === 'places' ? (
+                <div style={{
+                  padding: '0.55rem 0.75rem', borderRadius: '8px', border: '1.5px dashed #c4b5fd',
+                  fontSize: '0.72rem', color: '#a78bfa', textAlign: 'center', lineHeight: 1.5,
+                  background: 'rgba(139,92,246,0.04)',
+                }}>
+                   MWS Vector path requires a village selected via CoRE Stack browser
+                </div>
+              ) : (
+                <>
+                  <button
+                    className="btn btn-secondary btn-lg"
+                    onClick={() => handleSubmit('mws_vector')}
+                    disabled={isRunning || !boundary.mwsAvailable}
+                    id="run-analytics-mws-btn"
+                    title={
+                      !boundary.mwsAvailable
+                        ? 'No MWS watershed data for this village — use Satellite Raster instead'
+                        : 'Use CoRE Stack MWS vector data — faster but lower resolution than satellite raster'
+                    }
+                    style={{
+                      width: '100%',
+                      background: (!boundary.mwsAvailable || isRunning)
+                        ? 'linear-gradient(135deg, #9ca3af 0%, #6b7280 100%)'
+                        : 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)',
+                      color: '#fff', border: 'none',
+                      borderRadius: '8px', padding: '0.6rem 1rem',
+                      fontSize: '0.88rem', fontWeight: 600,
+                      cursor: (!boundary.mwsAvailable || isRunning) ? 'not-allowed' : 'pointer',
+                      transition: 'all 0.2s', letterSpacing: '0.01em',
+                      opacity: !boundary.mwsAvailable ? 0.65 : 1,
+                    }}
+                  >
+                    {isRunning ? (
+                      <><span className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }}></span> Working…</>
+                    ) : 'Get Report(Fast, Less Accurate'}
+                  </button>
+                  <div style={{ fontSize: '0.68rem', color: boundary.mwsAvailable ? 'var(--text-muted)' : '#f87171', marginTop: '0.35rem', lineHeight: 1.4 }}>
+                    {boundary.mwsAvailable
+                      ? 'CoRE Stack MWS · watershed-level · Faster — works offline.'
+                      : ' No MWS data for this village — use Satellite Raster.'}
+                  </div>
+                </>
+              )}
             </div>
-            );
-          })()}
+          )}
         </div>
       </aside>
     </div>

@@ -42,38 +42,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
-      redis:
-        condition: service_started
-    volumes:
-      - ./backend:/app
-
-  # Redis for Celery Broker & Result Backend
-  redis:
-    image: redis:7-alpine
-    container_name: csvat_redis
-    restart: unless-stopped
-    command: redis-server --save 60 1 --loglevel warning
-    volumes:
-      - redisdata:/data
-
-  # Celery Worker
-  worker:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    container_name: csvat_worker
-    restart: unless-stopped
-    command: [ "celery", "-A", "app.tasks.celery_app.celery_app", "worker", "--loglevel=info" ]
-    env_file:
-      - ./backend/.env
-    depends_on:
-      db:
-        condition: service_healthy
-      redis:
-        condition: service_started
     volumes:
       - ./backend:/app
 
 volumes:
   pgdata:
-  redisdata:
